@@ -1,34 +1,40 @@
 const express = require('express');
+const bodyParser = require('body-parser');
 const { Pool } = require('pg');
+
+// Initialize Express app
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
-// Middleware to parse JSON bodies
-app.use(express.json());
+// Use body-parser middleware to parse JSON requests
+app.use(bodyParser.json());
 
-// Database connection using environment variable
+// Configure the PostgreSQL connection
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false,
-    },
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
-// API route to save conversation
-app.post('/save-conversation', async (req, res) => {
-    const { conversation } = req.body;
-    try {
-        const query = 'INSERT INTO conversations(conversation_data) VALUES($1) RETURNING *';
-        const values = [JSON.stringify(conversation)];
-        const result = await pool.query(query, values);
-        res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error('Error saving conversation:', error);
-        res.status(500).send('Server error');
-    }
+// POST route to add a new conversation
+app.post('/conversations', async (req, res) => {
+  const { conversation_data } = req.body;
+
+  try {
+    const result = await pool.query(
+      'INSERT INTO conversations (conversation_data) VALUES ($1) RETURNING *',
+      [conversation_data]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Start the server
 app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+  console.log(`Server is running on port ${port}`);
 });
