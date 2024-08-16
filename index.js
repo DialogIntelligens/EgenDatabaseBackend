@@ -21,6 +21,7 @@ const pool = new Pool({
   }
 });
 
+// POST endpoint to save a new conversation
 app.post('/conversations', async (req, res) => {
   let { conversation_data } = req.body;
 
@@ -39,7 +40,16 @@ app.post('/conversations', async (req, res) => {
   }
 });
 
-
+// GET endpoint to retrieve all conversations
+app.get('/conversations', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM conversations');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error retrieving data:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
 
 // Start the server
 app.listen(port, () => {
