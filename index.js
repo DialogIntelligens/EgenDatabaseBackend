@@ -22,10 +22,12 @@ const pool = new Pool({
 });
 
 app.post('/conversations', async (req, res) => {
-  const { conversation_data } = req.body;
-  console.log('Received conversation data:', conversation_data);  // Log the data
+  let { conversation_data } = req.body;
 
   try {
+    // Convert conversation_data to JSON string
+    conversation_data = JSON.stringify(conversation_data);
+
     const result = await pool.query(
       'INSERT INTO conversations (conversation_data) VALUES ($1) RETURNING *',
       [conversation_data]
@@ -36,6 +38,7 @@ app.post('/conversations', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 
 // Start the server
