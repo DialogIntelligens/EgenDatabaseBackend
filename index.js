@@ -21,6 +21,7 @@ const pool = new Pool({
   }
 });
 
+// POST endpoint to save a new conversation
 app.post('/conversations', async (req, res) => {
   console.log('Received request body:', req.body);  // Log the received data
   let { conversation_data, user_id } = req.body;    // Make sure to destructure user_id
@@ -40,7 +41,16 @@ app.post('/conversations', async (req, res) => {
   }
 });
 
-
+// GET endpoint to retrieve all conversations
+app.get('/conversations', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM conversations');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error retrieving data:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
 
 
 // Start the server
