@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const { Pool } = require('pg');
 
 // Initialize Express app
@@ -8,6 +9,9 @@ const port = process.env.PORT || 3000;
 
 // Use body-parser middleware to parse JSON requests
 app.use(bodyParser.json());
+
+// Configure CORS
+app.use(cors());
 
 // Configure the PostgreSQL connection
 const pool = new Pool({
