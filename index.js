@@ -22,15 +22,16 @@ const pool = new Pool({
 });
 
 app.post('/conversations', async (req, res) => {
-  let { conversation_data } = req.body;
+  console.log('Received request body:', req.body);  // Log the received data
+  let { conversation_data, user_id } = req.body;    // Make sure to destructure user_id
 
   try {
     // Convert conversation_data to JSON string
     conversation_data = JSON.stringify(conversation_data);
 
     const result = await pool.query(
-      'INSERT INTO conversations (conversation_data) VALUES ($1) RETURNING *',
-      [conversation_data]
+      'INSERT INTO conversations (user_id, conversation_data) VALUES ($1, $2) RETURNING *',
+      [user_id, conversation_data]  // Add user_id to the query
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -38,6 +39,7 @@ app.post('/conversations', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 
 
