@@ -90,21 +90,20 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Protected POST endpoint to save a new conversation
 app.post('/conversations', authenticateToken, async (req, res) => {
   console.log('Received request body:', req.body); // Log the received data
 
-  // Destructure conversation_data and user_id from the request body
-  let { conversation_data, user_id } = req.body;
+  // Destructure conversation_data, user_id, and chatbot_id from the request body
+  let { conversation_data, user_id, chatbot_id } = req.body;
 
   try {
     // Convert conversation_data to JSON string (only if your table stores JSONB type)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Insert user_id and conversation_data into the conversations table
+    // Insert user_id, chatbot_id, and conversation_data into the conversations table
     const result = await pool.query(
-      'INSERT INTO conversations (user_id, conversation_data) VALUES ($1, $2) RETURNING *',
-      [user_id, conversation_data]
+      'INSERT INTO conversations (user_id, chatbot_id, conversation_data) VALUES ($1, $2, $3) RETURNING *',
+      [user_id, chatbot_id, conversation_data]
     );
 
     // Return the inserted row as JSON response
@@ -115,6 +114,7 @@ app.post('/conversations', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 // Protected GET endpoint to retrieve all conversations
 app.get('/conversations', authenticateToken, async (req, res) => {
