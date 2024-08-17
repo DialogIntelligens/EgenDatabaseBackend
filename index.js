@@ -2,29 +2,44 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const { Pool } = require('pg');
-
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const SECRET_KEY = 'Megtigemaskiner00!';  // Replace this with an actual secret key stored securely
 
+// Use environment variables for sensitive information
+const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
+const PORT = process.env.PORT || 3000;
 
 // Initialize Express app
 const app = express();
-const port = process.env.PORT || 3000;
 
-// Use body-parser middleware to parse JSON requests
+// Middleware
 app.use(bodyParser.json());
-
-// Configure CORS
 app.use(cors());
 
 // Configure the PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false
-  }
+    rejectUnauthorized: false,
+  },
 });
+
+// Middleware to verify JWT token
+function authenticateToken(req, res, next) {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'Access denied, token missing!' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    req.user = decoded; // Add the decoded payload to the request object
+    next(); // Proceed to the next middleware or route handler
+  } catch (err) {
+    console.error('Invalid token:', err);
+    res.status(403).json({ error: 'Invalid token' });
+  }
+}
 
 // POST endpoint for user registration
 app.post('/register', async (req, res) => {
@@ -78,12 +93,10 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// Protected POST endpoint to save a new conversation
+app.post('/conversations', authenticateToken, async (req, res) => {
+  console.log('Received request body:', req.body); // Log the received data
 
-
-// POST endpoint to save a new conversation
-app.post('/conversations', async (req, res) => {
-  console.log('Received request body:', req.body);  // Log the received data
-  
   // Destructure conversation_data and user_id from the request body
   let { conversation_data, user_id } = req.body;
 
@@ -106,8 +119,8 @@ app.post('/conversations', async (req, res) => {
   }
 });
 
-// GET endpoint to retrieve all conversations
-app.get('/conversations', async (req, res) => {
+// Protected GET endpoint to retrieve all conversations
+app.get('/conversations', authenticateToken, async (req, res) => {
   try {
     // Query to select all rows from the conversations table
     const result = await pool.query('SELECT * FROM conversations');
@@ -122,6 +135,6 @@ app.get('/conversations', async (req, res) => {
 });
 
 // Start the server
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
