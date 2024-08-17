@@ -59,7 +59,6 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// POST endpoint for user login
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
@@ -83,12 +82,14 @@ app.post('/login', async (req, res) => {
     // Generate a JWT token
     const token = jwt.sign({ userId: user.id }, SECRET_KEY, { expiresIn: '1h' });
 
-    res.json({ token });
+    // Return the token and the chatbotID associated with the user
+    res.json({ token, chatbot_id: user.chatbot_id });
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 app.post('/conversations', authenticateToken, async (req, res) => {
   console.log('Received request body:', req.body); // Log the received data
