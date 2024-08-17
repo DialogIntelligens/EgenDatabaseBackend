@@ -26,19 +26,16 @@ const pool = new Pool({
 
 // Middleware to verify JWT token
 function authenticateToken(req, res, next) {
-  const token = req.headers['authorization']?.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: 'Access denied, token missing!' });
-  }
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
-  try {
-    const decoded = jwt.verify(token, SECRET_KEY);
-    req.user = decoded; // Add the decoded payload to the request object
+  if (token == null) return res.sendStatus(401); // If no token, return 401 Unauthorized
+
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.sendStatus(403); // If token is invalid or expired, return 403 Forbidden
+    req.user = user;
     next(); // Proceed to the next middleware or route handler
-  } catch (err) {
-    console.error('Invalid token:', err);
-    res.status(403).json({ error: 'Invalid token' });
-  }
+  });
 }
 
 // POST endpoint for user registration
