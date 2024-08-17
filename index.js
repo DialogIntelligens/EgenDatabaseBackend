@@ -117,11 +117,19 @@ app.post('/conversations', authenticateToken, async (req, res) => {
 });
 
 
-// Protected GET endpoint to retrieve all conversations
 app.get('/conversations', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
   try {
-    // Query to select all rows from the conversations table
-    const result = await pool.query('SELECT * FROM conversations');
+    // Query to select all rows from the conversations table where chatbot_id matches
+    const result = await pool.query(
+      'SELECT * FROM conversations WHERE chatbot_id = $1',
+      [chatbot_id]
+    );
 
     // Return the result as JSON response
     res.json(result.rows);
@@ -131,6 +139,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 // Start the server
 app.listen(PORT, () => {
