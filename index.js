@@ -38,18 +38,17 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// POST endpoint for user registration
 app.post('/register', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, chatbot_id } = req.body;
 
   try {
     // Hash the password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert the new user into the database
+    // Insert the new user into the database with the associated chatbot_id
     const result = await pool.query(
-      'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING *',
-      [username, hashedPassword]
+      'INSERT INTO users (username, password, chatbot_id) VALUES ($1, $2, $3) RETURNING *',
+      [username, hashedPassword, chatbot_id]
     );
 
     res.status(201).json({ message: 'User registered successfully' });
@@ -58,6 +57,7 @@ app.post('/register', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
@@ -89,6 +89,7 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 
 app.post('/conversations', authenticateToken, async (req, res) => {
