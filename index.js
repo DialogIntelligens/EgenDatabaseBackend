@@ -24,19 +24,23 @@ const pool = new Pool({
   },
 });
 
-// Middleware to verify JWT token
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (token == null) return res.sendStatus(401); // If no token, return 401 Unauthorized
+  if (token == null) return res.sendStatus(401); // No token, return 401 Unauthorized
 
   jwt.verify(token, SECRET_KEY, (err, user) => {
-    if (err) return res.sendStatus(403); // If token is invalid or expired, return 403 Forbidden
+    if (err) {
+      console.log("JWT verification error:", err);
+      return res.sendStatus(403); // Token invalid or expired, return 403 Forbidden
+    }
+    console.log("Authenticated user:", user); // Log user info
     req.user = user;
     next(); // Proceed to the next middleware or route handler
   });
 }
+
 
 app.post('/register', async (req, res) => {
   const { username, password, chatbot_id } = req.body;
