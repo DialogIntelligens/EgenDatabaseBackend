@@ -96,30 +96,41 @@ app.post('/login', async (req, res) => {
 
 
 
-app.post('/conversations', authenticateToken, async (req, res) => {
-  console.log('Received request body:', req.body); // Log the received data
-
-  // Destructure conversation_data, user_id, and chatbot_id from the request body
+app.post('/conversations', async (req, res) => {
   let { conversation_data, user_id, chatbot_id } = req.body;
 
+  // If a token is provided, authenticate it
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+      if (err) {
+        console.log("JWT verification error:", err);
+        return res.sendStatus(403); // Token invalid or expired, return 403 Forbidden
+      }
+      console.log("Authenticated user:", user);
+      req.user = user;
+      user_id = user.userId; // Overwrite user_id with authenticated user ID
+    });
+  }
+
   try {
-    // Convert conversation_data to JSON string (only if your table stores JSONB type)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Insert user_id, chatbot_id, and conversation_data into the conversations table
     const result = await pool.query(
       'INSERT INTO conversations (user_id, chatbot_id, conversation_data) VALUES ($1, $2, $3) RETURNING *',
       [user_id, chatbot_id, conversation_data]
     );
 
-    // Return the inserted row as JSON response
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    // Log the error and return a 500 error response
     console.error('Error inserting data:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
+
 
 
 app.get('/conversations', authenticateToken, async (req, res) => {
