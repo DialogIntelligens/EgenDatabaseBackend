@@ -118,23 +118,17 @@ app.post('/conversations', async (req, res) => {
   try {
     conversation_data = JSON.stringify(conversation_data);
 
-    // Use UPSERT to insert a new conversation or update an existing one
     const result = await pool.query(
-      `INSERT INTO conversations (user_id, chatbot_id, conversation_data) 
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, chatbot_id) 
-       DO UPDATE SET conversation_data = EXCLUDED.conversation_data 
-       RETURNING *`,
+      'INSERT INTO conversations (user_id, chatbot_id, conversation_data) VALUES ($1, $2, $3) RETURNING *',
       [user_id, chatbot_id, conversation_data]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Error inserting or updating data:', err);
+    console.error('Error inserting data:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
-
 
 
 
