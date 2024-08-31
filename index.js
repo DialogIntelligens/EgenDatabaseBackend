@@ -118,12 +118,12 @@ app.post('/conversations', async (req, res) => {
   try {
     conversation_data = JSON.stringify(conversation_data);
 
-    // Use UPSERT to insert a new conversation or update an existing one by user_id
+    // Use UPSERT to insert a new conversation or update an existing one by user_id and chatbot_id
     const result = await pool.query(
       `INSERT INTO conversations (user_id, chatbot_id, conversation_data) 
        VALUES ($1, $2, $3)
-       ON CONFLICT (user_id) 
-       DO UPDATE SET conversation_data = EXCLUDED.conversation_data, chatbot_id = EXCLUDED.chatbot_id
+       ON CONFLICT (user_id, chatbot_id) 
+       DO UPDATE SET conversation_data = EXCLUDED.conversation_data
        RETURNING *`,
       [user_id, chatbot_id, conversation_data]
     );
