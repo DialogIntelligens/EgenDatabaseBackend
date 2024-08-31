@@ -104,15 +104,19 @@ app.post('/conversations', async (req, res) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token) {
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-      if (err) {
-        console.log("JWT verification error:", err);
-        return res.sendStatus(403); // Token invalid or expired, return 403 Forbidden
-      }
+    try {
+      const user = jwt.verify(token, SECRET_KEY);
       console.log("Authenticated user:", user);
       req.user = user;
       user_id = user.userId; // Overwrite user_id with authenticated user ID
-    });
+    } catch (err) {
+      console.log("JWT verification error:", err);
+      return res.status(403).json({ error: 'Invalid or expired token', details: err.message });
+    }
+  }
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'Missing user_id or chatbot_id' });
   }
 
   try {
@@ -131,9 +135,14 @@ app.post('/conversations', async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error inserting or updating data:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
+
 
 
 
@@ -162,6 +171,16 @@ app.get('/conversations', authenticateToken, async (req, res) => {
   }
 });
 
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Something went wrong!', 
+    details: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
 
 // Start the server
 app.listen(PORT, () => {
