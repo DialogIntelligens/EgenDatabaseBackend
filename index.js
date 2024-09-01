@@ -104,7 +104,7 @@ async function upsertConversation(user_id, chatbot_id, conversation_data) {
     // Try to update first
     const updateResult = await client.query(
       `UPDATE conversations 
-       SET conversation_data = $3, updated_at = CURRENT_TIMESTAMP
+       SET conversation_data = $3
        WHERE user_id = $1 AND chatbot_id = $2
        RETURNING *`,
       [user_id, chatbot_id, conversation_data]
@@ -135,7 +135,21 @@ async function upsertConversation(user_id, chatbot_id, conversation_data) {
 app.post('/conversations', async (req, res) => {
   let { conversation_data, user_id, chatbot_id } = req.body;
 
-  // ... (keep existing token verification code)
+  // If a token is provided, authenticate it
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const user = jwt.verify(token, SECRET_KEY);
+      console.log("Authenticated user:", user);
+      req.user = user;
+      user_id = user.userId; // Overwrite user_id with authenticated user ID
+    } catch (err) {
+      console.log("JWT verification error:", err);
+      return res.status(403).json({ error: 'Invalid or expired token', details: err.message });
+    }
+  }
 
   if (!user_id || !chatbot_id) {
     return res.status(400).json({ error: 'Missing user_id or chatbot_id' });
@@ -156,8 +170,6 @@ app.post('/conversations', async (req, res) => {
     });
   }
 });
-
-
 
 
 
