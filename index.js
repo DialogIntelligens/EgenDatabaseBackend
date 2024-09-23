@@ -199,8 +199,8 @@ app.get('/conversations', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/update-conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, prediction_url } = req.body; // Get chatbot ID and prediction URL from the request body
+app.post('/update-conversations', async (req, res) => {
+  const { chatbot_id, prediction_url } = req.body;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -211,23 +211,16 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Get all conversations for the given chatbot_id
-    const conversations = await pool.query(
-      'SELECT * FROM conversations WHERE chatbot_id = $1',
-      [chatbot_id]
-    );
+    const conversations = await pool.query('SELECT * FROM conversations WHERE chatbot_id = $1', [chatbot_id]);
 
-    // Check if any conversations were found
     if (conversations.rows.length === 0) {
       return res.status(404).json({ error: 'No conversations found for the given chatbot_id' });
     }
 
-    // Loop through each conversation and update emne and score
     for (let conversation of conversations.rows) {
-      const conversationText = conversation.conversation_data; // Get conversation data
-      const { emne, score } = await getEmneAndScore(conversationText, prediction_url); // Pass the prediction URL
+      const conversationText = conversation.conversation_data;
+      const { emne, score } = await getEmneAndScore(conversationText, prediction_url);
 
-      // Update the conversation with new emne and score
       await pool.query(
         `UPDATE conversations SET emne = $1, score = $2 WHERE id = $3`,
         [emne, score, conversation.id]
