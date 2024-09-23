@@ -199,6 +199,72 @@ app.get('/conversations', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/update-conversations', authenticateToken, async (req, res) => {
+  const { chatbot_id, prediction_url } = req.body; // Get chatbot ID and prediction URL from the request body
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  if (!prediction_url) {
+    return res.status(400).json({ error: 'prediction_url is required' });
+  }
+
+  try {
+    // Get all conversations for the given chatbot_id
+    const conversations = await pool.query(
+      'SELECT * FROM conversations WHERE chatbot_id = $1',
+      [chatbot_id]
+    );
+
+    // Check if any conversations were found
+    if (conversations.rows.length === 0) {
+      return res.status(404).json({ error: 'No conversations found for the given chatbot_id' });
+    }
+
+    // Loop through each conversation and update emne and score
+    for (let conversation of conversations.rows) {
+      const conversationText = conversation.conversation_data; // Get conversation data
+      const { emne, score } = await getEmneAndScore(conversationText, prediction_url); // Pass the prediction URL
+
+      // Update the conversation with new emne and score
+      await pool.query(
+        `UPDATE conversations SET emne = $1, score = $2 WHERE id = $3`,
+        [emne, score, conversation.id]
+      );
+    }
+
+    return res.status(200).json({ message: 'Conversations updated successfully' });
+  } catch (error) {
+    console.error('Error updating conversations:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+// Function to get emne and score from the provided external API
+async function getEmneAndScore(conversationText, prediction_url) {
+  try {
+    const response = await fetch(prediction_url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ question: conversationText }),
+    });
+    const result = await response.json();
+    const text = result.text;
+    const emneMatch = text.match(/Emne\(([^)]+)\)/);
+    const scoreMatch = text.match(/Happy\(([^)]+)\)/);
+    const emne = emneMatch ? emneMatch[1] : null;
+    const score = scoreMatch ? scoreMatch[1] : null;
+    return { emne, score };
+  } catch (error) {
+    console.error('Error getting emne and score:', error);
+    return { emne: null, score: null };
+  }
+}
+
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
