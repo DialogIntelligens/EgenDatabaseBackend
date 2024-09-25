@@ -96,7 +96,7 @@ app.post('/login', async (req, res) => {
 
 
 
-async function upsertConversation(user_id, chatbot_id, conversation_data, emne, score) {
+async function upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -104,19 +104,19 @@ async function upsertConversation(user_id, chatbot_id, conversation_data, emne, 
     // Try to update first
     const updateResult = await client.query(
       `UPDATE conversations 
-       SET conversation_data = $3, emne = $4, score = $5
+       SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6
        WHERE user_id = $1 AND chatbot_id = $2
        RETURNING *`,
-      [user_id, chatbot_id, conversation_data, emne, score]
+      [user_id, chatbot_id, conversation_data, emne, score, customer_rating]
     );
     
     if (updateResult.rows.length === 0) {
       // If no row was updated, insert a new one
       const insertResult = await client.query(
-        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score) 
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating) 
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [user_id, chatbot_id, conversation_data, emne, score]
+        [user_id, chatbot_id, conversation_data, emne, score, customer_rating]
       );
       await client.query('COMMIT');
       return insertResult.rows[0];
@@ -133,8 +133,9 @@ async function upsertConversation(user_id, chatbot_id, conversation_data, emne, 
 }
 
 
+
 app.post('/conversations', async (req, res) => {
-  let { conversation_data, user_id, chatbot_id, emne, score } = req.body;
+  let { conversation_data, user_id, chatbot_id, emne, score, customer_rating } = req.body;
 
   // If a token is provided, authenticate it
   const authHeader = req.headers['authorization'];
@@ -159,7 +160,7 @@ app.post('/conversations', async (req, res) => {
   try {
     conversation_data = JSON.stringify(conversation_data);
 
-    const result = await upsertConversation(user_id, chatbot_id, conversation_data, emne, score);
+    const result = await upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating);
 
     res.status(201).json(result);
   } catch (err) {
