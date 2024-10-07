@@ -174,59 +174,24 @@ app.post('/conversations', async (req, res) => {
 });
 
 
-app.post('/delete', authenticateToken, async (req, res) => {
-  const { conversationIds } = req.body; // Expecting a list of conversation IDs
-  const userId = req.user.userId; // Retrieved from authenticateToken middleware
-
-  if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
-    return res.status(400).json({ error: 'conversationIds must be a non-empty array' });
+app.post('/delete', async (req, res) => {
+  const { userIds } = req.body;
+  if (!userIds || userIds.length === 0) {
+    return res.status(400).json({ error: "userIds must be a non-empty array" });
   }
 
   try {
-    // Begin a transaction
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Fetch conversations to verify ownership
-      const { rows: conversations } = await client.query(
-        'SELECT id FROM conversations WHERE id = ANY($1) AND user_id = $2',
-        [conversationIds, userId]
-      );
-
-      if (conversations.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({
-          error: 'No conversations found or you do not have permission to delete them',
-        });
-      }
-
-      const idsToDelete = conversations.map((conv) => conv.id);
-
-      // Delete the conversations
-      await client.query(
-        'DELETE FROM conversations WHERE id = ANY($1)',
-        [idsToDelete]
-      );
-
-      await client.query('COMMIT');
-
-      res.json({
-        message: 'Conversations deleted successfully',
-        deletedIds: idsToDelete,
-      });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('Error deleting conversations:', err);
-      res.status(500).json({ error: 'Database error', details: err.message });
-    } finally {
-      client.release();
-    }
-  } catch (err) {
-    console.error('Error connecting to the database:', err);
-    res.status(500).json({ error: 'Database connection error', details: err.message });
+    const result = await pool.query(
+      'DELETE FROM conversations WHERE user_id = ANY($1)',
+      [userIds]
+    );
+    res.json({ message: 'Conversations deleted successfully', result });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong' });
   }
 });
+
 
 
 
