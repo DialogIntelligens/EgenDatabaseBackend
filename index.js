@@ -94,6 +94,45 @@ app.post('/login', async (req, res) => {
   }
 });
 
+app.patch('/conversations/:id', authenticateToken, async (req, res) => {
+  const conversationId = req.params.id;
+  const { bug_status, notes } = req.body;
+
+  if (!bug_status && notes === undefined) {
+    return res.status(400).json({ error: 'At least one of bug_status or notes must be provided' });
+  }
+
+  try {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (bug_status) {
+      fields.push(`bug_status = $${idx++}`);
+      values.push(bug_status);
+    }
+
+    if (notes !== undefined) {
+      fields.push(`notes = $${idx++}`);
+      values.push(notes);
+    }
+
+    values.push(conversationId);
+
+    const query = `UPDATE conversations SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`;
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 
 
 async function upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating) {
