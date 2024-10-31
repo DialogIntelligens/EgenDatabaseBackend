@@ -6,7 +6,9 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
-import { PineconeClient } from '@pinecone-database/pinecone';
+import PineconePackage from '@pinecone-database/pinecone';
+const { PineconeClient } = PineconePackage;
+
 
 // Use environment variables for sensitive information
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
