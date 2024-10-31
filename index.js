@@ -4,10 +4,9 @@ import cors from 'cors';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import openai from 'openai';
-const openaiApi = new openai.OpenAIApi({ apiKey: process.env.OPENAI_API_KEY });
 
-import { PineconeClient } from '@pinecone-database/pinecone';
+const { Pinecone } = require('@pinecone-database/pinecone');
+const { OpenAI } = require('openai');  // Updated import for OpenAI
 
 
 // Use environment variables for sensitive information
