@@ -1,19 +1,19 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { PineconeClient } = require('@pinecone-database/pinecone');
-
+const { PineconeClient } = require('@pinecone-database/pinecone'); // Use only this import for PineconeClient
 
 // Other imports
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import pg from 'pg'; // Import pg as default
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
-// Destructure the necessary exports from the default imports
+
+// Destructure the necessary exports from pg
 const { Pool } = pg;
-const { PineconeClient } = PineconePackage;
+
 
 
 // Use environment variables for sensitive information
