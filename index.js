@@ -1,9 +1,12 @@
+// Other imports
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Configuration, OpenAIApi } = require('openai'); // Correct import
+const { PineconeClient } = require('@pinecone-database/pinecone');
 
 // Use environment variables for sensitive information
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
@@ -16,9 +19,8 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
+console.log('OpenAI API Key:', process.env.OPENAI_API_KEY);
 
-const openai = require('openai');
-const { PineconeClient } = require('@pinecone-database/pinecone');
 
 async function generateEmbedding(text, openaiApiKey) {
   const configuration = new openai.Configuration({ apiKey: openaiApiKey });
