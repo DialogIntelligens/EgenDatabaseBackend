@@ -23,14 +23,15 @@ console.log('OpenAI API Key:', process.env.OPENAI_API_KEY);
 
 
 async function generateEmbedding(text, openaiApiKey) {
-  const configuration = new openai.Configuration({ apiKey: openaiApiKey });
-  const openaiApi = new openai.OpenAIApi(configuration);
+  const configuration = new Configuration({ apiKey: openaiApiKey });
+  const openaiApi = new OpenAIApi(configuration);
   const response = await openaiApi.createEmbedding({
-    model: 'text-embedding-3-large', // Correct model name
+    model: 'text-embedding-3-large', // Updated model name
     input: text,
   });
   return response.data.data[0].embedding;
 }
+
 
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
