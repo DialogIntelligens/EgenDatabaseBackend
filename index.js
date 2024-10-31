@@ -1,8 +1,4 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const { PineconeClient } = require('@pinecone-database/pinecone'); // Use only this import for PineconeClient
-
-// Other imports
+import PineconePackage from '@pinecone-database/pinecone';
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
@@ -11,7 +7,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 
-// Destructure the necessary exports from pg
 const { Pool } = pg;
 
 
@@ -56,8 +51,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Generate embeddings
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Upsert to Pinecone
-    const pinecone = new PineconeClient();
+    const pinecone = new PineconePackage.PineconeClient();
     await pinecone.init({ apiKey: user.pinecone_api_key });
     const index = pinecone.Index(user.pinecone_index_name);
 
