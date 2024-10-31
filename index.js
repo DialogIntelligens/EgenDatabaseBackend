@@ -19,7 +19,8 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-console.log('OpenAI API Key:', process.env.OPENAI_API_KEY);
+console.log('Configuration:', Configuration);
+console.log('OpenAIApi:', OpenAIApi);
 
 
 async function generateEmbedding(text, openaiApiKey) {
