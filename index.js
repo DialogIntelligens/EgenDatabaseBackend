@@ -1,12 +1,12 @@
-// Other imports
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const { Pool } = require('pg');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { Configuration, OpenAIApi } = require('openai'); // Correct import
-const { PineconeClient } = require('@pinecone-database/pinecone');
+// New ES Module imports
+import express from 'express';
+import bodyParser from 'body-parser';
+import cors from 'cors';
+import { Pool } from 'pg';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { Configuration, OpenAIApi } from 'openai';
+import { PineconeClient } from '@pinecone-database/pinecone';
 
 // Use environment variables for sensitive information
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
