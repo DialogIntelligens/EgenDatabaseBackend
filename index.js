@@ -4,7 +4,9 @@ import cors from 'cors';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { Configuration, OpenAIApi } from 'openai';
+import openai from 'openai';
+const openaiApi = new openai.OpenAIApi({ apiKey: process.env.OPENAI_API_KEY });
+
 import { PineconeClient } from '@pinecone-database/pinecone';
 
 
