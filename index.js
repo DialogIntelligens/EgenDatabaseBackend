@@ -1,12 +1,15 @@
-// New ES Module imports
+// Other imports
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import { Pool } from 'pg';
+import pg from 'pg'; // Import pg as default
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 import PineconePackage from '@pinecone-database/pinecone';
+
+// Destructure the necessary exports from the default imports
+const { Pool } = pg;
 const { PineconeClient } = PineconePackage;
 
 
