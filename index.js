@@ -17,19 +17,19 @@ app.use(bodyParser.json());
 app.use(cors());
 
 
-const { Configuration, OpenAIApi } = require('openai');
+const openai = require('openai');
 const { PineconeClient } = require('@pinecone-database/pinecone');
 
-// Utility function to generate embeddings using OpenAI
 async function generateEmbedding(text, openaiApiKey) {
-  const configuration = new Configuration({ apiKey: openaiApiKey });
-  const openai = new OpenAIApi(configuration);
-  const response = await openai.createEmbedding({
-    model: 'text-embedding-3-large',
+  const configuration = new openai.Configuration({ apiKey: openaiApiKey });
+  const openaiApi = new openai.OpenAIApi(configuration);
+  const response = await openaiApi.createEmbedding({
+    model: 'text-embedding-3-large', // Correct model name
     input: text,
   });
   return response.data.data[0].embedding;
 }
+
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
   const { text } = req.body;
