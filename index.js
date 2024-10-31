@@ -5,10 +5,6 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-
-const { Configuration, OpenAIApi } = require('openai');
-const { PineconeClient } = require('@pinecone-database/pinecone');
-
 // Use environment variables for sensitive information
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
