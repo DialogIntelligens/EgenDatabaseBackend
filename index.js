@@ -5,7 +5,7 @@ import cors from 'cors';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { Configuration, OpenAIApi } from 'openai';
+import OpenAI from 'openai';
 import { PineconeClient } from '@pinecone-database/pinecone';
 
 // Use environment variables for sensitive information
@@ -19,20 +19,17 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-console.log('Configuration:', Configuration);
-console.log('OpenAIApi:', OpenAIApi);
-
 
 async function generateEmbedding(text, openaiApiKey) {
-  const configuration = new Configuration({ apiKey: openaiApiKey });
-  const openaiApi = new OpenAIApi(configuration);
-  const response = await openaiApi.createEmbedding({
-    model: 'text-embedding-3-large', // Updated model name
+  const openai = new OpenAI({
+    apiKey: openaiApiKey,
+  });
+  const response = await openai.embeddings.create({
+    model: 'text-embedding-3-large',
     input: text,
   });
-  return response.data.data[0].embedding;
+  return response.data[0].embedding;
 }
-
 
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
