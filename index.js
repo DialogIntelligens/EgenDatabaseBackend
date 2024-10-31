@@ -5,6 +5,10 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+
+const { Configuration, OpenAIApi } = require('openai');
+const { PineconeClient } = require('@pinecone-database/pinecone');
+
 // Use environment variables for sensitive information
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
@@ -15,6 +19,128 @@ const app = express();
 // Middleware
 app.use(bodyParser.json());
 app.use(cors());
+
+
+const { Configuration, OpenAIApi } = require('openai');
+const { PineconeClient } = require('@pinecone-database/pinecone');
+
+// Utility function to generate embeddings using OpenAI
+async function generateEmbedding(text, openaiApiKey) {
+  const configuration = new Configuration({ apiKey: openaiApiKey });
+  const openai = new OpenAIApi(configuration);
+  const response = await openai.createEmbedding({
+    model: 'text-embedding-3-large',
+    input: text,
+  });
+  return response.data.data[0].embedding;
+}
+
+app.post('/pinecone-data', authenticateToken, async (req, res) => {
+  const { text } = req.body;
+  const userId = req.user.userId;
+
+  try {
+    // Retrieve user's Pinecone credentials
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = userResult.rows[0];
+
+    if (!user.pinecone_api_key || !user.pinecone_index_name) {
+      return res.status(400).json({ error: 'Pinecone credentials not set' });
+    }
+
+    // Generate embeddings
+    const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
+
+    // Upsert to Pinecone
+    const pinecone = new PineconeClient();
+    await pinecone.init({ apiKey: user.pinecone_api_key });
+    const index = pinecone.Index(user.pinecone_index_name);
+
+    const vector = {
+      id: `vector-${Date.now()}`, // Generate a unique ID
+      values: embedding,
+      metadata: { userId },
+    };
+
+    await index.upsert({
+      upsertRequest: {
+        vectors: [vector],
+        namespace: user.pinecone_namespace || '', // Use default namespace if not set
+      },
+    });
+
+    // Store in database
+    const result = await pool.query(
+      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [userId, text, vector.id]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error upserting data:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+app.get('/pinecone-data', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error retrieving data:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+
+app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Retrieve the record to get the vector ID
+    const dataResult = await pool.query(
+      'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (dataResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Data not found' });
+    }
+
+    const { pinecone_vector_id } = dataResult.rows[0];
+
+    // Retrieve user's Pinecone credentials
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = userResult.rows[0];
+
+    // Delete from Pinecone
+    const pinecone = new PineconeClient();
+    await pinecone.init({ apiKey: user.pinecone_api_key });
+    const index = pinecone.Index(user.pinecone_index_name);
+
+    await index.delete1({
+      ids: [pinecone_vector_id],
+      namespace: user.pinecone_namespace || '',
+    });
+
+    // Delete from database
+    await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
+
+    res.json({ message: 'Data deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting data:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+
 
 // Configure the PostgreSQL connection
 const pool = new Pool({
@@ -43,16 +169,16 @@ function authenticateToken(req, res, next) {
 
 
 app.post('/register', async (req, res) => {
-  const { username, password, chatbot_id } = req.body;
+  const { username, password, chatbot_id, pinecone_api_key, pinecone_index_name, pinecone_namespace } = req.body;
 
   try {
     // Hash the password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert the new user into the database with the associated chatbot_id
     const result = await pool.query(
-      'INSERT INTO users (username, password, chatbot_id) VALUES ($1, $2, $3) RETURNING *',
-      [username, hashedPassword, chatbot_id]
+      `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_index_name, pinecone_namespace)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_index_name, pinecone_namespace]
     );
 
     res.status(201).json({ message: 'User registered successfully' });
