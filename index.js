@@ -35,6 +35,7 @@ async function generateEmbedding(text, openaiApiKey) {
 }
 
 
+
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
   const { text } = req.body;
   const userId = req.user.userId;
@@ -55,12 +56,18 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
     const index = pineconeClient.index(user.pinecone_index_name);
 
-    // Create vector
-    const vector = {
-      id: `vector-${Date.now()}`, // Generate a unique ID
-      values: embedding,
-      metadata: { userId },
-    };
+    // **Update starts here**
+
+// Create vector with text included in metadata
+const vector = {
+  id: `vector-${Date.now()}`, // Generate a unique ID
+  values: embedding,
+  metadata: {
+    userId: userId.toString(), // Ensure userId is a string
+    text: text, // Include the text in metadata
+  },
+};
+
 
     // Upsert vector to Pinecone
     await index.namespace(user.pinecone_namespace || '').upsert([vector]);
@@ -68,9 +75,10 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Store in database
     const result = await pool.query(
       `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
-       VALUES ($1, $2, $3) RETURNING *`,
+      VALUES ($1, $2, $3) RETURNING *`,
       [userId, text, vector.id]
     );
+
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -78,6 +86,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 app.get('/pinecone-data', authenticateToken, async (req, res) => {
