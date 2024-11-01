@@ -130,8 +130,10 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
     const index = pineconeClient.index(user.pinecone_index_name);
 
-    // Delete vector from Pinecone
-    await index.namespace(user.pinecone_namespace || '').delete([pinecone_vector_id]);
+    await index.delete1({
+      ids: [pinecone_vector_id],
+      namespace: user.pinecone_namespace || '',
+    });
 
     // Delete from database
     await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
