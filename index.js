@@ -130,7 +130,8 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
     const index = pineconeClient.index(user.pinecone_index_name);
 
-    await index.delete1({
+    // Delete vector from Pinecone
+    await index.delete({
       ids: [pinecone_vector_id],
       namespace: user.pinecone_namespace || '',
     });
@@ -144,6 +145,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
