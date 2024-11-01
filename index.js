@@ -129,12 +129,10 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     // Initialize Pinecone client
     const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
     const index = pineconeClient.index(user.pinecone_index_name);
+    const ns = index.namespace(user.pinecone_namespace || '');
 
-    // Delete vector from Pinecone
-    await index.delete({
-      ids: [pinecone_vector_id],
-      namespace: user.pinecone_namespace || '',
-    });
+    // Delete vector from Pinecone using deleteOne
+    await ns.deleteOne(pinecone_vector_id);
 
     // Delete from database
     await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
@@ -145,6 +143,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
