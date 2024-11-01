@@ -52,37 +52,48 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Pinecone API key not set' });
     }
 
+    // Log indexName and namespace for debugging
+    console.log("Index Name:", indexName, "Namespace:", namespace);
+
     // Generate embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
     // Initialize Pinecone client and connect to selected index
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(indexName);
-    const vector = {
-      id: `vector-${Date.now()}`,
-      values: embedding,
-      metadata: {
-        userId: userId.toString(),
-        text,
-      },
-    };
 
-    // Upsert vector to Pinecone in the selected namespace
-    await index.namespace(namespace || '').upsert([vector]);
+    // Check if the index exists in Pinecone before proceeding
+    try {
+      const index = pineconeClient.index(indexName);
+      const vector = {
+        id: `vector-${Date.now()}`,
+        values: embedding,
+        metadata: {
+          userId: userId.toString(),
+          text,
+        },
+      };
 
-    // Store data in the database
-    const result = await pool.query(
-      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [userId, text, vector.id]
-    );
+      // Upsert vector to Pinecone in the selected namespace
+      await index.namespace(namespace || '').upsert([vector]);
 
-    res.status(201).json(result.rows[0]);
+      // Store data in the database
+      const result = await pool.query(
+        `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [userId, text, vector.id]
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (indexError) {
+      console.error('Error finding or accessing index:', indexError);
+      return res.status(500).json({ error: 'Pinecone index not found or not accessible' });
+    }
   } catch (err) {
     console.error('Error upserting data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
