@@ -96,14 +96,19 @@ app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
       [userId]
     );
 
-    // Parse JSON if it is stored as text
-    const indexes = JSON.parse(result.rows[0].pinecone_indexes);
-    res.json(indexes);
+    // Directly use the `pinecone_indexes` if it's already in JSON format
+    const indexes = result.rows[0].pinecone_indexes;
+
+    // Check if `indexes` is an object, if not, parse it.
+    const parsedIndexes = typeof indexes === 'string' ? JSON.parse(indexes) : indexes;
+
+    res.json(parsedIndexes);
   } catch (err) {
     console.error('Error retrieving indexes:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
