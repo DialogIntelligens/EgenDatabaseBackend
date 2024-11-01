@@ -37,7 +37,7 @@ async function generateEmbedding(text, openaiApiKey) {
 
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { text, indexName, namespace } = req.body;
+  const { text, indexName, namespace } = req.body; // Ensure these are coming in correctly
   const userId = req.user.userId;
 
   try {
@@ -60,39 +60,34 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
     // Initialize Pinecone client and connect to selected index
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+    const index = pineconeClient.index(indexName);  // Use the correct index name
 
-    // Check if the index exists in Pinecone before proceeding
-    try {
-      const index = pineconeClient.index(indexName);
-      const vector = {
-        id: `vector-${Date.now()}`,
-        values: embedding,
-        metadata: {
-          userId: userId.toString(),
-          text,
-        },
-      };
+    const vector = {
+      id: `vector-${Date.now()}`,
+      values: embedding,
+      metadata: {
+        userId: userId.toString(),
+        text,
+      },
+    };
 
-      // Upsert vector to Pinecone in the selected namespace
-      await index.namespace(namespace || '').upsert([vector]);
+    // Upsert vector to Pinecone in the specified namespace
+    await index.upsert([vector], { namespace: namespace }); // Ensure namespace is specified here
 
-      // Store data in the database
-      const result = await pool.query(
-        `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
-         VALUES ($1, $2, $3) RETURNING *`,
-        [userId, text, vector.id]
-      );
+    // Store data in the database
+    const result = await pool.query(
+      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [userId, text, vector.id]
+    );
 
-      res.status(201).json(result.rows[0]);
-    } catch (indexError) {
-      console.error('Error finding or accessing index:', indexError);
-      return res.status(500).json({ error: 'Pinecone index not found or not accessible' });
-    }
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error upserting data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
