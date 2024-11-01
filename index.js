@@ -1,4 +1,4 @@
-import pinecone from '@pinecone-database/pinecone';
+import { Pinecone } from '@pinecone-database/pinecone';
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
@@ -51,9 +51,8 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Generate embeddings
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    const pineconeClient = new pinecone.PineconeClient();
-    await pineconeClient.init({ apiKey: user.pinecone_api_key });
-    const index = pineconeClient.Index(user.pinecone_index_name);    
+    const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
+    const index = pineconeClient.index(user.pinecone_index_name);
 
     const vector = {
       id: `vector-${Date.now()}`, // Generate a unique ID
