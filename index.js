@@ -51,21 +51,19 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Generate embeddings
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
+    // Initialize Pinecone client
     const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
     const index = pineconeClient.index(user.pinecone_index_name);
 
+    // Create vector
     const vector = {
       id: `vector-${Date.now()}`, // Generate a unique ID
       values: embedding,
       metadata: { userId },
     };
 
-    await index.upsert({
-      upsertRequest: {
-        vectors: [vector],
-        namespace: user.pinecone_namespace || '', // Use default namespace if not set
-      },
-    });
+    // Upsert vector to Pinecone
+    await index.namespace(user.pinecone_namespace || '').upsert([vector]);
 
     // Store in database
     const result = await pool.query(
@@ -80,6 +78,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 app.get('/pinecone-data', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -118,15 +117,12 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
     const user = userResult.rows[0];
 
-    // Delete from Pinecone
-    const pinecone = new PineconeClient();
-    await pinecone.init({ apiKey: user.pinecone_api_key });
-    const index = pinecone.Index(user.pinecone_index_name);
+    // Initialize Pinecone client
+    const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
+    const index = pineconeClient.index(user.pinecone_index_name);
 
-    await index.delete1({
-      ids: [pinecone_vector_id],
-      namespace: user.pinecone_namespace || '',
-    });
+    // Delete vector from Pinecone
+    await index.namespace(user.pinecone_namespace || '').delete([pinecone_vector_id]);
 
     // Delete from database
     await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
@@ -137,6 +133,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
