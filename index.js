@@ -87,20 +87,24 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
 
 
-app.get('/pinecone-data', authenticateToken, async (req, res) => {
+app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
     const result = await pool.query(
-      'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
+      'SELECT pinecone_indexes FROM users WHERE id = $1',
       [userId]
     );
-    res.json(result.rows);
+
+    // Parse JSON if it is stored as text
+    const indexes = JSON.parse(result.rows[0].pinecone_indexes);
+    res.json(indexes);
   } catch (err) {
-    console.error('Error retrieving data:', err);
+    console.error('Error retrieving indexes:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
