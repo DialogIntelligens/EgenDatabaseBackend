@@ -60,7 +60,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
     // Initialize Pinecone client and connect to selected index
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(indexName);  // Use the correct index name
+    const index = pineconeClient.index(namespace);  // Use the correct index name
 
     const vector = {
       id: `vector-${Date.now()}`,
@@ -74,12 +74,12 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Upsert vector to Pinecone in the specified namespace
     await index.upsert([vector], { namespace: namespace }); // Ensure namespace is specified here
 
-    // Store data in the database
     const result = await pool.query(
-      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [userId, text, vector.id]
+      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [userId, text, vector.id, indexName] // Add indexName here
     );
+    
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -139,9 +139,9 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Retrieve the record to get the vector ID
+    // Retrieve the record to get the vector ID and index name
     const dataResult = await pool.query(
-      'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
+      'SELECT pinecone_vector_id, pinecone_index_name FROM pinecone_data WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -149,19 +149,20 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Data not found' });
     }
 
-    const { pinecone_vector_id } = dataResult.rows[0];
+    const { pinecone_vector_id, pinecone_index_name } = dataResult.rows[0];
 
-    // Retrieve user's Pinecone credentials
-    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    // Retrieve user's Pinecone API key and namespace
+    const userResult = await pool.query('SELECT pinecone_api_key, pinecone_namespace FROM users WHERE id = $1', [userId]);
     const user = userResult.rows[0];
+    const pineconeApiKey = user.pinecone_api_key;
+    const pineconeNamespace = user.pinecone_namespace || ''; // Default to empty string if namespace is not set
 
     // Initialize Pinecone client
-    const pineconeClient = new Pinecone({ apiKey: user.pinecone_api_key });
-    const index = pineconeClient.index(user.pinecone_index_name);
-    const ns = index.namespace(user.pinecone_namespace || '');
+    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+    const index = pineconeClient.index(pinecone_index_name); // Use the stored index name
 
-    // Delete vector from Pinecone using deleteOne
-    await ns.deleteOne(pinecone_vector_id);
+    // Delete vector from Pinecone in the specified namespace
+    await index.namespace(pineconeNamespace).deleteOne(pinecone_vector_id);
 
     // Delete from database
     await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
@@ -172,6 +173,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
