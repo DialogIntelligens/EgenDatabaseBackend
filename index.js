@@ -261,10 +261,10 @@ app.post('/login', async (req, res) => {
 
 app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   const conversationId = req.params.id;
-  const { bug_status, notes } = req.body;
+  const { bug_status, notes, lacking_info } = req.body;
 
-  if (!bug_status && notes === undefined) {
-    return res.status(400).json({ error: 'At least one of bug_status or notes must be provided' });
+  if (bug_status === undefined && notes === undefined && lacking_info === undefined) {
+    return res.status(400).json({ error: 'At least one of bug_status, notes, or lacking_info must be provided' });
   }
 
   try {
@@ -272,7 +272,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
     const values = [];
     let idx = 1;
 
-    if (bug_status) {
+    if (bug_status !== undefined) {
       fields.push(`bug_status = $${idx++}`);
       values.push(bug_status);
     }
@@ -280,6 +280,11 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
     if (notes !== undefined) {
       fields.push(`notes = $${idx++}`);
       values.push(notes);
+    }
+
+    if (lacking_info !== undefined) {
+      fields.push(`lacking_info = $${idx++}`);
+      values.push(lacking_info);
     }
 
     values.push(conversationId);
@@ -297,6 +302,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 
 
@@ -399,31 +405,31 @@ app.post('/delete', async (req, res) => {
 });
 
 
-
-
-
 app.get('/conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.query;
+  const { chatbot_id, lacking_info } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
 
   try {
-    // Query to select all rows from the conversations table where chatbot_id matches
-    const result = await pool.query(
-      'SELECT * FROM conversations WHERE chatbot_id = $1',
-      [chatbot_id]
-    );
+    let queryText = 'SELECT * FROM conversations WHERE chatbot_id = $1';
+    let queryParams = [chatbot_id];
 
-    // Return the result as JSON response
+    if (lacking_info === 'true' || lacking_info === 'false') {
+      queryText += ' AND lacking_info = $2';
+      queryParams.push(lacking_info === 'true');
+    }
+
+    const result = await pool.query(queryText, queryParams);
+
     res.json(result.rows);
   } catch (err) {
-    // Log the error and return a 500 error response
     console.error('Error retrieving data:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 app.post('/update-conversations', async (req, res) => {
   const { chatbot_id, prediction_url } = req.body;
