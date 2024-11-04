@@ -58,9 +58,9 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Generate embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Initialize Pinecone client and connect to selected index using indexName
+    // Initialize Pinecone client and connect to selected index
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(indexName);  // Corrected line
+    const index = pineconeClient.index(namespace);  // Use the correct index name
 
     const vector = {
       id: `vector-${Date.now()}`,
@@ -74,12 +74,12 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Upsert vector to Pinecone in the specified namespace
     await index.upsert([vector], { namespace: namespace }); // Ensure namespace is specified here
 
-    // Corrected insert query to include both pinecone_index_name and namespace
     const result = await pool.query(
-      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name, namespace)
+      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [userId, text, vector.id, indexName, namespace] // Pass indexName instead of namespace
+      [userId, text, vector.id, namespace, indexName]
     );
+    
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -87,7 +87,6 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
-
 
 
 
