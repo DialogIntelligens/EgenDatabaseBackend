@@ -300,7 +300,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
 
 
-async function upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating) {
+async function upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -308,19 +308,19 @@ async function upsertConversation(user_id, chatbot_id, conversation_data, emne, 
     // Try to update first
     const updateResult = await client.query(
       `UPDATE conversations 
-       SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6
+       SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7
        WHERE user_id = $1 AND chatbot_id = $2
        RETURNING *`,
-      [user_id, chatbot_id, conversation_data, emne, score, customer_rating]
+      [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
     );
     
     if (updateResult.rows.length === 0) {
       // If no row was updated, insert a new one
       const insertResult = await client.query(
-        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating) 
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
-        [user_id, chatbot_id, conversation_data, emne, score, customer_rating]
+        [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
       );
       await client.query('COMMIT');
       return insertResult.rows[0];
@@ -339,7 +339,7 @@ async function upsertConversation(user_id, chatbot_id, conversation_data, emne, 
 
 
 app.post('/conversations', async (req, res) => {
-  let { conversation_data, user_id, chatbot_id, emne, score, customer_rating } = req.body;
+  let { conversation_data, user_id, chatbot_id, emne, score, customer_rating, lacking_info } = req.body;
 
   // If a token is provided, authenticate it
   const authHeader = req.headers['authorization'];
@@ -364,7 +364,7 @@ app.post('/conversations', async (req, res) => {
   try {
     conversation_data = JSON.stringify(conversation_data);
 
-    const result = await upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating);
+    const result = await upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info);
 
     res.status(201).json(result);
   } catch (err) {
@@ -376,6 +376,8 @@ app.post('/conversations', async (req, res) => {
     });
   }
 });
+
+
 
 
 app.post('/delete', async (req, res) => {
@@ -458,10 +460,9 @@ app.post('/update-conversations', async (req, res) => {
   }
 });
 
-// Function to get emne and score from the provided external API
-async function getEmneAndScore(conversationText, prediction_url) {
+const getEmneAndScore = async (conversationText) => {
   try {
-    const response = await fetch(prediction_url, {
+    const response = await fetch("https://den-utrolige-snebold.onrender.com/api/v1/prediction/8cf402f5-4796-4929-8853-e078f93bf7fe", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -470,16 +471,22 @@ async function getEmneAndScore(conversationText, prediction_url) {
     });
     const result = await response.json();
     const text = result.text;
+
     const emneMatch = text.match(/Emne\(([^)]+)\)/);
     const scoreMatch = text.match(/Happy\(([^)]+)\)/);
+    const infoMatch = text.match(/info\(([^)]+)\)/i); // Case-insensitive match
+
     const emne = emneMatch ? emneMatch[1] : null;
     const score = scoreMatch ? scoreMatch[1] : null;
-    return { emne, score };
+    const lacking_info = infoMatch && infoMatch[1].toLowerCase() === 'yes' ? true : false;
+
+    return { emne, score, lacking_info };
   } catch (error) {
-    console.error('Error getting emne and score:', error);
-    return { emne: null, score: null };
+    console.error('Error getting emne, score, and lacking_info:', error);
+    return { emne: null, score: null, lacking_info: false };
   }
-}
+};
+
 
 
 
