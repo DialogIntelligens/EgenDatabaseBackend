@@ -76,8 +76,8 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [userId, text, vector.id, namespace]
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [userId, text, vector.id, namespace, indexName]
     );
     
 
