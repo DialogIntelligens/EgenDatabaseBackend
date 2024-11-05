@@ -168,7 +168,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
 
     // Initialize Pinecone client and delete vector from specified index and namespace
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(pinecone_index_name);
+    const index = pineconeClient.index(namespace);
 
     await index.deleteOne(pinecone_vector_id, { namespace: namespace });  // Specify namespace
 
