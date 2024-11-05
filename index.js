@@ -37,7 +37,7 @@ async function generateEmbedding(text, openaiApiKey) {
 
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { text, indexName, namespace } = req.body; // Ensure these are coming in correctly
+  const { text, indexName, namespace } = req.body;
   const userId = req.user.userId;
 
   try {
@@ -58,9 +58,9 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     // Generate embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Initialize Pinecone client and connect to selected index
+    // Initialize Pinecone client and connect to the correct index
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(namespace);  // Use the correct index name
+    const index = pineconeClient.index(namespace); // Use indexName here
 
     const vector = {
       id: `vector-${Date.now()}`,
@@ -72,14 +72,13 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     };
 
     // Upsert vector to Pinecone in the specified namespace
-    await index.upsert([vector], { namespace: namespace }); // Ensure namespace is specified here
+    await index.upsert([vector], { namespace: namespace }); // Specify namespace here
 
     const result = await pool.query(
-      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [userId, text, vector.id, namespace]
+      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name, namespace)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [userId, text, vector.id, indexName, namespace]
     );
-    
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -87,6 +86,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
@@ -123,7 +123,13 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
       'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
       [userId]
     );
-    res.json(result.rows);
+    res.json(result.rows.map(row => ({
+      text: row.text,
+      id: row.id,
+      pinecone_index_name: row.pinecone_index_name,
+      namespace: row.namespace,
+      // Add other fields as necessary
+    })));
   } catch (err) {
     console.error('Error retrieving data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
@@ -134,14 +140,15 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
 
 
 
+
 app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Retrieve the record to get the vector ID and pinecone index name
+    // Retrieve the record to get the vector ID, pinecone index name, and namespace
     const dataResult = await pool.query(
-      'SELECT pinecone_vector_id, pinecone_index_name FROM pinecone_data WHERE id = $1 AND user_id = $2',
+      'SELECT pinecone_vector_id, pinecone_index_name, namespace FROM pinecone_data WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -149,7 +156,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Data not found' });
     }
 
-    const { pinecone_vector_id, pinecone_index_name } = dataResult.rows[0];
+    const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
 
     // Retrieve user's Pinecone API key
     const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [userId]);
@@ -159,11 +166,11 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Pinecone API key not set' });
     }
 
-    // Initialize Pinecone client and delete vector from specified index
+    // Initialize Pinecone client and delete vector from specified index and namespace
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(pinecone_index_name);
+    const index = pineconeClient.index(namespace);
 
-    await index.deleteOne(pinecone_vector_id);  // Remove specific vector by ID
+    await index.deleteOne(pinecone_vector_id, { namespace: namespace });  // Specify namespace
 
     // Delete from database
     await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
@@ -174,6 +181,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
