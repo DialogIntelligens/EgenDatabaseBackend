@@ -72,7 +72,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     };
 
     // Upsert vector to Pinecone in the specified namespace
-    await index.upsert([vector], { namespace: namespace }); // Specify namespace here
+    await index.upsert([vector], { namespace: indexName }); // Specify namespace here
 
     const result = await pool.query(
       `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name, namespace)
