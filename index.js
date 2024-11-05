@@ -465,11 +465,11 @@ app.post('/update-conversations', async (req, res) => {
 
     for (let conversation of conversations.rows) {
       const conversationText = conversation.conversation_data;
-      const { emne, score } = await getEmneAndScore(conversationText, prediction_url);
+      const { emne, score, lacking_info } = await getEmneAndScore(conversationText, prediction_url);
 
       await pool.query(
-        `UPDATE conversations SET emne = $1, score = $2 WHERE id = $3`,
-        [emne, score, conversation.id]
+        `UPDATE conversations SET emne = $1, score = $2, lacking_info = $3 WHERE id = $4`,
+        [emne, score, lacking_info, conversation.id]
       );
     }
 
@@ -479,6 +479,7 @@ app.post('/update-conversations', async (req, res) => {
     res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
+
 
 const getEmneAndScore = async (conversationText) => {
   try {
