@@ -37,8 +37,12 @@ async function generateEmbedding(text, openaiApiKey) {
 
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { text, indexName, namespace } = req.body;
+  const { title, text, indexName, namespace } = req.body; // Include title
   const userId = req.user.userId;
+
+  if (!title || !text || !indexName || !namespace) {
+    return res.status(400).json({ error: 'Title, text, indexName, and namespace are required' });
+  }
 
   try {
     // Retrieve user's Pinecone API key
@@ -68,6 +72,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       metadata: {
         userId: userId.toString(),
         text,
+        title, // Optionally include title in metadata
       },
     };
 
@@ -75,9 +80,9 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     await index.upsert([vector], { namespace: namespace }); // Specify namespace here
 
     const result = await pool.query(
-      `INSERT INTO pinecone_data (user_id, text, pinecone_vector_id, pinecone_index_name, namespace)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [userId, text, vector.id, indexName, namespace]
+      `INSERT INTO pinecone_data (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [userId, title, text, vector.id, indexName, namespace] // Include title
     );
 
     res.status(201).json(result.rows[0]);
@@ -86,6 +91,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 
 
@@ -124,6 +130,7 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
       [userId]
     );
     res.json(result.rows.map(row => ({
+      title: row.title, // Include title
       text: row.text,
       id: row.id,
       pinecone_index_name: row.pinecone_index_name,
