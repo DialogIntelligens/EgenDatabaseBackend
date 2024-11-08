@@ -18,9 +18,11 @@ const PORT = process.env.PORT || 3000;
 // Initialize Express app
 const app = express();
 
-// Middleware
-app.use(bodyParser.json());
+// After
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
+
 
 
 async function generateEmbedding(text, openaiApiKey) {
