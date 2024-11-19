@@ -225,16 +225,16 @@ function authenticateToken(req, res, next) {
 
 
 app.post('/register', async (req, res) => {
-  const { username, password, chatbot_id, pinecone_api_key, pinecone_index_name, pinecone_namespace } = req.body;
+  const { username, password, chatbot_id, pinecone_api_key, pinecone_indexes } = req.body;
 
   try {
     // Hash the password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_index_name, pinecone_namespace)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_index_name, pinecone_namespace]
+      `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_indexes)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_indexes]
     );
 
     res.status(201).json({ message: 'User registered successfully' });
