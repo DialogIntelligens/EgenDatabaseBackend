@@ -490,9 +490,9 @@ app.post('/update-conversations', async (req, res) => {
 });
 
 
-const getEmneAndScore = async (conversationText) => {
+const getEmneAndScore = async (conversationText, prediction_url) => {
   try {
-    const response = await fetch("https://den-utrolige-snebold.onrender.com/api/v1/prediction/8cf402f5-4796-4929-8853-e078f93bf7fe", {
+    const response = await fetch(prediction_url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
