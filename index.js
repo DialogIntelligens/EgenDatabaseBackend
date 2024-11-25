@@ -96,7 +96,61 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
 
 
+app.post('/pinecone-data-update', authenticateToken, async (req, res) => {
+  const { title, text, indexName, namespace } = req.body; // Include title
+  const userId = req.user.userId;
 
+  if (!title || !text || !indexName || !namespace) {
+    return res.status(400).json({ error: 'Title, text, indexName, and namespace are required' });
+  }
+
+  try {
+    // Retrieve user's Pinecone API key
+    const userResult = await pool.query(
+      'SELECT pinecone_api_key FROM users WHERE id = $1',
+      [userId]
+    );
+    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
+
+    if (!pineconeApiKey) {
+      return res.status(400).json({ error: 'Pinecone API key not set' });
+    }
+
+    // Log indexName and namespace for debugging
+    console.log("Index Name:", indexName, "Namespace:", namespace);
+
+    // Generate embedding
+    const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
+
+    // Initialize Pinecone client and connect to the correct index
+    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+    const index = pineconeClient.index(namespace); // Use indexName here
+
+    const vector = {
+      id: `vector-${Date.now()}`,
+      values: embedding,
+      metadata: {
+        userId: userId.toString(),
+        text,
+        title, // Optionally include title in metadata
+      },
+    };
+
+    // Upsert vector to Pinecone in the specified namespace
+    await index.upsert([vector], { namespace: namespace }); // Specify namespace here
+
+    const result = await pool.query(
+      `INSERT INTO pinecone_data (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [userId, title, text, vector.id, indexName, namespace] // Include title
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error upserting data:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
 
 
 
