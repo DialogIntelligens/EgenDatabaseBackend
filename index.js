@@ -9,6 +9,8 @@ import OpenAI from 'openai';
 
 const { Pool } = pg;
 
+
+
 // Use environment variables for sensitive information
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
@@ -36,72 +38,61 @@ async function generateEmbedding(text, openaiApiKey) {
 
 
 
-app.put('/pinecone-data/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { title, text } = req.body;
+app.post('/pinecone-data', authenticateToken, async (req, res) => {
+  const { title, text, indexName, namespace } = req.body; // Include title
   const userId = req.user.userId;
 
-  if (!title || !text) {
-    return res.status(400).json({ error: 'Title and text are required' });
+  if (!title || !text || !indexName || !namespace) {
+    return res.status(400).json({ error: 'Title, text, indexName, and namespace are required' });
   }
 
   try {
-    // Retrieve the existing record
-    const dataResult = await pool.query(
-      'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
-      [id, userId]
-    );
-
-    if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found' });
-    }
-
-    const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
-
     // Retrieve user's Pinecone API key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query(
+      'SELECT pinecone_api_key FROM users WHERE id = $1',
+      [userId]
+    );
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
 
     if (!pineconeApiKey) {
       return res.status(400).json({ error: 'Pinecone API key not set' });
     }
 
-    // Generate new embedding
+    // Log indexName and namespace for debugging
+    console.log("Index Name:", indexName, "Namespace:", namespace);
+
+    // Generate embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Initialize Pinecone client
+    // Initialize Pinecone client and connect to the correct index
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(namespace);
+    const index = pineconeClient.index(namespace); // Use indexName here
 
-    // Upsert the vector in Pinecone using the same ID
-    await index.upsert(
-      [
-        {
-          id: pinecone_vector_id,
-          values: embedding,
-          metadata: {
-            userId: userId.toString(),
-            text,
-            title,
-          },
-        },
-      ],
-      { namespace: namespace }
-    );
+    const vector = {
+      id: `vector-${Date.now()}`,
+      values: embedding,
+      metadata: {
+        userId: userId.toString(),
+        text,
+        title, // Optionally include title in metadata
+      },
+    };
 
-    // Update the data in the database
+    // Upsert vector to Pinecone in the specified namespace
+    await index.upsert([vector], { namespace: namespace }); // Specify namespace here
+
     const result = await pool.query(
-      'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 AND user_id = $4 RETURNING *',
-      [title, text, id, userId]
+      `INSERT INTO pinecone_data (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [userId, title, text, vector.id, indexName, namespace] // Include title
     );
 
-    res.json(result.rows[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Error updating data:', err);
+    console.error('Error upserting data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
-
 
 
 
@@ -429,74 +420,6 @@ app.post('/delete', async (req, res) => {
     res.status(500).json({ error: 'Something went wrong' });
   }
 });
-
-app.put('/pinecone-data/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { title, text } = req.body;
-  const userId = req.user.userId;
-
-  if (!title || !text) {
-    return res.status(400).json({ error: 'Title and text are required' });
-  }
-
-  try {
-    // Retrieve the existing record
-    const dataResult = await pool.query(
-      'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
-      [id, userId]
-    );
-
-    if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found' });
-    }
-
-    const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
-
-    // Retrieve user's Pinecone API key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [userId]);
-    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-
-    if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set' });
-    }
-
-    // Generate new embedding
-    const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
-
-    // Initialize Pinecone client
-    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(pinecone_index_name);
-
-    // Upsert the vector in Pinecone using the same ID
-    await index.upsert(
-      [
-        {
-          id: pinecone_vector_id,
-          values: embedding,
-          metadata: {
-            userId: userId.toString(),
-            text,
-            title,
-          },
-        },
-      ],
-      { namespace: namespace }
-    );
-
-
-    // Update the data in the database
-    const result = await pool.query(
-      'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 AND user_id = $4 RETURNING *',
-      [title, text, id, userId]
-    );
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating data:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
-
 
 
 app.get('/conversations', authenticateToken, async (req, res) => {
