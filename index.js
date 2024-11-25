@@ -71,7 +71,7 @@ app.put('/pinecone-data/:id', authenticateToken, async (req, res) => {
 
     // Initialize Pinecone client
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(pinecone_index_name);
+    const index = pineconeClient.index(namespace);
 
     // Upsert the vector in Pinecone using the same ID
     await index.upsert(
@@ -86,7 +86,7 @@ app.put('/pinecone-data/:id', authenticateToken, async (req, res) => {
           },
         },
       ],
-      { namespace: pinecone_index_name }
+      { namespace: namespace }
     );
 
     // Update the data in the database
