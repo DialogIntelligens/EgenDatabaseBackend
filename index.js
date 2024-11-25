@@ -86,7 +86,7 @@ app.put('/pinecone-data/:id', authenticateToken, async (req, res) => {
           },
         },
       ],
-      { namespace: namespace }
+      { namespace: pinecone_index_name }
     );
 
     // Update the data in the database
