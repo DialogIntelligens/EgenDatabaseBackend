@@ -36,6 +36,46 @@ async function generateEmbedding(text, openaiApiKey) {
   return response.data[0].embedding;
 }
 
+app.post('/crm', authenticateToken, async (req, res) => {
+  const { websiteuserid, usedChatbot, madePurchase } = req.body;
+
+  if (!websiteuserid || usedChatbot === undefined || madePurchase === undefined) {
+    return res.status(400).json({ error: 'Missing required fields: websiteuserid, usedChatbot, madePurchase' });
+  }
+
+  try {
+    const query = `
+      INSERT INTO crm (websiteuserid, usedChatbot, madePurchase)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (websiteuserid)
+      DO UPDATE SET usedChatbot = EXCLUDED.usedChatbot, madePurchase = EXCLUDED.madePurchase
+      RETURNING *
+    `;
+    const values = [websiteuserid, usedChatbot, madePurchase];
+    const result = await pool.query(query, values);
+
+    // Optional: If you want to log to Google Analytics, send a Measurement Protocol event.
+    // Ensure you have a stable client ID and your GA tracking ID is stored in `process.env.GA_TRACKING_ID`.
+    await fetch('https://www.google-analytics.com/collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        v: '1',
+        tid: process.env.GA_TRACKING_ID,
+        cid: websiteuserid,
+        t: 'event',
+        ec: 'crm',
+        ea: (madePurchase ? 'purchase' : (usedChatbot ? 'chatbot_interaction' : 'website_visit')),
+        el: 'CRM update'
+      })
+    });
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
 
 
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
