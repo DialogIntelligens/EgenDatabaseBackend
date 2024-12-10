@@ -37,15 +37,17 @@ async function generateEmbedding(text, openaiApiKey) {
 }
 
 app.post('/crm', async (req, res) => {
-
-  const { websiteuserid, usedChatbot, madePurchase } = req.body;
+  const { websiteuserid, usedChatbot, madePurchase, chatbot_id } = req.body;
 
   if (!websiteuserid) {
     return res.status(400).json({ error: 'Missing websiteuserid' });
   }
 
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'Missing chatbot_id' });
+  }
+
   try {
-    // Retrieve the current state from the database
     const existingResult = await pool.query('SELECT * FROM crm WHERE websiteuserid = $1', [websiteuserid]);
     let currentUsedChatbot = false;
     let currentMadePurchase = false;
@@ -55,24 +57,23 @@ app.post('/crm', async (req, res) => {
       currentMadePurchase = existingResult.rows[0].madepurchase;
     }
 
-    // Merge the existing values with the requested ones
-    // If the request sets a value to true, keep it true.
-    // Never revert back to false once it has been true.
+    // Preserve once-true-always-true logic
     const finalUsedChatbot = currentUsedChatbot || usedChatbot === true;
     const finalMadePurchase = currentMadePurchase || madePurchase === true;
 
     const query = `
-      INSERT INTO crm (websiteuserid, usedChatbot, madePurchase)
-      VALUES ($1, $2, $3)
+      INSERT INTO crm (websiteuserid, usedChatbot, madePurchase, chatbot_id)
+      VALUES ($1, $2, $3, $4)
       ON CONFLICT (websiteuserid)
-      DO UPDATE SET usedChatbot = EXCLUDED.usedChatbot, madePurchase = EXCLUDED.madePurchase
+      DO UPDATE SET usedChatbot = EXCLUDED.usedChatbot,
+                    madePurchase = EXCLUDED.madePurchase,
+                    chatbot_id = EXCLUDED.chatbot_id
       RETURNING *
     `;
-    const values = [websiteuserid, finalUsedChatbot, finalMadePurchase];
+    const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
     const result = await pool.query(query, values);
 
-    // Optional: Send event to Google Analytics if desired
-    // Ensure you have a stable client ID and GA_TRACKING_ID environment variable set
+    // Optional: Send event to Google Analytics
     await fetch('https://www.google-analytics.com/collect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -92,6 +93,8 @@ app.post('/crm', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
+
+
 
 
 
