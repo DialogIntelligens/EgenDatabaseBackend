@@ -487,35 +487,16 @@ app.post('/delete', async (req, res) => {
 
 
 app.get('/conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, lacking_info, start_date, end_date, limit, offset } = req.query;
+  const { chatbot_id, lacking_info, start_date, end_date } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
 
   try {
-    // First, get the total count of conversations matching the filters
-    let countQuery = 'SELECT COUNT(*) FROM conversations WHERE chatbot_id = $1';
-    const countParams = [chatbot_id];
-    let paramIndex = 2;
-
-    if (lacking_info === 'true' || lacking_info === 'false') {
-      countQuery += ` AND lacking_info = $${paramIndex++}`;
-      countParams.push(lacking_info === 'true');
-    }
-
-    if (start_date && end_date) {
-      countQuery += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      countParams.push(start_date, end_date);
-    }
-
-    const countResult = await pool.query(countQuery, countParams);
-    const totalCount = parseInt(countResult.rows[0].count, 10);
-
-    // Now, get the paginated result set
-    paramIndex = 2;
     let queryText = 'SELECT * FROM conversations WHERE chatbot_id = $1';
-    const queryParams = [chatbot_id];
+    let queryParams = [chatbot_id];
+    let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
       queryText += ` AND lacking_info = $${paramIndex++}`;
@@ -527,25 +508,14 @@ app.get('/conversations', authenticateToken, async (req, res) => {
       queryParams.push(start_date, end_date);
     }
 
-    // Default limit and offset if none provided
-    const limitValue = parseInt(limit, 10) || 20;
-    const offsetValue = parseInt(offset, 10) || 0;
-
-    // Order by created_at DESC for newest first
-    queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    queryParams.push(limitValue, offsetValue);
-
     const result = await pool.query(queryText, queryParams);
 
-    // Set the total count in the response header
-    res.set('X-Total-Count', totalCount);
     res.json(result.rows);
   } catch (err) {
     console.error('Error retrieving data:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
-
 
 
 app.post('/update-conversations', async (req, res) => {
