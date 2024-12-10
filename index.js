@@ -97,12 +97,13 @@ app.post('/crm', async (req, res) => {
 
 app.get('/crm', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM crm ORDER BY websiteuserid ASC');
+    const result = await pool.query('SELECT * FROM crm ORDER BY created_at DESC');
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
+
 
 
 
