@@ -36,7 +36,8 @@ async function generateEmbedding(text, openaiApiKey) {
   return response.data[0].embedding;
 }
 
-app.post('/crm', authenticateToken, async (req, res) => {
+app.post('/crm', async (req, res) => {
+
   const { websiteuserid, usedChatbot, madePurchase } = req.body;
 
   if (!websiteuserid) {
