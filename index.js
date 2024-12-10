@@ -464,6 +464,45 @@ app.post('/conversations', async (req, res) => {
   }
 });
 
+app.get('/conversations/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { details } = req.query;
+
+  try {
+    // Fetch the conversation by id
+    const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const conversation = result.rows[0];
+
+    // If details=true, return the full conversation_data
+    // Otherwise, return minimal details.
+    if (details === 'true') {
+      // conversation_data is stored as JSON string, parse it if not null
+      const fullData = {
+        ...conversation,
+        conversation_data: conversation.conversation_data ? JSON.parse(conversation.conversation_data) : []
+      };
+      return res.json(fullData);
+    } else {
+      // Return minimal fields if details=false or not specified
+      const minimalData = {
+        id: conversation.id,
+        created_at: conversation.created_at,
+        emne: conversation.emne,
+        customer_rating: conversation.customer_rating,
+        bug_status: conversation.bug_status
+      };
+      return res.json(minimalData);
+    }
+  } catch (error) {
+    console.error('Error retrieving conversation:', error);
+    return res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
 
 
 
