@@ -517,6 +517,52 @@ app.get('/conversations', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/conversations-metadata', authenticateToken, async (req, res) => {
+  const { chatbot_id, lacking_info, start_date, end_date } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    let queryText = 'SELECT id, created_at, emne, customer_rating, bug_status FROM conversations WHERE chatbot_id = $1';
+    let queryParams = [chatbot_id];
+    let paramIndex = 2;
+
+    if (lacking_info === 'true' || lacking_info === 'false') {
+      queryText += ` AND lacking_info = $${paramIndex++}`;
+      queryParams.push(lacking_info === 'true');
+    }
+
+    if (start_date && end_date) {
+      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    const result = await pool.query(queryText, queryParams);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error retrieving metadata:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+app.get('/conversation/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error retrieving conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+
+
 
 app.post('/update-conversations', async (req, res) => {
   const { chatbot_id, prediction_url } = req.body;
