@@ -88,7 +88,21 @@ app.get('/crm', async (req, res) => {
   }
 });
 
-
+app.post('/crm-data-for-user', async (req, res) => {
+  const { user_id, chatbot_id } = req.body;
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'Missing user_id or chatbot_id' });
+  }
+  try {
+    const result = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [user_id, chatbot_id]);
+    if (result.rows.length === 0) {
+      return res.json({ usedChatbot: false, madePurchase: false });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
 
 
 
