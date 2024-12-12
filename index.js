@@ -48,7 +48,7 @@ app.post('/crm', async (req, res) => {
   }
 
   try {
-    const existingResult = await pool.query('SELECT * FROM crm WHERE websiteuserid = $1', [websiteuserid]);
+    const existingResult = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [websiteuserid, chatbot_id]);
     let currentUsedChatbot = false;
     let currentMadePurchase = false;
 
@@ -57,42 +57,26 @@ app.post('/crm', async (req, res) => {
       currentMadePurchase = existingResult.rows[0].madepurchase;
     }
 
-    // Preserve once-true-always-true logic
-    const finalUsedChatbot = currentUsedChatbot || usedChatbot === true;
-    const finalMadePurchase = currentMadePurchase || madePurchase === true;
+    const finalUsedChatbot = currentUsedChatbot || (usedChatbot === true);
+    const finalMadePurchase = currentMadePurchase || (madePurchase === true);
 
     const query = `
-      INSERT INTO crm (websiteuserid, usedChatbot, madePurchase, chatbot_id)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (websiteuserid)
+      INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
+      VALUES ($1, $1, $2, $3, $4)
+      ON CONFLICT (user_id, chatbot_id)
       DO UPDATE SET usedChatbot = EXCLUDED.usedChatbot,
-                    madePurchase = EXCLUDED.madePurchase,
-                    chatbot_id = EXCLUDED.chatbot_id
+                    madePurchase = EXCLUDED.madePurchase
       RETURNING *
     `;
     const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
     const result = await pool.query(query, values);
-
-    // Optional: Send event to Google Analytics
-    await fetch('https://www.google-analytics.com/collect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        v: '1',
-        tid: process.env.GA_TRACKING_ID,
-        cid: websiteuserid,
-        t: 'event',
-        ec: 'crm',
-        ea: (finalMadePurchase ? 'purchase' : (finalUsedChatbot ? 'chatbot_interaction' : 'website_visit')),
-        el: 'CRM update'
-      })
-    });
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
+
 
 
 app.get('/crm', async (req, res) => {
