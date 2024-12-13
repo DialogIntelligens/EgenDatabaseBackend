@@ -61,14 +61,17 @@ app.post('/crm', async (req, res) => {
     const finalMadePurchase = currentMadePurchase || (madePurchase === true);
 
     const query = `
-      INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
-      VALUES ($1, $1, $2, $3, $4)
-      ON CONFLICT (user_id, chatbot_id)
-      DO UPDATE SET usedChatbot = EXCLUDED.usedChatbot,
-                    madePurchase = EXCLUDED.madePurchase
-      RETURNING *
-    `;
-    const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
+    INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
+    VALUES ($1, $1, $2, $3, $4)
+    ON CONFLICT (websiteuserid)
+    DO UPDATE SET
+      usedChatbot = COALESCE(crm.usedChatbot, EXCLUDED.usedChatbot),
+      madePurchase = COALESCE(crm.madePurchase, EXCLUDED.madePurchase),
+      chatbot_id = EXCLUDED.chatbot_id
+    RETURNING *;
+  `;
+  const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
+  
     const result = await pool.query(query, values);
 
     res.status(201).json(result.rows[0]);
