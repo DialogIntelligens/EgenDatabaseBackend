@@ -65,11 +65,13 @@ app.post('/crm', async (req, res) => {
     VALUES ($1, $1, $2, $3, $4)
     ON CONFLICT (websiteuserid)
     DO UPDATE SET
-      usedChatbot = COALESCE(crm.usedChatbot, EXCLUDED.usedChatbot),
-      madePurchase = COALESCE(crm.madePurchase, EXCLUDED.madePurchase),
+      usedChatbot = COALESCE(EXCLUDED.usedChatbot, crm.usedChatbot),
+      madePurchase = COALESCE(EXCLUDED.madePurchase, crm.madePurchase),
       chatbot_id = EXCLUDED.chatbot_id
     RETURNING *;
   `;
+  
+  
   const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
   
     const result = await pool.query(query, values);
