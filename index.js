@@ -369,9 +369,9 @@ app.post('/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_indexes)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_indexes]
+      `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase]
     );
 
     res.status(201).json({ message: 'User registered successfully' });
@@ -386,32 +386,23 @@ app.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    // Check if the user exists in the database
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
-
     const user = result.rows[0];
-
-    // Compare the provided password with the stored hashed password
     const isMatch = await bcrypt.compare(password, user.password);
-
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
-
-    // Generate a JWT token
     const token = jwt.sign({ userId: user.id }, SECRET_KEY, { expiresIn: '1h' });
-
-    // Return the token and the chatbotID associated with the user
-    res.json({ token, chatbot_id: user.chatbot_id });
+    res.json({ token, chatbot_id: user.chatbot_id, show_purchase: user.show_purchase });
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   const conversationId = req.params.id;
