@@ -362,7 +362,7 @@ function authenticateToken(req, res, next) {
 
 
 app.post('/register', async (req, res) => {
-  const { username, password, chatbot_id, pinecone_api_key, pinecone_indexes } = req.body;
+  const { username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase } = req.body;
 
   try {
     // Hash the password before saving
