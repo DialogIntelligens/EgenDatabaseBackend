@@ -6,29 +6,48 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
+import cron from 'node-cron'; // For scheduled clean-ups
 
 const { Pool } = pg;
 
-
-
-// Use environment variables for sensitive information
+// Environment variables (or defaults)
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
 
-// Initialize Express app
+// Initialize Express
 const app = express();
-
-// After
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
 
+// PostgreSQL pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
+// JWT auth middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.sendStatus(401);
 
-async function generateEmbedding(text, openaiApiKey) {
-  const openai = new OpenAI({
-    apiKey: openaiApiKey,
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) {
+      console.log('JWT verification error:', err);
+      return res.sendStatus(403);
+    }
+    console.log('Authenticated user:', user);
+    req.user = user;
+    next();
   });
+}
+
+// OpenAI embedding helper
+async function generateEmbedding(text, openaiApiKey) {
+  const openai = new OpenAI({ apiKey: openaiApiKey });
   const response = await openai.embeddings.create({
     model: 'text-embedding-3-large',
     input: text,
@@ -36,44 +55,46 @@ async function generateEmbedding(text, openaiApiKey) {
   return response.data[0].embedding;
 }
 
+// ====================
+// Example CRM endpoints
+// ====================
 app.post('/crm', async (req, res) => {
   const { websiteuserid, usedChatbot, madePurchase, chatbot_id } = req.body;
 
   if (!websiteuserid) {
     return res.status(400).json({ error: 'Missing websiteuserid' });
   }
-
   if (!chatbot_id) {
     return res.status(400).json({ error: 'Missing chatbot_id' });
   }
 
   try {
-    const existingResult = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [websiteuserid, chatbot_id]);
+    const existingResult = await pool.query(
+      'SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2',
+      [websiteuserid, chatbot_id]
+    );
+
     let currentUsedChatbot = false;
     let currentMadePurchase = false;
-
     if (existingResult.rows.length > 0) {
       currentUsedChatbot = existingResult.rows[0].usedchatbot;
       currentMadePurchase = existingResult.rows[0].madepurchase;
     }
 
-    const finalUsedChatbot = currentUsedChatbot || (usedChatbot === true);
-    const finalMadePurchase = currentMadePurchase || (madePurchase === true);
+    const finalUsedChatbot = currentUsedChatbot || usedChatbot === true;
+    const finalMadePurchase = currentMadePurchase || madePurchase === true;
 
     const query = `
-    INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
-    VALUES ($1, $1, $2, $3, $4)
-    ON CONFLICT (websiteuserid)
-    DO UPDATE SET
-      usedChatbot = COALESCE(EXCLUDED.usedChatbot, crm.usedChatbot),
-      madePurchase = COALESCE(EXCLUDED.madePurchase, crm.madePurchase),
-      chatbot_id = EXCLUDED.chatbot_id
-    RETURNING *;
-  `;
-  
-  
-  const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
-  
+      INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
+      VALUES ($1, $1, $2, $3, $4)
+      ON CONFLICT (websiteuserid)
+      DO UPDATE SET
+        usedChatbot = COALESCE(EXCLUDED.usedChatbot, crm.usedChatbot),
+        madePurchase = COALESCE(EXCLUDED.madePurchase, crm.madePurchase),
+        chatbot_id = EXCLUDED.chatbot_id
+      RETURNING *;
+    `;
+    const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
     const result = await pool.query(query, values);
 
     res.status(201).json(result.rows[0]);
@@ -81,8 +102,6 @@ app.post('/crm', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
-
-
 
 app.get('/crm', async (req, res) => {
   try {
@@ -99,7 +118,10 @@ app.post('/crm-data-for-user', async (req, res) => {
     return res.status(400).json({ error: 'Missing user_id or chatbot_id' });
   }
   try {
-    const result = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [user_id, chatbot_id]);
+    const result = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [
+      user_id,
+      chatbot_id,
+    ]);
     if (result.rows.length === 0) {
       return res.json({ usedChatbot: false, madePurchase: false });
     }
@@ -109,55 +131,70 @@ app.post('/crm-data-for-user', async (req, res) => {
   }
 });
 
-
-
+// =====================
+// Pinecone Data Endpoints
+// =====================
+// Optional expirationTime included
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { title, text, indexName, namespace } = req.body; // Include title
+  const { title, text, indexName, namespace, expirationTime } = req.body;
   const userId = req.user.userId;
 
   if (!title || !text || !indexName || !namespace) {
-    return res.status(400).json({ error: 'Title, text, indexName, and namespace are required' });
+    return res
+      .status(400)
+      .json({ error: 'Title, text, indexName, and namespace are required' });
   }
 
   try {
-    // Retrieve user's Pinecone API key
-    const userResult = await pool.query(
-      'SELECT pinecone_api_key FROM users WHERE id = $1',
-      [userId]
-    );
+    // Retrieve Pinecone key
+    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
+      userId,
+    ]);
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-
     if (!pineconeApiKey) {
       return res.status(400).json({ error: 'Pinecone API key not set' });
     }
 
-    // Log indexName and namespace for debugging
-    console.log("Index Name:", indexName, "Namespace:", namespace);
-
     // Generate embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Initialize Pinecone client and connect to the correct index
+    // Initialize Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(namespace); // Use indexName here
+    const index = pineconeClient.index(namespace);
 
+    // Create unique vector ID
+    const vectorId = `vector-${Date.now()}`;
+
+    // Prepare vector
     const vector = {
-      id: `vector-${Date.now()}`,
+      id: vectorId,
       values: embedding,
       metadata: {
         userId: userId.toString(),
         text,
-        title, // Optionally include title in metadata
+        title,
       },
     };
 
-    // Upsert vector to Pinecone in the specified namespace
-    await index.upsert([vector], { namespace: namespace }); // Specify namespace here
+    // Upsert into Pinecone
+    await index.upsert([vector], { namespace });
 
+    // Convert expirationTime -> Date or set null
+    let expirationDateTime = null;
+    if (expirationTime) {
+      expirationDateTime = new Date(expirationTime);
+      if (isNaN(expirationDateTime.getTime())) {
+        return res.status(400).json({ error: 'Invalid expirationTime format' });
+      }
+    }
+
+    // Insert record
     const result = await pool.query(
-      `INSERT INTO pinecone_data (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [userId, title, text, vector.id, indexName, namespace] // Include title
+      `INSERT INTO pinecone_data 
+        (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [userId, title, text, vectorId, indexName, namespace, expirationDateTime]
     );
 
     res.status(201).json(result.rows[0]);
@@ -167,8 +204,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
   }
 });
 
-
-
+// Update existing data
 app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { title, text } = req.body;
@@ -179,7 +215,7 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Retrieve the existing record
+    // Retrieve existing record
     const dataResult = await pool.query(
       'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
       [id, userId]
@@ -191,10 +227,11 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
 
     const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
 
-    // Retrieve user's Pinecone API key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [userId]);
+    // Retrieve Pinecone key
+    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
+      userId,
+    ]);
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-
     if (!pineconeApiKey) {
       return res.status(400).json({ error: 'Pinecone API key not set' });
     }
@@ -202,11 +239,9 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
     // Generate new embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Initialize Pinecone client
+    // Upsert vector in Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
     const index = pineconeClient.index(namespace);
-
-    // Upsert the vector in Pinecone using the same ID
     await index.upsert(
       [
         {
@@ -219,10 +254,10 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
           },
         },
       ],
-      { namespace: namespace }
+      { namespace }
     );
 
-    // Update the data in the database
+    // Update DB
     const result = await pool.query(
       'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 AND user_id = $4 RETURNING *',
       [title, text, id, userId]
@@ -235,24 +270,13 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   }
 });
 
-
-
-
+// Retrieve Pinecone indexes for the user
 app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
-
   try {
-    const result = await pool.query(
-      'SELECT pinecone_indexes FROM users WHERE id = $1',
-      [userId]
-    );
-
-    // Directly use the `pinecone_indexes` if it's already in JSON format
+    const result = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
     const indexes = result.rows[0].pinecone_indexes;
-
-    // Check if `indexes` is an object, if not, parse it.
     const parsedIndexes = typeof indexes === 'string' ? JSON.parse(indexes) : indexes;
-
     res.json(parsedIndexes);
   } catch (err) {
     console.error('Error retrieving indexes:', err);
@@ -260,65 +284,62 @@ app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
   }
 });
 
+// Retrieve pinecone_data
 app.get('/pinecone-data', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
-
   try {
     const result = await pool.query(
       'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
       [userId]
     );
-    res.json(result.rows.map(row => ({
-      title: row.title, // Include title
-      text: row.text,
-      id: row.id,
-      pinecone_index_name: row.pinecone_index_name,
-      namespace: row.namespace,
-      // Add other fields as necessary
-    })));
+    res.json(
+      result.rows.map((row) => ({
+        title: row.title,
+        text: row.text,
+        id: row.id,
+        pinecone_index_name: row.pinecone_index_name,
+        namespace: row.namespace,
+        // Add more fields if needed
+      }))
+    );
   } catch (err) {
     console.error('Error retrieving data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
-
-
-
-
-
+// Delete data from both DB and Pinecone
 app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Retrieve the record to get the vector ID, pinecone index name, and namespace
+    // Retrieve the record
     const dataResult = await pool.query(
       'SELECT pinecone_vector_id, pinecone_index_name, namespace FROM pinecone_data WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
-
     if (dataResult.rows.length === 0) {
       return res.status(404).json({ error: 'Data not found' });
     }
 
     const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
 
-    // Retrieve user's Pinecone API key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [userId]);
+    // Retrieve Pinecone API key
+    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
+      userId,
+    ]);
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-
     if (!pineconeApiKey) {
       return res.status(400).json({ error: 'Pinecone API key not set' });
     }
 
-    // Initialize Pinecone client and delete vector from specified index and namespace
+    // Delete from Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
     const index = pineconeClient.index(namespace);
+    await index.deleteOne(pinecone_vector_id, { namespace });
 
-    await index.deleteOne(pinecone_vector_id, { namespace: namespace });  // Specify namespace
-
-    // Delete from database
+    // Delete from DB
     await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
 
     res.json({ message: 'Data deleted successfully' });
@@ -328,52 +349,21 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-// Configure the PostgreSQL connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-});
-
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (token == null) return res.sendStatus(401); // No token, return 401 Unauthorized
-
-  jwt.verify(token, SECRET_KEY, (err, user) => {
-    if (err) {
-      console.log("JWT verification error:", err);
-      return res.sendStatus(403); // Token invalid or expired, return 403 Forbidden
-    }
-    console.log("Authenticated user:", user); // Log user info
-    req.user = user;
-    next(); // Proceed to the next middleware or route handler
-  });
-}
-
-
+// ===============================
+// Example user registration/login
+// ===============================
 app.post('/register', async (req, res) => {
-  const { username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase } = req.body;
+  const { username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase } =
+    req.body;
 
   try {
-    // Hash the password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const result = await pool.query(
       `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
       [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase]
     );
-
     res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     console.error('Error registering user:', err);
@@ -381,10 +371,8 @@ app.post('/register', async (req, res) => {
   }
 });
 
-
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-
   try {
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
     if (result.rows.length === 0) {
@@ -403,13 +391,17 @@ app.post('/login', async (req, res) => {
   }
 });
 
-
+// ===============================
+// Conversation endpoints (example)
+// ===============================
 app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   const conversationId = req.params.id;
   const { bug_status, notes, lacking_info } = req.body;
 
   if (bug_status === undefined && notes === undefined && lacking_info === undefined) {
-    return res.status(400).json({ error: 'At least one of bug_status, notes, or lacking_info must be provided' });
+    return res
+      .status(400)
+      .json({ error: 'At least one of bug_status, notes, or lacking_info must be provided' });
   }
 
   try {
@@ -421,12 +413,10 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       fields.push(`bug_status = $${idx++}`);
       values.push(bug_status);
     }
-
     if (notes !== undefined) {
       fields.push(`notes = $${idx++}`);
       values.push(notes);
     }
-
     if (lacking_info !== undefined) {
       fields.push(`lacking_info = $${idx++}`);
       values.push(lacking_info);
@@ -436,11 +426,9 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
     const query = `UPDATE conversations SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`;
     const result = await pool.query(query, values);
-
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
-
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating conversation:', err);
@@ -448,27 +436,30 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-
-
-
-async function upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info) {
+// Example Upsert for Conversation
+async function upsertConversation(
+  user_id,
+  chatbot_id,
+  conversation_data,
+  emne,
+  score,
+  customer_rating,
+  lacking_info
+) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    
-    // Try to update first
+
     const updateResult = await client.query(
-      `UPDATE conversations 
+      `UPDATE conversations
        SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7
        WHERE user_id = $1 AND chatbot_id = $2
        RETURNING *`,
       [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
     );
-    
     if (updateResult.rows.length === 0) {
-      // If no row was updated, insert a new one
       const insertResult = await client.query(
-        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info) 
+        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
         [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
@@ -487,23 +478,19 @@ async function upsertConversation(user_id, chatbot_id, conversation_data, emne, 
   }
 }
 
-
-
 app.post('/conversations', async (req, res) => {
-  let { conversation_data, user_id, chatbot_id, emne, score, customer_rating, lacking_info } = req.body;
+  let { conversation_data, user_id, chatbot_id, emne, score, customer_rating, lacking_info } =
+    req.body;
 
-  // If a token is provided, authenticate it
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token) {
     try {
       const user = jwt.verify(token, SECRET_KEY);
-      console.log("Authenticated user:", user);
       req.user = user;
-      user_id = user.userId; // Overwrite user_id with authenticated user ID
+      user_id = user.userId;
     } catch (err) {
-      console.log("JWT verification error:", err);
       return res.status(403).json({ error: 'Invalid or expired token', details: err.message });
     }
   }
@@ -514,41 +501,40 @@ app.post('/conversations', async (req, res) => {
 
   try {
     conversation_data = JSON.stringify(conversation_data);
-
-    const result = await upsertConversation(user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info);
-
+    const result = await upsertConversation(
+      user_id,
+      chatbot_id,
+      conversation_data,
+      emne,
+      score,
+      customer_rating,
+      lacking_info
+    );
     res.status(201).json(result);
   } catch (err) {
     console.error('Error inserting or updating data:', err);
-    res.status(500).json({ 
-      error: 'Database error', 
+    res.status(500).json({
+      error: 'Database error',
       details: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     });
   }
 });
 
-
-
-
 app.post('/delete', async (req, res) => {
   const { userIds } = req.body;
   if (!userIds || userIds.length === 0) {
-    return res.status(400).json({ error: "userIds must be a non-empty array" });
+    return res.status(400).json({ error: 'userIds must be a non-empty array' });
   }
 
   try {
-    const result = await pool.query(
-      'DELETE FROM conversations WHERE user_id = ANY($1)',
-      [userIds]
-    );
+    const result = await pool.query('DELETE FROM conversations WHERE user_id = ANY($1)', [userIds]);
     res.json({ message: 'Conversations deleted successfully', result });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong' });
   }
 });
-
 
 app.get('/conversations', authenticateToken, async (req, res) => {
   const { chatbot_id, lacking_info, start_date, end_date } = req.query;
@@ -573,7 +559,6 @@ app.get('/conversations', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(queryText, queryParams);
-
     res.json(result.rows);
   } catch (err) {
     console.error('Error retrieving data:', err);
@@ -589,7 +574,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
   }
 
   try {
-    let queryText = 'SELECT id, created_at, emne, customer_rating, bug_status FROM conversations WHERE chatbot_id = $1';
+    let queryText =
+      'SELECT id, created_at, emne, customer_rating, bug_status FROM conversations WHERE chatbot_id = $1';
     let queryParams = [chatbot_id];
     let paramIndex = 2;
 
@@ -625,25 +611,24 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
   }
 });
 
-
-
-
 app.post('/update-conversations', async (req, res) => {
   const { chatbot_id, prediction_url } = req.body;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
-
   if (!prediction_url) {
     return res.status(400).json({ error: 'prediction_url is required' });
   }
 
   try {
-    const conversations = await pool.query('SELECT * FROM conversations WHERE chatbot_id = $1', [chatbot_id]);
-
+    const conversations = await pool.query('SELECT * FROM conversations WHERE chatbot_id = $1', [
+      chatbot_id,
+    ]);
     if (conversations.rows.length === 0) {
-      return res.status(404).json({ error: 'No conversations found for the given chatbot_id' });
+      return res
+        .status(404)
+        .json({ error: 'No conversations found for the given chatbot_id' });
     }
 
     for (let conversation of conversations.rows) {
@@ -659,17 +644,19 @@ app.post('/update-conversations', async (req, res) => {
     return res.status(200).json({ message: 'Conversations updated successfully' });
   } catch (error) {
     console.error('Error updating conversations:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', details: error.message });
   }
 });
 
-
+// Helper for prediction
 const getEmneAndScore = async (conversationText, prediction_url) => {
   try {
     const response = await fetch(prediction_url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ question: conversationText }),
     });
@@ -678,7 +665,7 @@ const getEmneAndScore = async (conversationText, prediction_url) => {
 
     const emneMatch = text.match(/Emne\(([^)]+)\)/);
     const scoreMatch = text.match(/Happy\(([^)]+)\)/);
-    const infoMatch = text.match(/info\(([^)]+)\)/i); // Case-insensitive match
+    const infoMatch = text.match(/info\(([^)]+)\)/i);
 
     const emne = emneMatch ? emneMatch[1] : null;
     const score = scoreMatch ? scoreMatch[1] : null;
@@ -691,16 +678,51 @@ const getEmneAndScore = async (conversationText, prediction_url) => {
   }
 };
 
+// ========================
+// CRON JOB for expiration
+// ========================
+cron.schedule('0 * * * *', async () => {
+  // Runs every hour. Modify to your preference, e.g. '*/10 * * * *' for every 10 minutes
+  try {
+    const now = new Date();
+    const expiredRows = await pool.query(
+      `SELECT id, pinecone_vector_id, pinecone_index_name, namespace, user_id
+       FROM pinecone_data
+       WHERE expiration_time IS NOT NULL AND expiration_time <= $1`,
+      [now]
+    );
 
+    for (const row of expiredRows.rows) {
+      const { id, pinecone_vector_id, pinecone_index_name, namespace, user_id } = row;
 
+      const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
+        user_id,
+      ]);
+      const pineconeApiKey = userResult.rows[0].pinecone_api_key;
+      if (!pineconeApiKey) {
+        console.log(`Pinecone key missing for user ${user_id}, skipping ID ${id}`);
+        continue;
+      }
 
-// Error handling middleware
+      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+      const index = pineconeClient.index(namespace);
+      await index.deleteOne(pinecone_vector_id, { namespace });
+
+      await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
+      console.log(`Expired chunk with ID ${id} removed from Pinecone and DB`);
+    }
+  } catch (err) {
+    console.error('Error deleting expired data:', err);
+  }
+});
+
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
-    error: 'Something went wrong!', 
+  res.status(500).json({
+    error: 'Something went wrong!',
     details: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 });
 
