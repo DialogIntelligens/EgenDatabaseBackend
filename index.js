@@ -284,7 +284,6 @@ app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
   }
 });
 
-// Retrieve pinecone_data
 app.get('/pinecone-data', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -292,6 +291,7 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
       'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
       [userId]
     );
+    // Include expiration_time in the returned data
     res.json(
       result.rows.map((row) => ({
         title: row.title,
@@ -299,7 +299,7 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
         id: row.id,
         pinecone_index_name: row.pinecone_index_name,
         namespace: row.namespace,
-        // Add more fields if needed
+        expiration_time: row.expiration_time, // <-- Make sure to add this
       }))
     );
   } catch (err) {
@@ -307,6 +307,7 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
+
 
 // Delete data from both DB and Pinecone
 app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
