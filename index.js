@@ -55,9 +55,6 @@ async function generateEmbedding(text, openaiApiKey) {
   return response.data[0].embedding;
 }
 
-// ====================
-// Example CRM endpoints
-// ====================
 app.post('/crm', async (req, res) => {
   const { websiteuserid, usedChatbot, madePurchase, chatbot_id } = req.body;
 
@@ -69,20 +66,34 @@ app.post('/crm', async (req, res) => {
   }
 
   try {
+    console.log('Received data:', { websiteuserid, usedChatbot, madePurchase, chatbot_id });
+
     const existingResult = await pool.query(
       'SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2',
       [websiteuserid, chatbot_id]
     );
 
+    console.log('Existing result:', existingResult.rows);
+
     let currentUsedChatbot = false;
     let currentMadePurchase = false;
+
     if (existingResult.rows.length > 0) {
       currentUsedChatbot = existingResult.rows[0].usedchatbot;
       currentMadePurchase = existingResult.rows[0].madepurchase;
+      console.log('Current values from DB:', {
+        currentUsedChatbot,
+        currentMadePurchase,
+      });
     }
 
     const finalUsedChatbot = currentUsedChatbot || usedChatbot === true;
     const finalMadePurchase = currentMadePurchase || madePurchase === true;
+
+    console.log('Final calculated values:', {
+      finalUsedChatbot,
+      finalMadePurchase,
+    });
 
     const query = `
       INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
@@ -95,13 +106,18 @@ app.post('/crm', async (req, res) => {
       RETURNING *;
     `;
     const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
+    console.log('Query values:', values);
+
     const result = await pool.query(query, values);
+    console.log('Database insert/update result:', result.rows);
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    console.error('Error in /crm endpoint:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
+
 
 app.get('/crm', async (req, res) => {
   try {
