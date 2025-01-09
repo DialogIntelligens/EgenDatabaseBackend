@@ -73,14 +73,12 @@ app.post('/crm', async (req, res) => {
       chatbot_id,
     });
 
-    // Convert incoming usedChatbot/madePurchase to 'true'/'false' strings
+    // Convert to 'true'/'false' strings
     const incomingUsedChatbot =
       usedChatbot === 'true' || usedChatbot === true ? 'true' : 'false';
-
     const incomingMadePurchase =
       madePurchase === 'true' || madePurchase === true ? 'true' : 'false';
 
-    // Log whenever we get true
     if (incomingUsedChatbot === 'true') {
       console.log('We received a usedChatbot!');
     }
@@ -88,59 +86,28 @@ app.post('/crm', async (req, res) => {
       console.log('We received a madePurchase!');
     }
 
-    // Retrieve existing record
-    const existingResult = await pool.query(
-      'SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2',
-      [websiteuserid, chatbot_id]
-    );
-
-    // Default to 'false' if no record in DB
-    let currentUsedChatbot = 'false';
-    let currentMadePurchase = 'false';
-
-    // If a record exists, preserve any 'true'
-    if (existingResult.rows.length > 0) {
-      currentUsedChatbot =
-        existingResult.rows[0].usedchatbot === 'true' ? 'true' : 'false';
-      currentMadePurchase =
-        existingResult.rows[0].madepurchase === 'true' ? 'true' : 'false';
-    }
-
-    // Final values: once 'true', remain 'true'
-    const finalUsedChatbot =
-      currentUsedChatbot === 'true' || incomingUsedChatbot === 'true'
-        ? 'true'
-        : 'false';
-
-    const finalMadePurchase =
-      currentMadePurchase === 'true' || incomingMadePurchase === 'true'
-        ? 'true'
-        : 'false';
-
-    console.log('Current DB values:', {
-      currentUsedChatbot,
-      currentMadePurchase,
-    });
-    console.log('Final values (to store):', {
-      finalUsedChatbot,
-      finalMadePurchase,
-    });
-
-    // Always perform upsert (no skipping)
+    // Upsert logic with CASE WHEN to preserve 'true'
+    // Once the column is 'true', it remains 'true'
     const query = `
       INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
       VALUES ($1, $1, $2, $3, $4)
       ON CONFLICT (websiteuserid)
       DO UPDATE SET
-        usedChatbot = EXCLUDED.usedChatbot,
-        madePurchase = EXCLUDED.madePurchase,
+        usedChatbot = CASE
+          WHEN crm.usedchatbot = 'true' THEN 'true'
+          ELSE EXCLUDED.usedchatbot
+        END,
+        madePurchase = CASE
+          WHEN crm.madepurchase = 'true' THEN 'true'
+          ELSE EXCLUDED.madepurchase
+        END,
         chatbot_id = EXCLUDED.chatbot_id
       RETURNING *;
     `;
     const values = [
       websiteuserid,
-      finalUsedChatbot,
-      finalMadePurchase,
+      incomingUsedChatbot,
+      incomingMadePurchase,
       chatbot_id,
     ];
 
@@ -157,8 +124,6 @@ app.post('/crm', async (req, res) => {
       .json({ error: 'Database error', details: error.message });
   }
 });
-
-
 
 
 app.get('/crm', async (req, res) => {
