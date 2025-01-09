@@ -73,39 +73,40 @@ app.post('/crm', async (req, res) => {
       chatbot_id,
     });
 
-    // Convert incoming values to the string 'true' or 'false'
+    // Convert incoming usedChatbot/madePurchase to 'true'/'false' strings
     const incomingUsedChatbot =
       usedChatbot === 'true' || usedChatbot === true ? 'true' : 'false';
 
     const incomingMadePurchase =
       madePurchase === 'true' || madePurchase === true ? 'true' : 'false';
 
-    // Log if we actually received a purchase or chatbot usage
-    if (incomingMadePurchase === 'true') {
-      console.log('We received a madePurchase!');
-    }
+    // Log whenever we get true
     if (incomingUsedChatbot === 'true') {
       console.log('We received a usedChatbot!');
     }
+    if (incomingMadePurchase === 'true') {
+      console.log('We received a madePurchase!');
+    }
 
-    // Check existing record in DB
+    // Retrieve existing record
     const existingResult = await pool.query(
       'SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2',
       [websiteuserid, chatbot_id]
     );
 
+    // Default to 'false' if no record in DB
     let currentUsedChatbot = 'false';
     let currentMadePurchase = 'false';
 
+    // If a record exists, preserve any 'true'
     if (existingResult.rows.length > 0) {
-      // Force them to be 'true'/'false' strings
-      currentUsedChatbot = existingResult.rows[0].usedchatbot === 'true' ? 'true' : 'false';
-      currentMadePurchase = existingResult.rows[0].madepurchase === 'true' ? 'true' : 'false';
+      currentUsedChatbot =
+        existingResult.rows[0].usedchatbot === 'true' ? 'true' : 'false';
+      currentMadePurchase =
+        existingResult.rows[0].madepurchase === 'true' ? 'true' : 'false';
     }
 
-    // Calculate final values
-    // If the DB had 'true' or we received 'true', final is 'true'
-    // Otherwise 'false'
+    // Final values: once 'true', remain 'true'
     const finalUsedChatbot =
       currentUsedChatbot === 'true' || incomingUsedChatbot === 'true'
         ? 'true'
@@ -116,36 +117,33 @@ app.post('/crm', async (req, res) => {
         ? 'true'
         : 'false';
 
-    // Skip if no changes
-    if (
-      currentUsedChatbot === finalUsedChatbot &&
-      currentMadePurchase === finalMadePurchase
-    ) {
-      console.log('No changes made to the record. Skipping DB update.');
-      return res.status(200).json({ message: 'No changes made to the record' });
-    }
-
-    console.log('Current values from DB:', {
+    console.log('Current DB values:', {
       currentUsedChatbot,
       currentMadePurchase,
     });
-    console.log('Final calculated values:', {
+    console.log('Final values (to store):', {
       finalUsedChatbot,
       finalMadePurchase,
     });
 
-    // Upsert query
+    // Always perform upsert (no skipping)
     const query = `
       INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
       VALUES ($1, $1, $2, $3, $4)
       ON CONFLICT (websiteuserid)
       DO UPDATE SET
-        usedChatbot = COALESCE(EXCLUDED.usedChatbot, crm.usedChatbot),
-        madePurchase = COALESCE(EXCLUDED.madePurchase, crm.madePurchase),
+        usedChatbot = EXCLUDED.usedChatbot,
+        madePurchase = EXCLUDED.madePurchase,
         chatbot_id = EXCLUDED.chatbot_id
       RETURNING *;
     `;
-    const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
+    const values = [
+      websiteuserid,
+      finalUsedChatbot,
+      finalMadePurchase,
+      chatbot_id,
+    ];
+
     console.log('Query values:', values);
 
     const result = await pool.query(query, values);
@@ -159,6 +157,7 @@ app.post('/crm', async (req, res) => {
       .json({ error: 'Database error', details: error.message });
   }
 });
+
 
 
 
