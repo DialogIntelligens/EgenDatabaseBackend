@@ -66,8 +66,29 @@ app.post('/crm', async (req, res) => {
   }
 
   try {
-    console.log('Received data:', { websiteuserid, usedChatbot, madePurchase, chatbot_id });
+    console.log('Received data:', {
+      websiteuserid,
+      usedChatbot,
+      madePurchase,
+      chatbot_id,
+    });
 
+    // Convert incoming values to the string 'true' or 'false'
+    const incomingUsedChatbot =
+      usedChatbot === 'true' || usedChatbot === true ? 'true' : 'false';
+
+    const incomingMadePurchase =
+      madePurchase === 'true' || madePurchase === true ? 'true' : 'false';
+
+    // Log if we actually received a purchase or chatbot usage
+    if (incomingMadePurchase === 'true') {
+      console.log('We received a madePurchase!');
+    }
+    if (incomingUsedChatbot === 'true') {
+      console.log('We received a usedChatbot!');
+    }
+
+    // Check existing record in DB
     const existingResult = await pool.query(
       'SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2',
       [websiteuserid, chatbot_id]
@@ -77,18 +98,30 @@ app.post('/crm', async (req, res) => {
     let currentMadePurchase = 'false';
 
     if (existingResult.rows.length > 0) {
-      currentUsedChatbot = existingResult.rows[0].usedchatbot;
-      currentMadePurchase = existingResult.rows[0].madepurchase;
+      // Force them to be 'true'/'false' strings
+      currentUsedChatbot = existingResult.rows[0].usedchatbot === 'true' ? 'true' : 'false';
+      currentMadePurchase = existingResult.rows[0].madepurchase === 'true' ? 'true' : 'false';
     }
 
-    const finalUsedChatbot = currentUsedChatbot === 'true' || usedChatbot === 'true' ? 'true' : 'false';
-    const finalMadePurchase = currentMadePurchase === 'true' || madePurchase === 'true' ? 'true' : 'false';
+    // Calculate final values
+    // If the DB had 'true' or we received 'true', final is 'true'
+    // Otherwise 'false'
+    const finalUsedChatbot =
+      currentUsedChatbot === 'true' || incomingUsedChatbot === 'true'
+        ? 'true'
+        : 'false';
 
-    // Skip logging and DB updates if no change
+    const finalMadePurchase =
+      currentMadePurchase === 'true' || incomingMadePurchase === 'true'
+        ? 'true'
+        : 'false';
+
+    // Skip if no changes
     if (
       currentUsedChatbot === finalUsedChatbot &&
       currentMadePurchase === finalMadePurchase
     ) {
+      console.log('No changes made to the record. Skipping DB update.');
       return res.status(200).json({ message: 'No changes made to the record' });
     }
 
@@ -96,12 +129,12 @@ app.post('/crm', async (req, res) => {
       currentUsedChatbot,
       currentMadePurchase,
     });
-
     console.log('Final calculated values:', {
       finalUsedChatbot,
       finalMadePurchase,
     });
 
+    // Upsert query
     const query = `
       INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
       VALUES ($1, $1, $2, $3, $4)
@@ -113,16 +146,17 @@ app.post('/crm', async (req, res) => {
       RETURNING *;
     `;
     const values = [websiteuserid, finalUsedChatbot, finalMadePurchase, chatbot_id];
-
     console.log('Query values:', values);
 
     const result = await pool.query(query, values);
     console.log('Database insert/update result:', result.rows);
 
-    res.status(201).json(result.rows[0]);
+    return res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error in /crm endpoint:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
+    return res
+      .status(500)
+      .json({ error: 'Database error', details: error.message });
   }
 });
 
