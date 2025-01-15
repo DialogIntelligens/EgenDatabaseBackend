@@ -55,6 +55,9 @@ async function generateEmbedding(text, openaiApiKey) {
   return response.data[0].embedding;
 }
 
+/* ================================
+   CRM Endpoints
+================================ */
 app.post('/crm', async (req, res) => {
   const { websiteuserid, usedChatbot, madePurchase, chatbot_id } = req.body;
 
@@ -79,15 +82,7 @@ app.post('/crm', async (req, res) => {
     const incomingMadePurchase =
       madePurchase === 'true' || madePurchase === true ? 'true' : 'false';
 
-    if (incomingUsedChatbot === 'true') {
-      console.log('We received a usedChatbot!');
-    }
-    if (incomingMadePurchase === 'true') {
-      console.log('We received a madePurchase!');
-    }
-
     // Upsert logic with CASE WHEN to preserve 'true'
-    // Once the column is 'true', it remains 'true'
     const query = `
       INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
       VALUES ($1, $1, $2, $3, $4)
@@ -104,27 +99,15 @@ app.post('/crm', async (req, res) => {
         chatbot_id = EXCLUDED.chatbot_id
       RETURNING *;
     `;
-    const values = [
-      websiteuserid,
-      incomingUsedChatbot,
-      incomingMadePurchase,
-      chatbot_id,
-    ];
-
-    console.log('Query values:', values);
+    const values = [websiteuserid, incomingUsedChatbot, incomingMadePurchase, chatbot_id];
 
     const result = await pool.query(query, values);
-    console.log('Database insert/update result:', result.rows);
-
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error in /crm endpoint:', error);
-    return res
-      .status(500)
-      .json({ error: 'Database error', details: error.message });
+    return res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
-
 
 app.get('/crm', async (req, res) => {
   try {
@@ -154,10 +137,9 @@ app.post('/crm-data-for-user', async (req, res) => {
   }
 });
 
-// =====================
-// Pinecone Data Endpoints
-// =====================
-// Optional expirationTime included
+/* ================================
+   Pinecone Data Endpoints
+================================ */
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
   const { title, text, indexName, namespace, expirationTime } = req.body;
   const userId = req.user.userId;
@@ -243,7 +225,6 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
       'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
-
     if (dataResult.rows.length === 0) {
       return res.status(404).json({ error: 'Data not found' });
     }
@@ -322,7 +303,7 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
         id: row.id,
         pinecone_index_name: row.pinecone_index_name,
         namespace: row.namespace,
-        expiration_time: row.expiration_time, // <-- Make sure to add this
+        expiration_time: row.expiration_time,
       }))
     );
   } catch (err) {
@@ -330,7 +311,6 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
-
 
 // Delete data from both DB and Pinecone
 app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
@@ -373,6 +353,9 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/* ================================
+   Registration & Login
+================================ */
 app.post('/register', async (req, res) => {
   const {
     username,
@@ -385,9 +368,8 @@ app.post('/register', async (req, res) => {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    // Convert chatbot_ids to a JSON array or a Postgres array
-    const chatbotIdsArray = JSON.stringify(chatbot_ids); 
-    // or if you used text[], pass them in the correct format: {abc123,xyz999}
+    // Convert chatbot_ids to a JSON array or similar
+    const chatbotIdsArray = JSON.stringify(chatbot_ids);
 
     const result = await pool.query(
       `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase)
@@ -418,7 +400,7 @@ app.post('/login', async (req, res) => {
 
     const token = jwt.sign({ userId: user.id }, SECRET_KEY, { expiresIn: '1h' });
 
-    // If stored as JSON or array, parse if needed:
+    // If stored as JSON or array, parse if needed
     let chatbotIds = user.chatbot_ids || [];
     if (typeof chatbotIds === 'string') {
       chatbotIds = JSON.parse(chatbotIds);
@@ -426,7 +408,7 @@ app.post('/login', async (req, res) => {
 
     return res.json({
       token,
-      chatbot_ids: chatbotIds, // Return the array
+      chatbot_ids: chatbotIds, // Return array of chatbot IDs
       show_purchase: user.show_purchase,
     });
   } catch (err) {
@@ -435,9 +417,10 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ===============================
-// Conversation endpoints (example)
-// ===============================
+/* ================================
+   Conversation Endpoints
+================================ */
+// PATCH conversation
 app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   const conversationId = req.params.id;
   const { bug_status, notes, lacking_info } = req.body;
@@ -480,7 +463,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Example Upsert for Conversation
+// Helper upsert function
 async function upsertConversation(
   user_id,
   chatbot_id,
@@ -501,9 +484,11 @@ async function upsertConversation(
        RETURNING *`,
       [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
     );
+
     if (updateResult.rows.length === 0) {
       const insertResult = await client.query(
-        `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
+        `INSERT INTO conversations
+         (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
         [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
@@ -522,6 +507,7 @@ async function upsertConversation(
   }
 }
 
+// POST conversation
 app.post('/conversations', async (req, res) => {
   let { conversation_data, user_id, chatbot_id, emne, score, customer_rating, lacking_info } =
     req.body;
@@ -565,6 +551,7 @@ app.post('/conversations', async (req, res) => {
   }
 });
 
+// POST delete
 app.post('/delete', async (req, res) => {
   const { userIds } = req.body;
   if (!userIds || userIds.length === 0) {
@@ -580,6 +567,9 @@ app.post('/delete', async (req, res) => {
   }
 });
 
+/* 
+  CHANGED: /conversations now uses comma-separated chatbot_id to match multiple IDs via ANY($1).
+*/
 app.get('/conversations', authenticateToken, async (req, res) => {
   const { chatbot_id, lacking_info, start_date, end_date } = req.query;
 
@@ -588,8 +578,15 @@ app.get('/conversations', authenticateToken, async (req, res) => {
   }
 
   try {
-    let queryText = 'SELECT * FROM conversations WHERE chatbot_id = $1';
-    let queryParams = [chatbot_id];
+    // Convert comma-separated IDs into an array
+    const chatbotIds = chatbot_id.split(',');
+
+    let queryText = `
+      SELECT *
+      FROM conversations
+      WHERE chatbot_id = ANY($1)
+    `;
+    let queryParams = [chatbotIds];
     let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
@@ -603,13 +600,18 @@ app.get('/conversations', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(queryText, queryParams);
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (err) {
-    console.error('Error retrieving data:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    console.error('Error retrieving data from /conversations:', err);
+    return res
+      .status(500)
+      .json({ error: 'Database error', details: err.message });
   }
 });
 
+/* 
+  CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
+*/
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
   const { chatbot_id, lacking_info, start_date, end_date } = req.query;
 
@@ -618,9 +620,14 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
   }
 
   try {
-    let queryText =
-      'SELECT id, created_at, emne, customer_rating, bug_status FROM conversations WHERE chatbot_id = $1';
-    let queryParams = [chatbot_id];
+    const chatbotIds = chatbot_id.split(',');
+
+    let queryText = `
+      SELECT id, created_at, emne, customer_rating, bug_status
+      FROM conversations
+      WHERE chatbot_id = ANY($1)
+    `;
+    let queryParams = [chatbotIds];
     let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
@@ -634,13 +641,16 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(queryText, queryParams);
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (err) {
-    console.error('Error retrieving metadata:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    console.error('Error retrieving metadata from /conversations-metadata:', err);
+    return res
+      .status(500)
+      .json({ error: 'Database error', details: err.message });
   }
 });
 
+// GET single conversation
 app.get('/conversation/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
@@ -655,6 +665,9 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/* ================================
+   update-conversations Endpoint
+================================ */
 app.post('/update-conversations', async (req, res) => {
   const { chatbot_id, prediction_url } = req.body;
 
@@ -680,7 +693,9 @@ app.post('/update-conversations', async (req, res) => {
       const { emne, score, lacking_info } = await getEmneAndScore(conversationText, prediction_url);
 
       await pool.query(
-        `UPDATE conversations SET emne = $1, score = $2, lacking_info = $3 WHERE id = $4`,
+        `UPDATE conversations
+         SET emne = $1, score = $2, lacking_info = $3
+         WHERE id = $4`,
         [emne, score, lacking_info, conversation.id]
       );
     }
@@ -722,11 +737,11 @@ const getEmneAndScore = async (conversationText, prediction_url) => {
   }
 };
 
-// ========================
-// CRON JOB for expiration
-// ========================
+/* ===============================
+   CRON JOB for Expiration Cleanup
+================================ */
 cron.schedule('0 * * * *', async () => {
-  // Runs every hour. Modify to your preference, e.g. '*/10 * * * *' for every 10 minutes
+  // Runs every hour. Modify interval to your needs
   try {
     const now = new Date();
     const expiredRows = await pool.query(
