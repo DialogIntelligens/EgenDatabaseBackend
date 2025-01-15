@@ -373,22 +373,30 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ===============================
-// Example user registration/login
-// ===============================
 app.post('/register', async (req, res) => {
-  const { username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase } =
-    req.body;
+  const {
+    username,
+    password,
+    chatbot_ids,
+    pinecone_api_key,
+    pinecone_indexes,
+    show_purchase,
+  } = req.body;
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
+    // Convert chatbot_ids to a JSON array or a Postgres array
+    const chatbotIdsArray = JSON.stringify(chatbot_ids); 
+    // or if you used text[], pass them in the correct format: {abc123,xyz999}
+
     const result = await pool.query(
-      `INSERT INTO users (username, password, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase)
+      `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [username, hashedPassword, chatbot_id, pinecone_api_key, pinecone_indexes, show_purchase]
+      [username, hashedPassword, chatbotIdsArray, pinecone_api_key, pinecone_indexes, show_purchase]
     );
-    res.status(201).json({ message: 'User registered successfully' });
+
+    return res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     console.error('Error registering user:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
@@ -407,8 +415,20 @@ app.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
+
     const token = jwt.sign({ userId: user.id }, SECRET_KEY, { expiresIn: '1h' });
-    res.json({ token, chatbot_id: user.chatbot_id, show_purchase: user.show_purchase });
+
+    // If stored as JSON or array, parse if needed:
+    let chatbotIds = user.chatbot_ids || [];
+    if (typeof chatbotIds === 'string') {
+      chatbotIds = JSON.parse(chatbotIds);
+    }
+
+    return res.json({
+      token,
+      chatbot_ids: chatbotIds, // Return the array
+      show_purchase: user.show_purchase,
+    });
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
