@@ -120,8 +120,11 @@ app.get('/crm', async (req, res) => {
 
 app.post('/crm-data-for-user', async (req, res) => {
   const { user_id, chatbot_id } = req.body;
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ error: 'Missing user_id or chatbot_id' });
+  if (!user_id) {
+    return res.status(400).json({ error: 'Missing user_id' });
+  }
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'Missing chatbot_id' });
   }
   try {
     const result = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [
