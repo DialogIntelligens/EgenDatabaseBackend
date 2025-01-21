@@ -528,8 +528,11 @@ app.post('/conversations', async (req, res) => {
     }
   }
 
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ error: 'Missing user_id or chatbot_id' });
+  if (!user_id) {
+    return res.status(400).json({ error: 'Missing user_id' });
+  }
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'Missing chatbot_id' });
   }
 
   try {
