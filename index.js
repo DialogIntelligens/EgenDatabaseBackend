@@ -411,9 +411,11 @@ app.post('/login', async (req, res) => {
 
     return res.json({
       token,
-      chatbot_ids: chatbotIds, // Return array of chatbot IDs
+      chatbot_ids: chatbotIds, // as you already return this
       show_purchase: user.show_purchase,
+      chatbot_filepath: user.chatbot_filepath  // NEW: include the file path
     });
+    
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
