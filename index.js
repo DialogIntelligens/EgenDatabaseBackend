@@ -848,6 +848,27 @@ app.use((err, req, res, next) => {
   });
 });
 
+app.get('/users', authenticateToken, async (req, res) => {
+  // Only admins can list all users
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    // Omit the password hash from results
+    const result = await pool.query(`
+      SELECT id, username, is_admin, created_at
+      FROM users
+      ORDER BY created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
