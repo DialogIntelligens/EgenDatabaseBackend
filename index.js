@@ -373,7 +373,7 @@ app.post('/register', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     // Convert chatbot_ids to a JSON array or similar
-    const chatbotIdsArray = JSON.stringify(chatbot_ids);
+    const chatbotIdsArray = chatbot_ids;
 
     const result = await pool.query(
       `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase, chatbot_filepath)
