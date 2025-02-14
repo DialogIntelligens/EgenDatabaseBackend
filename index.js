@@ -406,9 +406,8 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
 
-    const token = jwt.sign({ userId: user.id }, SECRET_KEY, { expiresIn: '1h' });
+   const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, SECRET_KEY, { expiresIn: '1h' });
 
-    // If stored as JSON or array, parse if needed
     let chatbotIds = user.chatbot_ids || [];
     if (typeof chatbotIds === 'string') {
       chatbotIds = JSON.parse(chatbotIds);
@@ -416,16 +415,17 @@ app.post('/login', async (req, res) => {
 
     return res.json({
       token,
-      chatbot_ids: chatbotIds, // as you already return this
+      chatbot_ids: chatbotIds,
       show_purchase: user.show_purchase,
-      chatbot_filepath: user.chatbot_filepath  // NEW: include the file path
+      chatbot_filepath: user.chatbot_filepath,
+     is_admin: user.is_admin    // <--- Return to client
     });
-    
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 /* ================================
    Conversation Endpoints
