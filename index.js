@@ -857,9 +857,9 @@ app.get('/users', authenticateToken, async (req, res) => {
   try {
     // Omit the password hash from results
     const result = await pool.query(`
-      SELECT id, username, is_admin, created_at
+      SELECT id, username, is_admin
       FROM users
-      ORDER BY created_at DESC
+      ORDER BY id DESC
     `);
     res.json(result.rows);
   } catch (error) {
