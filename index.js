@@ -401,31 +401,54 @@ app.post('/login', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
+
     const user = result.rows[0];
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
 
-   const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, SECRET_KEY, { expiresIn: '1h' });
+    // Sign the JWT, including isAdmin
+    const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, SECRET_KEY, { expiresIn: '1h' });
 
+    // Start with the current user's chatbot_ids
     let chatbotIds = user.chatbot_ids || [];
     if (typeof chatbotIds === 'string') {
       chatbotIds = JSON.parse(chatbotIds);
     }
+
+
+   if (user.is_admin) {
+     const allUsers = await pool.query('SELECT chatbot_ids FROM users');
+
+     // Merge all chatbot_ids into one array
+     let mergedIds = [];
+     for (const row of allUsers.rows) {
+       let ids = row.chatbot_ids || [];
+       if (typeof ids === 'string') {
+         ids = JSON.parse(ids);
+       }
+      mergedIds = mergedIds.concat(ids);
+    }
+
+     // Remove duplicates
+     const uniqueIds = [...new Set(mergedIds)];
+     chatbotIds = uniqueIds;
+   }
 
     return res.json({
       token,
       chatbot_ids: chatbotIds,
       show_purchase: user.show_purchase,
       chatbot_filepath: user.chatbot_filepath,
-     is_admin: user.is_admin    // <--- Return to client
+      is_admin: user.is_admin
     });
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 
 app.delete('/conversations/:id', authenticateToken, async (req, res) => {
