@@ -367,6 +367,7 @@ app.post('/register', async (req, res) => {
     pinecone_api_key,
     pinecone_indexes,
     show_purchase,
+    chatbot_filepath,
   } = req.body;
 
   try {
