@@ -376,11 +376,12 @@ app.post('/register', async (req, res) => {
     const chatbotIdsArray = JSON.stringify(chatbot_ids);
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase, pinecone_indexes, chatbot_filepath)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase, chatbot_filepath)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [username, hashedPassword, chatbotIdsArray, pinecone_api_key, pinecone_indexes, show_purchase, pinecone_indexes, chatbot_filepath]
-    );
+      [username, hashedPassword, chatbotIdsArray, pinecone_api_key, pinecone_indexes, show_purchase, chatbot_filepath]
+    );   
+    
 
     return res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
