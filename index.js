@@ -369,6 +369,7 @@ app.post('/register', async (req, res) => {
     pinecone_indexes,
     show_purchase,
     chatbot_filepath,
+   is_admin
   } = req.body;
 
   try {
@@ -379,13 +380,30 @@ app.post('/register', async (req, res) => {
     const pineconeIndexesJSON = JSON.stringify(pinecone_indexes);
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase, chatbot_filepath)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO users (
+         username,
+         password,
+         chatbot_ids,
+         pinecone_api_key,
+         pinecone_indexes,
+         show_purchase,
+         chatbot_filepath,
+        is_admin
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [username, hashedPassword, chatbotIdsArray, pinecone_api_key, pineconeIndexesJSON, show_purchase, chatbot_filepath]
+
+      [
+         username,
+        hashedPassword,
+        chatbotIdsArray,
+        pinecone_api_key,
+        pineconeIndexesJSON,
+        show_purchase,
+        chatbot_filepath,
+        is_admin
+      ]
     );
-       
-    
 
     return res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
@@ -393,6 +411,7 @@ app.post('/register', async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
