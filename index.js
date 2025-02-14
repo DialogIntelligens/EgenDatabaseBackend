@@ -376,7 +376,7 @@ app.post('/register', async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO users (username, password, chatbot_ids, pinecone_api_key, pinecone_indexes, show_purchase, pinecone_indexes, chatbot_filepath)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 8$)
        RETURNING *`,
       [username, hashedPassword, chatbotIdsArray, pinecone_api_key, pinecone_indexes, show_purchase, pinecone_indexes, chatbot_filepath]
     );
