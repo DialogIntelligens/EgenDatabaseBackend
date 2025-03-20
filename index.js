@@ -88,7 +88,32 @@ app.post('/api/proxy/order', async (req, res) => {
     // Try to parse the JSON
     let data;
     try {
-      data = JSON.parse(responseText);
+      // Check if JSON might be truncated (missing closing brackets)
+      let fixedJson = responseText;
+      
+      // Count opening and closing brackets to detect potential truncation
+      const countChar = (str, char) => (str.match(new RegExp(char, 'g')) || []).length;
+      const openBraces = countChar(fixedJson, '{');
+      const closeBraces = countChar(fixedJson, '}');
+      const openBrackets = countChar(fixedJson, '\\[');
+      const closeBrackets = countChar(fixedJson, '\\]');
+      
+      // Fix the JSON by adding missing closing brackets if needed
+      if (openBraces > closeBraces) {
+        fixedJson += '}'.repeat(openBraces - closeBraces);
+      }
+      if (openBrackets > closeBrackets) {
+        fixedJson += ']'.repeat(openBrackets - closeBrackets);
+      }
+      
+      // Log if we've attempted a fix
+      if (fixedJson !== responseText) {
+        console.log("Attempting to fix truncated JSON:");
+        console.log("Original:", responseText);
+        console.log("Fixed:", fixedJson);
+      }
+      
+      data = JSON.parse(fixedJson);
     } catch (jsonError) {
       console.error("Error parsing Bodylab API response:", jsonError);
       console.error("Invalid JSON received:", responseText);
