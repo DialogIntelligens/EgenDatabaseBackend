@@ -82,8 +82,24 @@ app.post('/api/proxy/order', async (req, res) => {
       });
     }
 
-    // Get the JSON response and send it back to the client
-    const data = await response.json();
+    // Get the response body as text first
+    const responseText = await response.text();
+    
+    // Try to parse the JSON
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (jsonError) {
+      console.error("Error parsing Bodylab API response:", jsonError);
+      console.error("Invalid JSON received:", responseText);
+      return res.status(500).json({
+        status: "error",
+        message: "Received invalid JSON from Bodylab API",
+        details: jsonError.toString(),
+        responseText: responseText.substring(0, 1000) // Limit long responses
+      });
+    }
+    
     return res.json(data);
   } catch (error) {
     console.error("Error proxying order request:", error);
