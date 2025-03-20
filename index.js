@@ -56,6 +56,45 @@ async function generateEmbedding(text, openaiApiKey) {
   return response.data[0].embedding;
 }
 
+
+/* ================================
+   Bodylab Order API Proxy
+================================ */
+app.post('/api/proxy/order', async (req, res) => {
+  try {
+    // Forward the request to Bodylab API
+    const response = await fetch("https://www.bodylab.dk/api/order.asp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    // Check if the response is ok
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Bodylab API error:", errorBody);
+      return res.status(response.status).json({
+        status: "error",
+        message: `Failed to fetch order details. ${response.status} ${response.statusText}`,
+        details: errorBody
+      });
+    }
+
+    // Get the JSON response and send it back to the client
+    const data = await response.json();
+    return res.json(data);
+  } catch (error) {
+    console.error("Error proxying order request:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Could not retrieve order information. The system might be temporarily unavailable.",
+      details: error.toString()
+    });
+  }
+});
+
 /* ================================
    CRM Endpoints
 ================================ */
