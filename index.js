@@ -91,19 +91,51 @@ app.post('/api/proxy/order', async (req, res) => {
       // Check if JSON might be truncated (missing closing brackets)
       let fixedJson = responseText;
       
-      // Count opening and closing brackets to detect potential truncation
-      const countChar = (str, char) => (str.match(new RegExp(char, 'g')) || []).length;
-      const openBraces = countChar(fixedJson, '{');
-      const closeBraces = countChar(fixedJson, '}');
-      const openBrackets = countChar(fixedJson, '\\[');
-      const closeBrackets = countChar(fixedJson, '\\]');
-      
-      // Fix the JSON by adding missing closing brackets if needed
-      if (openBraces > closeBraces) {
-        fixedJson += '}'.repeat(openBraces - closeBraces);
-      }
-      if (openBrackets > closeBrackets) {
-        fixedJson += ']'.repeat(openBrackets - closeBrackets);
+      // More robust handling for complex JSON structures
+      if (!fixedJson.trim().endsWith('}') && !fixedJson.trim().endsWith(']')) {
+        console.log("JSON appears to be truncated, attempting to fix");
+        
+        // Parse the JSON structure more carefully
+        let braceStack = [];
+        let bracketStack = [];
+        let inString = false;
+        let escaped = false;
+        
+        for (let i = 0; i < fixedJson.length; i++) {
+          const char = fixedJson[i];
+          
+          // Handle string detection with proper escape character handling
+          if (char === '"' && !escaped) {
+            inString = !inString;
+          }
+          
+          // Only count braces and brackets when not in a string
+          if (!inString) {
+            if (char === '{') braceStack.push(i);
+            else if (char === '}') braceStack.pop();
+            else if (char === '[') bracketStack.push(i);
+            else if (char === ']') bracketStack.pop();
+          }
+          
+          // Track escape characters
+          escaped = char === '\\' && !escaped;
+        }
+        
+        // Add missing closing braces and brackets
+        let closingSequence = '';
+        while (bracketStack.length > 0) {
+          bracketStack.pop();
+          closingSequence += ']';
+        }
+        while (braceStack.length > 0) {
+          braceStack.pop();
+          closingSequence += '}';
+        }
+        
+        if (closingSequence) {
+          fixedJson += closingSequence;
+          console.log("Fixed JSON by adding:", closingSequence);
+        }
       }
       
       // Log if we've attempted a fix
