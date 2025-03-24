@@ -1032,9 +1032,10 @@ app.get('/users', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Omit the password hash from results
+    // Return all needed fields, but still omit the password hash
     const result = await pool.query(`
-      SELECT id, username, is_admin
+      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key, 
+             pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
       FROM users
       ORDER BY id DESC
     `);
@@ -1045,6 +1046,33 @@ app.get('/users', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/user/:id', authenticateToken, async (req, res) => {
+  // Only admins can access user details
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const userId = req.params.id;
+  
+  try {
+    // Get full user details except password
+    const result = await pool.query(`
+      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key, 
+             pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
+      FROM users
+      WHERE id = $1
+    `, [userId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
 
 // Start the server
 app.listen(PORT, () => {
