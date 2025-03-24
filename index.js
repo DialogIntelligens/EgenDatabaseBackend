@@ -599,38 +599,33 @@ app.post('/login', async (req, res) => {
       chatbotIds = JSON.parse(chatbotIds);
     }
 
-
-   if (user.is_admin) {
-     const allUsers = await pool.query('SELECT chatbot_ids FROM users');
-
-     // Merge all chatbot_ids into one array
-     let mergedIds = [];
-     for (const row of allUsers.rows) {
-       let ids = row.chatbot_ids || [];
-       if (typeof ids === 'string') {
-         ids = JSON.parse(ids);
-       }
-      mergedIds = mergedIds.concat(ids);
+    if (user.is_admin) {
+      const allUsers = await pool.query('SELECT chatbot_ids FROM users');
+      let mergedIds = [];
+      for (const row of allUsers.rows) {
+        let ids = row.chatbot_ids || [];
+        if (typeof ids === 'string') {
+          ids = JSON.parse(ids);
+        }
+        mergedIds = mergedIds.concat(ids);
+      }
+      const uniqueIds = [...new Set(mergedIds)];
+      chatbotIds = uniqueIds;
     }
-
-     // Remove duplicates
-     const uniqueIds = [...new Set(mergedIds)];
-     chatbotIds = uniqueIds;
-   }
 
     return res.json({
       token,
       chatbot_ids: chatbotIds,
       show_purchase: user.show_purchase,
       chatbot_filepath: user.chatbot_filepath,
-      is_admin: user.is_admin
+      is_admin: user.is_admin,
+      thumbs_rating: user.thumbs_rating || false  // Add this line
     });
   } catch (err) {
     console.error('Error logging in:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
-
 
 
 app.delete('/conversations/:id', authenticateToken, async (req, res) => {
