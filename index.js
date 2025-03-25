@@ -1025,6 +1025,64 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Add this endpoint to delete a user
+app.delete('/users/:id', authenticateToken, async (req, res) => {
+  // Only admins can delete users
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const { id } = req.params;
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete any related data first 
+    // (optional, depending on your database constraints and requirements)
+    // For example, delete user's conversations
+    await pool.query('DELETE FROM conversations WHERE user_id = $1', [id]);
+    
+    // Also delete Pinecone data
+    const pineconeResult = await pool.query('SELECT * FROM pinecone_data WHERE user_id = $1', [id]);
+    
+    // For each piece of Pinecone data, delete from Pinecone first if needed
+    for (const row of pineconeResult.rows) {
+      try {
+        // Get the user's Pinecone API key (if needed for deletion)
+        const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [id]);
+        const pineconeApiKey = userResult.rows[0]?.pinecone_api_key;
+        
+        if (pineconeApiKey && row.pinecone_vector_id && row.namespace) {
+          const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+          const index = pineconeClient.index(row.namespace);
+          await index.deleteOne(row.pinecone_vector_id, { namespace: row.namespace });
+        }
+      } catch (pineconeError) {
+        console.error('Error deleting from Pinecone:', pineconeError);
+        // Continue with other deletions even if Pinecone fails
+      }
+    }
+    
+    // Delete the Pinecone data records
+    await pool.query('DELETE FROM pinecone_data WHERE user_id = $1', [id]);
+    
+    // Finally delete the user
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING username', [id]);
+    
+    res.status(200).json({ 
+      message: 'User deleted successfully', 
+      username: result.rows[0].username 
+    });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
 app.get('/users', authenticateToken, async (req, res) => {
   // Only admins can list all users
   if (!req.user.isAdmin) {
