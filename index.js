@@ -1074,7 +1074,7 @@ app.delete('/users/:id', authenticateToken, async (req, res) => {
     const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING username', [id]);
     
     res.status(200).json({ 
-      message: 'User deleted successfully', 
+      message: 'User deleted successfully',
       username: result.rows[0].username 
     });
   } catch (error) {
