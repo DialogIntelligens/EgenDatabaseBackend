@@ -309,7 +309,11 @@ app.post('/crm-data-for-user', async (req, res) => {
 ================================ */
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
   const { title, text, indexName, namespace, expirationTime } = req.body;
-  const userId = req.user.userId;
+  const authenticatedUserId = req.user.userId;
+  
+  // Check if user is admin and if a userId parameter was provided
+  const isAdmin = req.user.isAdmin === true;
+  const targetUserId = isAdmin && req.body.userId ? parseInt(req.body.userId) : authenticatedUserId;
 
   if (!title || !text || !indexName || !namespace) {
     return res
@@ -318,13 +322,19 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Retrieve Pinecone key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
-      userId,
-    ]);
+    // If admin is creating data for another user, verify the user exists
+    if (isAdmin && targetUserId !== authenticatedUserId) {
+      const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [targetUserId]);
+      if (userCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Target user not found' });
+      }
+    }
+    
+    // Retrieve Pinecone key for the target user
+    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [targetUserId]);
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
     if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set' });
+      return res.status(400).json({ error: 'Pinecone API key not set for the target user' });
     }
 
     // Generate embedding
@@ -342,7 +352,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       id: vectorId,
       values: embedding,
       metadata: {
-        userId: userId.toString(),
+        userId: targetUserId.toString(),
         text,
         title,
       },
@@ -360,13 +370,13 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       }
     }
 
-    // Insert record
+    // Insert record with the target user's ID (which might be the admin's or another user's)
     const result = await pool.query(
       `INSERT INTO pinecone_data 
         (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [userId, title, text, vectorId, indexName, namespace, expirationDateTime]
+      [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
     );
 
     res.status(201).json(result.rows[0]);
@@ -376,62 +386,63 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
   }
 });
 
-// Update existing data
 app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { title, text } = req.body;
   const userId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
 
   if (!title || !text) {
     return res.status(400).json({ error: 'Title and text are required' });
   }
 
   try {
-    // Retrieve existing record
-    const dataResult = await pool.query(
-      'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2',
-      [id, userId]
-    );
+    // Retrieve existing record - for admins, don't restrict by user_id
+    const queryText = isAdmin 
+      ? 'SELECT * FROM pinecone_data WHERE id = $1'
+      : 'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2';
+    
+    const queryParams = isAdmin ? [id] : [id, userId];
+    
+    const dataResult = await pool.query(queryText, queryParams);
+    
     if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found' });
+      return res.status(404).json({ error: 'Data not found or you do not have permission to modify it' });
     }
 
-    const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
+    const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
 
-    // Retrieve Pinecone key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
-      userId,
-    ]);
+    // Get Pinecone API key of the DATA OWNER (not necessarily the admin)
+    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [dataOwnerId]);
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
+    
     if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set' });
+      return res.status(400).json({ error: 'Pinecone API key not set for the data owner' });
     }
 
     // Generate new embedding
     const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
 
-    // Upsert vector in Pinecone
+    // Update in Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
     const index = pineconeClient.index(namespace);
-    await index.upsert(
-      [
-        {
-          id: pinecone_vector_id,
-          values: embedding,
-          metadata: {
-            userId: userId.toString(),
-            text,
-            title,
-          },
+    
+    await index.upsert([
+      {
+        id: pinecone_vector_id,
+        values: embedding,
+        metadata: {
+          userId: dataOwnerId.toString(),
+          text,
+          title,
         },
-      ],
-      { namespace }
-    );
+      },
+    ], { namespace });
 
-    // Update DB
+    // Update in DB
     const result = await pool.query(
-      'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 AND user_id = $4 RETURNING *',
-      [title, text, id, userId]
+      'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
+      [title, text, id]
     );
 
     res.json(result.rows[0]);
@@ -456,13 +467,28 @@ app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
 });
 
 app.get('/pinecone-data', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
+  // Get the authenticated user's ID
+  const authenticatedUserId = req.user.userId;
+  
+  // Check if user is admin and if a userId parameter was provided
+  const isAdmin = req.user.isAdmin === true;
+  const requestedUserId = isAdmin && req.query.userId ? parseInt(req.query.userId) : authenticatedUserId;
+  
   try {
+    // If admin is accessing another user's data, verify the requested user exists
+    if (isAdmin && requestedUserId !== authenticatedUserId) {
+      const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [requestedUserId]);
+      if (userCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Requested user not found' });
+      }
+    }
+    
+    // Get data for either the authenticated user or the requested user (for admins)
     const result = await pool.query(
       'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
-      [userId]
+      [requestedUserId]
     );
-    // Include expiration_time in the returned data
+    
     res.json(
       result.rows.map((row) => ({
         title: row.title,
@@ -479,30 +505,33 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
   }
 });
 
-// Delete data from both DB and Pinecone
 app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
 
   try {
-    // Retrieve the record
-    const dataResult = await pool.query(
-      'SELECT pinecone_vector_id, pinecone_index_name, namespace FROM pinecone_data WHERE id = $1 AND user_id = $2',
-      [id, userId]
-    );
+    // Retrieve the record - for admins, don't restrict by user_id
+    const queryText = isAdmin 
+      ? 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1'
+      : 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1 AND user_id = $2';
+    
+    const queryParams = isAdmin ? [id] : [id, userId];
+    
+    const dataResult = await pool.query(queryText, queryParams);
+    
     if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found' });
+      return res.status(404).json({ error: 'Data not found or you do not have permission to delete it' });
     }
 
-    const { pinecone_vector_id, pinecone_index_name, namespace } = dataResult.rows[0];
+    const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
 
-    // Retrieve Pinecone API key
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
-      userId,
-    ]);
+    // Retrieve Pinecone API key of the DATA OWNER (not necessarily the admin)
+    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [dataOwnerId]);
     const pineconeApiKey = userResult.rows[0].pinecone_api_key;
+    
     if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set' });
+      return res.status(400).json({ error: 'Pinecone API key not set for the data owner' });
     }
 
     // Delete from Pinecone
@@ -511,7 +540,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     await index.deleteOne(pinecone_vector_id, { namespace });
 
     // Delete from DB
-    await pool.query('DELETE FROM pinecone_data WHERE id = $1 AND user_id = $2', [id, userId]);
+    await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
 
     res.json({ message: 'Data deleted successfully' });
   } catch (err) {
