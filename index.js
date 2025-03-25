@@ -620,7 +620,7 @@ app.post('/login', async (req, res) => {
     }
 
     // Sign the JWT, including isAdmin
-    const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, SECRET_KEY, { expiresIn: '1h' });
+    const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, SECRET_KEY, { expiresIn: '4h' });
 
     // Start with the current user's chatbot_ids
     let chatbotIds = user.chatbot_ids || [];
