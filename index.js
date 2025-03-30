@@ -14,6 +14,17 @@ const { Pool } = pg;
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
 
+// Check for required environment variables
+if (!process.env.OPENAI_API_KEY) {
+  console.error('ERROR: OPENAI_API_KEY environment variable is required');
+  process.exit(1);
+}
+
+// Initialize OpenAI client once
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 // Initialize Express
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -45,17 +56,19 @@ function authenticateToken(req, res, next) {
   });
 }
 
-
 // OpenAI embedding helper
-async function generateEmbedding(text, openaiApiKey) {
-  const openai = new OpenAI({ apiKey: openaiApiKey });
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-large',
-    input: text,
-  });
-  return response.data[0].embedding;
+async function generateEmbedding(text) {
+  try {
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-large',
+      input: text,
+    });
+    return response.data[0].embedding;
+  } catch (error) {
+    console.error('Error generating embedding:', error);
+    throw new Error('Failed to generate embedding: ' + error.message);
+  }
 }
-
 
 /* ================================
    Bodylab Order API Proxy
@@ -338,7 +351,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
     }
 
     // Generate embedding
-    const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
+    const embedding = await generateEmbedding(text);
 
     // Initialize Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
@@ -421,7 +434,7 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
     }
 
     // Generate new embedding
-    const embedding = await generateEmbedding(text, process.env.OPENAI_API_KEY);
+    const embedding = await generateEmbedding(text);
 
     // Update in Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
