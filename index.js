@@ -742,62 +742,65 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Helper upsert function
-async function upsertConversation(
-  user_id,
-  chatbot_id,
-  conversation_data,
-  emne,
-  score,
-  customer_rating,
-  lacking_info,
-  source_chunks
-) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+    // Helper upsert function
+    async function upsertConversation(
+      user_id,
+      chatbot_id,
+      conversation_data,
+      emne,
+      score,
+      customer_rating,
+      lacking_info
+      // removed source_chunks parameter
+    ) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-    const updateResult = await client.query(
-      `UPDATE conversations
-       SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, source_chunks = $8
-       WHERE user_id = $1 AND chatbot_id = $2
-       RETURNING *`,
-      [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, source_chunks]
-    );
+        const updateResult = await client.query(
+          `UPDATE conversations
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7 
+           WHERE user_id = $1 AND chatbot_id = $2
+           RETURNING *`,
+          // removed source_chunks ($8) from query and parameters
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
+        );
 
-    if (updateResult.rows.length === 0) {
-      const insertResult = await client.query(
-        `INSERT INTO conversations
-         (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, source_chunks)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *`,
-        [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, source_chunks]
-      );
-      await client.query('COMMIT');
-      return insertResult.rows[0];
-    } else {
-      await client.query('COMMIT');
-      return updateResult.rows[0];
+        if (updateResult.rows.length === 0) {
+          const insertResult = await client.query(
+            `INSERT INTO conversations
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *`,
+            // removed source_chunks from query and parameters
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
+          );
+          await client.query('COMMIT');
+          return insertResult.rows[0];
+        } else {
+          await client.query('COMMIT');
+          return updateResult.rows[0];
+        }
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
 
 // POST conversation
 app.post('/conversations', async (req, res) => {
-  let { 
-    conversation_data, 
-    user_id, 
-    chatbot_id, 
-    emne, 
-    score, 
-    customer_rating, 
-    lacking_info,
-    source_chunks  // Extract source_chunks from request body
+  // REMOVED: source_chunks from destructuring
+  let {
+    conversation_data,
+    user_id,
+    chatbot_id,
+    emne,
+    score,
+    customer_rating,
+    lacking_info
+    // Note: form_data might also be in req.body depending on your frontend, add if needed
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -807,35 +810,40 @@ app.post('/conversations', async (req, res) => {
     try {
       const user = jwt.verify(token, SECRET_KEY);
       req.user = user;
-      user_id = user.userId;
+      user_id = user.userId; // Override user_id if token is valid
     } catch (err) {
-      return res.status(403).json({ error: 'Invalid or expired token', details: err.message });
+      // If token is invalid/expired, proceed but rely on user_id from body (if present)
+      console.warn('Token verification failed, proceeding without authenticated user:', err.message);
     }
   }
 
+  // Ensure user_id is present either from token or body
   if (!user_id) {
-    return res.status(400).json({ error: 'Missing user_id' });
+    return res.status(400).json({ error: 'Missing user_id and no valid authentication token provided' });
   }
   if (!chatbot_id) {
     return res.status(400).json({ error: 'Missing chatbot_id' });
   }
 
   try {
+    // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
-    // Convert source_chunks to JSON if it exists
-    if (source_chunks) {
-      source_chunks = JSON.stringify(source_chunks);
-    }
-    
+
+    // REMOVED: The block that stringified source_chunks separately
+    // if (source_chunks) {
+    //   source_chunks = JSON.stringify(source_chunks);
+    // }
+
+    // Call upsertConversation WITHOUT the source_chunks argument
     const result = await upsertConversation(
       user_id,
       chatbot_id,
-      conversation_data,
+      conversation_data, // This contains the embedded chunks
       emne,
       score,
       customer_rating,
-      lacking_info,
-      source_chunks
+      lacking_info
+      // REMOVED: source_chunks argument
     );
     res.status(201).json(result);
   } catch (err) {
