@@ -750,7 +750,8 @@ async function upsertConversation(
   emne,
   score,
   customer_rating,
-  lacking_info
+  lacking_info,
+  source_chunks
 ) {
   const client = await pool.connect();
   try {
@@ -758,19 +759,19 @@ async function upsertConversation(
 
     const updateResult = await client.query(
       `UPDATE conversations
-       SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7
+       SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, source_chunks = $8
        WHERE user_id = $1 AND chatbot_id = $2
        RETURNING *`,
-      [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
+      [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, source_chunks]
     );
 
     if (updateResult.rows.length === 0) {
       const insertResult = await client.query(
         `INSERT INTO conversations
-         (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, source_chunks)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
-        [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
+        [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, source_chunks]
       );
       await client.query('COMMIT');
       return insertResult.rows[0];
@@ -788,8 +789,16 @@ async function upsertConversation(
 
 // POST conversation
 app.post('/conversations', async (req, res) => {
-  let { conversation_data, user_id, chatbot_id, emne, score, customer_rating, lacking_info } =
-    req.body;
+  let { 
+    conversation_data, 
+    user_id, 
+    chatbot_id, 
+    emne, 
+    score, 
+    customer_rating, 
+    lacking_info,
+    source_chunks  // Extract source_chunks from request body
+  } = req.body;
 
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -813,6 +822,11 @@ app.post('/conversations', async (req, res) => {
 
   try {
     conversation_data = JSON.stringify(conversation_data);
+    // Convert source_chunks to JSON if it exists
+    if (source_chunks) {
+      source_chunks = JSON.stringify(source_chunks);
+    }
+    
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -820,7 +834,8 @@ app.post('/conversations', async (req, res) => {
       emne,
       score,
       customer_rating,
-      lacking_info
+      lacking_info,
+      source_chunks
     );
     res.status(201).json(result);
   } catch (err) {
