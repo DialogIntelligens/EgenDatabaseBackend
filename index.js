@@ -970,6 +970,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
+    queryText += `ORDER BY created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
 
