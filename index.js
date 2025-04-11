@@ -971,7 +971,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryParams.push(start_date, end_date);
     }
     if (conversation_filter != '') {
-      queryText += ` AND conversation_data::text ILIKE $${paramIndex++}`;
+      queryText += ` AND conversation_data::text ILIKE '%telefon%'`;
       queryParams.push(`%${conversation_filter}%`);
     }
     queryText += ` ORDER BY created_at DESC `;
