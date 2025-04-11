@@ -944,7 +944,7 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, lacking_info, start_date, end_date } = req.query;
+  const { chatbot_id, pageNumber, pageSize, lacking_info, start_date, end_date } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -959,6 +959,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       WHERE chatbot_id = ANY($1)
     `;
     let queryParams = [chatbotIds];
+    queryParams.push(pageSize);
+    queryParams.push(pageNumber * pageSize);
     let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
@@ -970,6 +972,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
+    queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
+    queryParams.push(pageSize, pageNumber * pageSize);
 
     const result = await pool.query(queryText, queryParams);
     return res.json(result.rows);
