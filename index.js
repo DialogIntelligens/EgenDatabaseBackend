@@ -914,6 +914,32 @@ app.get('/conversations', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/conversation-count', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+
+    let queryText = `
+      SELECT COUNT(id) AS conversation_count
+      FROM conversations
+      WHERE chatbot_id = ANY($1)
+    `;
+    let queryParams = [chatbotIds];
+    const result = await pool.query(queryText, queryParams);
+    return res.json(result.rows);
+  }
+  catch (err) {
+    console.error('Error retrieving metadata from /conversation-count:', err);
+    return res
+      .status(500)
+      .json({ error: 'Database error', details: err.message });
+  }
+});
+
 /* 
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
