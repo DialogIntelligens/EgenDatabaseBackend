@@ -577,6 +577,11 @@ app.post('/register', async (req, res) => {
    is_admin
   } = req.body;
 
+  // Basic validation: Ensure chatbot_filepath is an array if provided
+  if (chatbot_filepath && !Array.isArray(chatbot_filepath)) {
+    return res.status(400).json({ error: 'chatbot_filepath must be an array of strings.' });
+  }
+
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     // Convert chatbot_ids to a JSON array or similar
@@ -605,7 +610,7 @@ app.post('/register', async (req, res) => {
         pinecone_api_key,
         pineconeIndexesJSON,
         show_purchase,
-        chatbot_filepath,
+        chatbot_filepath || [],
         is_admin
       ]
     );
@@ -659,7 +664,7 @@ app.post('/login', async (req, res) => {
       token,
       chatbot_ids: chatbotIds,
       show_purchase: user.show_purchase,
-      chatbot_filepath: user.chatbot_filepath,
+      chatbot_filepath: user.chatbot_filepath || [],
       is_admin: user.is_admin,
       thumbs_rating: user.thumbs_rating || false  // Add this line
     });
@@ -1188,14 +1193,19 @@ app.get('/users', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Return all needed fields, but still omit the password hash
+    // Return all needed fields, including the chatbot_filepath array
     const result = await pool.query(`
-      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key, 
+      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
              pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
       FROM users
       ORDER BY id DESC
     `);
-    res.json(result.rows);
+    // Ensure chatbot_filepath is always an array in the response
+    const users = result.rows.map(user => ({
+      ...user,
+      chatbot_filepath: user.chatbot_filepath || []
+    }));
+    res.json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
@@ -1211,9 +1221,9 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
   const userId = req.params.id;
   
   try {
-    // Get full user details except password
+    // Get full user details except password, including chatbot_filepath array
     const result = await pool.query(`
-      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key, 
+      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
              pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
       FROM users
       WHERE id = $1
@@ -1223,7 +1233,13 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    res.json(result.rows[0]);
+    // Ensure chatbot_filepath is always an array in the response
+    const user = {
+      ...result.rows[0],
+      chatbot_filepath: result.rows[0].chatbot_filepath || []
+    };
+    
+    res.json(user);
   } catch (error) {
     console.error('Error fetching user details:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
