@@ -1258,6 +1258,71 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Add this endpoint to update a user's chatbot IDs and filepaths
+app.patch('/users/:id', authenticateToken, async (req, res) => {
+  // Only admins can update users
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const { id } = req.params;
+  const { chatbot_ids, chatbot_filepath } = req.body;
+  
+  // Validate input
+  if ((!chatbot_ids || !Array.isArray(chatbot_ids)) && 
+      (!chatbot_filepath || !Array.isArray(chatbot_filepath))) {
+    return res.status(400).json({ 
+      error: 'No valid data provided. At least one of chatbot_ids or chatbot_filepath must be an array.'
+    });
+  }
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Prepare the update query
+    let updateFields = [];
+    let queryParams = [];
+    let paramIndex = 1;
+    
+    if (chatbot_ids && Array.isArray(chatbot_ids)) {
+      updateFields.push(`chatbot_ids = $${paramIndex}`);
+      queryParams.push(chatbot_ids);
+      paramIndex++;
+    }
+    
+    if (chatbot_filepath && Array.isArray(chatbot_filepath)) {
+      updateFields.push(`chatbot_filepath = $${paramIndex}`);
+      queryParams.push(chatbot_filepath);
+      paramIndex++;
+    }
+    
+    // Add the ID as the last parameter
+    queryParams.push(id);
+    
+    // Execute the update
+    const updateQuery = `
+      UPDATE users 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING id, username, chatbot_ids, chatbot_filepath
+    `;
+    
+    const result = await pool.query(updateQuery, queryParams);
+    
+    res.status(200).json({ 
+      message: 'User updated successfully',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
