@@ -920,7 +920,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -936,7 +936,7 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     let queryParams = [chatbotIds];
     let paramIndex = 2;
 
-    
+
     if (fejlstatus && fejlstatus !== '') {
       queryText += ` AND bug_status = $${paramIndex++}`;
       queryParams.push(fejlstatus);
