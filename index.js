@@ -949,7 +949,7 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, conversation_filter, lacking_info, start_date, end_date } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -974,6 +974,18 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     if (start_date && end_date) {
       queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
+    }
+    if (fejlstatus !== '') {
+      queryText += ` AND bug_status = $${paramIndex++}`;
+      queryParams.push(fejlstatus);
+    }
+    if (customer_rating !== '') {
+      queryText += ` AND customer_rating = $${paramIndex++}`;
+      queryParams.push(customer_rating);
+    }
+    if (emne !== '') {
+      queryText += ` AND emne = $${paramIndex++}`;
+      queryParams.push(emne);
     }
     // if (conversation_filter != '') {
     //   queryText += ` AND conversation_data::text ILIKE '$${paramIndex++}'`;
