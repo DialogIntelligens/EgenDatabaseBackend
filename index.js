@@ -934,6 +934,21 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
       WHERE chatbot_id = ANY($1)
     `;
     let queryParams = [chatbotIds];
+    let paramIndex = 2;
+
+    
+    if (fejlstatus && fejlstatus !== '') {
+      queryText += ` AND bug_status = $${paramIndex++}`;
+      queryParams.push(fejlstatus);
+    }
+    if (customer_rating && customer_rating !== '') {
+      queryText += ` AND customer_rating = $${paramIndex++}`;
+      queryParams.push(customer_rating);
+    }
+    if (emne && emne !== '') {
+      queryText += ` AND emne = $${paramIndex++}`;
+      queryParams.push(emne);
+    }
     const result = await pool.query(queryText, queryParams);
     return res.json(result.rows);
   }
