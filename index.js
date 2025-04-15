@@ -975,15 +975,15 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
-    if (fejlstatus !== '') {
+    if (fejlstatus && fejlstatus !== '') {
       queryText += ` AND bug_status = $${paramIndex++}`;
       queryParams.push(fejlstatus);
     }
-    if (customer_rating !== '') {
+    if (customer_rating && customer_rating !== '') {
       queryText += ` AND customer_rating = $${paramIndex++}`;
       queryParams.push(customer_rating);
     }
-    if (emne !== '') {
+    if (emne && emne !== '') {
       queryText += ` AND emne = $${paramIndex++}`;
       queryParams.push(emne);
     }
