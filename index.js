@@ -368,6 +368,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
         userId: targetUserId.toString(),
         text,
         title,
+        metadata: 'true'
       },
     };
 
@@ -448,6 +449,7 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
           userId: dataOwnerId.toString(),
           text,
           title,
+          metadata: 'true'
         },
       },
     ], { namespace });
