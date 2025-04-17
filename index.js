@@ -976,7 +976,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data
       FROM conversations
       WHERE chatbot_id = ANY($1)
     `;
