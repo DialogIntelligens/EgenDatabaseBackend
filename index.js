@@ -1004,11 +1004,11 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND emne = $${paramIndex++}`;
       queryParams.push(emne);
     }
-    if (conversation_filter && conversation_filter.trim() !== '') {
-      queryText += ` AND conversation_data::text ILIKE $${paramIndex++}`;
-      queryParams.push(`%${conversation_filter}%`);
-    }
-    
+    // if (conversation_filter && conversation_filter.trim() !== '') {
+    //   queryText += ` AND conversation_data::text ILIKE $${paramIndex++}`;
+    //   queryParams.push(`%${conversation_filter}%`);
+    // }
+
     queryText += ` ORDER BY created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
