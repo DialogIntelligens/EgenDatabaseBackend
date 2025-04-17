@@ -1005,8 +1005,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryParams.push(emne);
     }
     if (conversation_filter != '') {
-      queryText += ` AND conversation_data::text ILIKE '%$${paramIndex++}%'`;
-      queryParams.push(`${conversation_filter}`);
+      queryText += ` AND conversation_data::text ILIKE $${paramIndex++}`;
+      queryParams.push(`%${conversation_filter}%`);
     }
     queryText += ` ORDER BY created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
