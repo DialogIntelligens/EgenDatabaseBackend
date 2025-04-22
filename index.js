@@ -981,7 +981,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data
       FROM conversations
       WHERE chatbot_id = ANY($1)
     `;
@@ -1009,10 +1009,11 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND emne = $${paramIndex++}`;
       queryParams.push(emne);
     }
-    // if (conversation_filter != '') {
-    //   queryText += ` AND conversation_data::text ILIKE '$${paramIndex++}'`;
-    //   queryParams.push(`%${conversation_filter}%`);
-    // }
+    if (conversation_filter && conversation_filter.trim() !== '') {
+      queryText += ` AND conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryParams.push(`${conversation_filter}`);
+    }
+
     queryText += ` ORDER BY created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
