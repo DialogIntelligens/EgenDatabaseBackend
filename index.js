@@ -321,7 +321,7 @@ app.post('/crm-data-for-user', async (req, res) => {
    Pinecone Data Endpoints
 ================================ */
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { title, text, indexName, namespace, expirationTime, api_key } = req.body;
+  const { title, text, indexName, namespace, expirationTime } = req.body;
   const authenticatedUserId = req.user.userId;
   
   // Check if user is admin and if a userId parameter was provided
@@ -343,18 +343,17 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       }
     }
     
-    // Retrieve Pinecone key for the target user (as fallback)
+    // Retrieve Pinecone key for the target user
     const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [targetUserId]);
-    // Use index-specific API key if provided, otherwise fall back to user's API key
-    const pineconeApiKey = api_key || userResult.rows[0].pinecone_api_key;
+    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
     if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'No valid Pinecone API key found' });
+      return res.status(400).json({ error: 'Pinecone API key not set for the target user' });
     }
 
     // Generate embedding
     const embedding = await generateEmbedding(text);
 
-    // Initialize Pinecone with the determined API key
+    // Initialize Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
     const index = pineconeClient.index(namespace);
 
@@ -403,7 +402,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
 app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { title, text, api_key } = req.body;
+  const { title, text } = req.body;
   const userId = req.user.userId;
   const isAdmin = req.user.isAdmin === true;
 
@@ -429,17 +428,16 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
 
     // Get Pinecone API key of the DATA OWNER (not necessarily the admin)
     const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [dataOwnerId]);
-    // Use index-specific API key if provided, otherwise fall back to user's API key
-    const pineconeApiKey = api_key || userResult.rows[0].pinecone_api_key;
+    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
     
     if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'No valid Pinecone API key found' });
+      return res.status(400).json({ error: 'Pinecone API key not set for the data owner' });
     }
 
     // Generate new embedding
     const embedding = await generateEmbedding(text);
 
-    // Update in Pinecone using the determined API key
+    // Update in Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
     const index = pineconeClient.index(namespace);
     
@@ -526,8 +524,6 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.userId;
   const isAdmin = req.user.isAdmin === true;
-  // Check if api_key is provided in query parameters
-  const { api_key } = req.query;
 
   try {
     // Retrieve the record - for admins, don't restrict by user_id
@@ -547,14 +543,13 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
 
     // Retrieve Pinecone API key of the DATA OWNER (not necessarily the admin)
     const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [dataOwnerId]);
-    // Use index-specific API key if provided, otherwise fall back to user's API key
-    const pineconeApiKey = api_key || userResult.rows[0].pinecone_api_key;
+    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
     
     if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'No valid Pinecone API key found' });
+      return res.status(400).json({ error: 'Pinecone API key not set for the data owner' });
     }
 
-    // Delete from Pinecone using the determined API key
+    // Delete from Pinecone
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
     const index = pineconeClient.index(namespace);
     await index.deleteOne(pinecone_vector_id, { namespace });
