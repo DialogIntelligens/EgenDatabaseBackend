@@ -976,7 +976,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed
       FROM conversations
       WHERE chatbot_id = ANY($1)
     `;
@@ -1027,10 +1027,15 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
 app.get('/conversation/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
+    // Get the conversation
     const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
+    
+    // Mark the conversation as viewed
+    await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
+    
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error retrieving conversation:', err);
