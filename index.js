@@ -367,7 +367,7 @@ app.post('/crm-data-for-user', async (req, res) => {
    Pinecone Data Endpoints
 ================================ */
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { title, text, indexName, namespace, expirationTime } = req.body;
+  const { title, text, indexName, namespace, expirationTime, group } = req.body;
   const authenticatedUserId = req.user.userId;
   
   // Check if user is admin and if a userId parameter was provided
@@ -411,7 +411,8 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
           userId: targetUserId.toString(),
           text,
           title,
-          metadata: 'true'
+          metadata: 'true',
+          group: group || null // Store group in metadata if provided
         },
       };
 
@@ -427,13 +428,16 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
         }
       }
 
+      // Add group to the metadata field in the database
+      const metadata = { group };
+
       // Insert record with the target user's ID (which might be the admin's or another user's)
       const result = await pool.query(
         `INSERT INTO pinecone_data 
-          (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+          (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
-        [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
+        [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, JSON.stringify(metadata)]
       );
 
       res.status(201).json(result.rows[0]);
@@ -449,7 +453,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
 app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { title, text } = req.body;
+  const { title, text, group } = req.body;
   const userId = req.user.userId;
   const isAdmin = req.user.isAdmin === true;
 
@@ -471,7 +475,7 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Data not found or you do not have permission to modify it' });
     }
 
-    const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
+    const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId, metadata: existingMetadata } = dataResult.rows[0];
 
     // Get the appropriate Pinecone API key for this index
     try {
@@ -479,6 +483,25 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
       
       // Generate new embedding
       const embedding = await generateEmbedding(text);
+      
+      // Parse existing metadata or create new object
+      let metadata = {};
+      if (existingMetadata) {
+        try {
+          if (typeof existingMetadata === 'string') {
+            metadata = JSON.parse(existingMetadata);
+          } else {
+            metadata = existingMetadata;
+          }
+        } catch (e) {
+          console.error('Error parsing existing metadata:', e);
+        }
+      }
+      
+      // Update group info in metadata
+      if (group !== undefined) {
+        metadata.group = group;
+      }
 
       // Update in Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
@@ -492,15 +515,16 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
             userId: dataOwnerId.toString(),
             text,
             title,
-            metadata: 'true'
+            metadata: 'true',
+            group: metadata.group || null
           },
         },
       ], { namespace });
 
       // Update in DB
       const result = await pool.query(
-        'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
-        [title, text, id]
+        'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3 WHERE id = $4 RETURNING *',
+        [title, text, JSON.stringify(metadata), id]
       );
 
       res.json(result.rows[0]);
@@ -528,7 +552,8 @@ app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
         namespace: index.namespace,
         index_name: index.index_name,
         // Exclude API_key from the response
-        has_api_key: !!index.API_key // Just indicate if it has a key
+        has_api_key: !!index.API_key, // Just indicate if it has a key
+        group: index.group // Include the group property if it exists
       }));
     }
     
@@ -563,14 +588,30 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
     );
     
     res.json(
-      result.rows.map((row) => ({
-        title: row.title,
-        text: row.text,
-        id: row.id,
-        pinecone_index_name: row.pinecone_index_name,
-        namespace: row.namespace,
-        expiration_time: row.expiration_time,
-      }))
+      result.rows.map((row) => {
+        // Extract group from metadata if available
+        let group = null;
+        if (row.metadata) {
+          try {
+            const metadata = typeof row.metadata === 'string'
+              ? JSON.parse(row.metadata)
+              : row.metadata;
+            group = metadata.group;
+          } catch (e) {
+            console.error('Error parsing metadata:', e);
+          }
+        }
+        
+        return {
+          title: row.title,
+          text: row.text,
+          id: row.id,
+          pinecone_index_name: row.pinecone_index_name,
+          namespace: row.namespace,
+          expiration_time: row.expiration_time,
+          group: group // Include group information
+        };
+      })
     );
   } catch (err) {
     console.error('Error retrieving data:', err);
