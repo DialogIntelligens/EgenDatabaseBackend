@@ -70,6 +70,52 @@ async function generateEmbedding(text) {
   }
 }
 
+// Helper function to get the API key for a specific index or fallback to user's default key
+async function getPineconeApiKeyForIndex(userId, indexName, namespace) {
+  try {
+    // Get user data
+    const userResult = await pool.query('SELECT pinecone_api_key, pinecone_indexes FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      throw new Error('User not found');
+    }
+    
+    const user = userResult.rows[0];
+    let pineconeIndexes = user.pinecone_indexes;
+    
+    // Parse indexes if it's a string
+    if (typeof pineconeIndexes === 'string') {
+      pineconeIndexes = JSON.parse(pineconeIndexes);
+    }
+    
+    // Check if pineconeIndexes is an array
+    if (Array.isArray(pineconeIndexes)) {
+      // Look for the matching index with the specified namespace and index_name
+      const matchedIndex = pineconeIndexes.find(index => 
+        index.namespace === namespace && 
+        index.index_name === indexName && 
+        index.API_key
+      );
+      
+      // If found a matching index with API_key, return that key
+      if (matchedIndex && matchedIndex.API_key) {
+        console.log(`Using index-specific API key for index: ${indexName}, namespace: ${namespace}`);
+        return matchedIndex.API_key;
+      }
+    }
+    
+    // Fallback to user's default API key
+    if (user.pinecone_api_key) {
+      console.log(`Using default user API key for index: ${indexName}, namespace: ${namespace}`);
+      return user.pinecone_api_key;
+    }
+    
+    throw new Error('No Pinecone API key found for this index or user');
+  } catch (error) {
+    console.error('Error getting Pinecone API key:', error);
+    throw error;
+  }
+}
+
 /* ================================
    Bodylab Order API Proxy
 ================================ */
@@ -343,57 +389,58 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       }
     }
     
-    // Retrieve Pinecone key for the target user
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [targetUserId]);
-    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-    if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set for the target user' });
-    }
+    // Get the appropriate Pinecone API key for this index
+    try {
+      const pineconeApiKey = await getPineconeApiKeyForIndex(targetUserId, indexName, namespace);
+      
+      // Generate embedding
+      const embedding = await generateEmbedding(text);
 
-    // Generate embedding
-    const embedding = await generateEmbedding(text);
+      // Initialize Pinecone
+      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+      const index = pineconeClient.index(namespace);
 
-    // Initialize Pinecone
-    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(namespace);
+      // Create unique vector ID
+      const vectorId = `vector-${Date.now()}`;
 
-    // Create unique vector ID
-    const vectorId = `vector-${Date.now()}`;
+      // Prepare vector
+      const vector = {
+        id: vectorId,
+        values: embedding,
+        metadata: {
+          userId: targetUserId.toString(),
+          text,
+          title,
+          metadata: 'true'
+        },
+      };
 
-    // Prepare vector
-    const vector = {
-      id: vectorId,
-      values: embedding,
-      metadata: {
-        userId: targetUserId.toString(),
-        text,
-        title,
-        metadata: 'true'
-      },
-    };
+      // Upsert into Pinecone
+      await index.upsert([vector], { namespace });
 
-    // Upsert into Pinecone
-    await index.upsert([vector], { namespace });
-
-    // Convert expirationTime -> Date or set null
-    let expirationDateTime = null;
-    if (expirationTime) {
-      expirationDateTime = new Date(expirationTime);
-      if (isNaN(expirationDateTime.getTime())) {
-        return res.status(400).json({ error: 'Invalid expirationTime format' });
+      // Convert expirationTime -> Date or set null
+      let expirationDateTime = null;
+      if (expirationTime) {
+        expirationDateTime = new Date(expirationTime);
+        if (isNaN(expirationDateTime.getTime())) {
+          return res.status(400).json({ error: 'Invalid expirationTime format' });
+        }
       }
+
+      // Insert record with the target user's ID (which might be the admin's or another user's)
+      const result = await pool.query(
+        `INSERT INTO pinecone_data 
+          (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (error) {
+      console.error('API key error:', error);
+      return res.status(400).json({ error: error.message });
     }
-
-    // Insert record with the target user's ID (which might be the admin's or another user's)
-    const result = await pool.query(
-      `INSERT INTO pinecone_data 
-        (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
-    );
-
-    res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error upserting data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
@@ -426,41 +473,41 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
 
     const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
 
-    // Get Pinecone API key of the DATA OWNER (not necessarily the admin)
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [dataOwnerId]);
-    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-    
-    if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set for the data owner' });
-    }
+    // Get the appropriate Pinecone API key for this index
+    try {
+      const pineconeApiKey = await getPineconeApiKeyForIndex(dataOwnerId, pinecone_index_name, namespace);
+      
+      // Generate new embedding
+      const embedding = await generateEmbedding(text);
 
-    // Generate new embedding
-    const embedding = await generateEmbedding(text);
-
-    // Update in Pinecone
-    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(namespace);
-    
-    await index.upsert([
-      {
-        id: pinecone_vector_id,
-        values: embedding,
-        metadata: {
-          userId: dataOwnerId.toString(),
-          text,
-          title,
-          metadata: 'true'
+      // Update in Pinecone
+      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+      const index = pineconeClient.index(namespace);
+      
+      await index.upsert([
+        {
+          id: pinecone_vector_id,
+          values: embedding,
+          metadata: {
+            userId: dataOwnerId.toString(),
+            text,
+            title,
+            metadata: 'true'
+          },
         },
-      },
-    ], { namespace });
+      ], { namespace });
 
-    // Update in DB
-    const result = await pool.query(
-      'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
-      [title, text, id]
-    );
+      // Update in DB
+      const result = await pool.query(
+        'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
+        [title, text, id]
+      );
 
-    res.json(result.rows[0]);
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error('API key error:', error);
+      return res.status(400).json({ error: error.message });
+    }
   } catch (err) {
     console.error('Error updating data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
@@ -473,7 +520,18 @@ app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
     const indexes = result.rows[0].pinecone_indexes;
-    const parsedIndexes = typeof indexes === 'string' ? JSON.parse(indexes) : indexes;
+    let parsedIndexes = typeof indexes === 'string' ? JSON.parse(indexes) : indexes;
+    
+    // Remove API keys from the response for security
+    if (Array.isArray(parsedIndexes)) {
+      parsedIndexes = parsedIndexes.map(index => ({
+        namespace: index.namespace,
+        index_name: index.index_name,
+        // Exclude API_key from the response
+        has_api_key: !!index.API_key // Just indicate if it has a key
+      }));
+    }
+    
     res.json(parsedIndexes);
   } catch (err) {
     console.error('Error retrieving indexes:', err);
@@ -541,23 +599,23 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
 
     const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
 
-    // Retrieve Pinecone API key of the DATA OWNER (not necessarily the admin)
-    const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [dataOwnerId]);
-    const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-    
-    if (!pineconeApiKey) {
-      return res.status(400).json({ error: 'Pinecone API key not set for the data owner' });
+    // Get the appropriate Pinecone API key for this index
+    try {
+      const pineconeApiKey = await getPineconeApiKeyForIndex(dataOwnerId, pinecone_index_name, namespace);
+      
+      // Delete from Pinecone
+      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+      const index = pineconeClient.index(namespace);
+      await index.deleteOne(pinecone_vector_id, { namespace });
+
+      // Delete from DB
+      await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
+
+      res.json({ message: 'Data deleted successfully' });
+    } catch (error) {
+      console.error('API key error:', error);
+      return res.status(400).json({ error: error.message });
     }
-
-    // Delete from Pinecone
-    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(namespace);
-    await index.deleteOne(pinecone_vector_id, { namespace });
-
-    // Delete from DB
-    await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
-
-    res.json({ message: 'Data deleted successfully' });
   } catch (err) {
     console.error('Error deleting data:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
@@ -1132,21 +1190,20 @@ cron.schedule('0 * * * *', async () => {
     for (const row of expiredRows.rows) {
       const { id, pinecone_vector_id, pinecone_index_name, namespace, user_id } = row;
 
-      const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [
-        user_id,
-      ]);
-      const pineconeApiKey = userResult.rows[0].pinecone_api_key;
-      if (!pineconeApiKey) {
-        console.log(`Pinecone key missing for user ${user_id}, skipping ID ${id}`);
-        continue;
+      // Get the appropriate Pinecone API key for this index
+      try {
+        const pineconeApiKey = await getPineconeApiKeyForIndex(user_id, pinecone_index_name, namespace);
+        
+        const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+        const index = pineconeClient.index(namespace);
+        await index.deleteOne(pinecone_vector_id, { namespace });
+
+        await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
+        console.log(`Expired chunk with ID ${id} removed from Pinecone and DB`);
+      } catch (keyError) {
+        console.error(`Failed to get API key for expired data ID ${id}:`, keyError.message);
+        // Continue to next item even if this one fails
       }
-
-      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      const index = pineconeClient.index(namespace);
-      await index.deleteOne(pinecone_vector_id, { namespace });
-
-      await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
-      console.log(`Expired chunk with ID ${id} removed from Pinecone and DB`);
     }
   } catch (err) {
     console.error('Error deleting expired data:', err);
@@ -1190,9 +1247,12 @@ app.delete('/users/:id', authenticateToken, async (req, res) => {
     // For each piece of Pinecone data, delete from Pinecone first if needed
     for (const row of pineconeResult.rows) {
       try {
-        // Get the user's Pinecone API key (if needed for deletion)
-        const userResult = await pool.query('SELECT pinecone_api_key FROM users WHERE id = $1', [id]);
-        const pineconeApiKey = userResult.rows[0]?.pinecone_api_key;
+        // Use the helper function to get the appropriate API key for this index
+        const pineconeApiKey = await getPineconeApiKeyForIndex(
+          id, 
+          row.pinecone_index_name, 
+          row.namespace
+        );
         
         if (pineconeApiKey && row.pinecone_vector_id && row.namespace) {
           const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
@@ -1274,6 +1334,16 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
       chatbot_filepath: result.rows[0].chatbot_filepath || []
     };
     
+    // Parse pinecone_indexes if it's a string
+    if (typeof user.pinecone_indexes === 'string') {
+      try {
+        user.pinecone_indexes = JSON.parse(user.pinecone_indexes);
+      } catch (e) {
+        console.error('Error parsing pinecone_indexes:', e);
+        user.pinecone_indexes = [];
+      }
+    }
+    
     res.json(user);
   } catch (error) {
     console.error('Error fetching user details:', error);
@@ -1342,6 +1412,62 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating user:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Add this endpoint to update a user's Pinecone indexes
+app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
+  // Only admins or the user themselves can update indexes
+  if (!req.user.isAdmin && req.user.userId != req.params.id) {
+    return res.status(403).json({ error: 'Forbidden: You can only modify your own indexes' });
+  }
+
+  const { id } = req.params;
+  const { pinecone_indexes } = req.body;
+  
+  // Validate input
+  if (!Array.isArray(pinecone_indexes)) {
+    return res.status(400).json({ 
+      error: 'pinecone_indexes must be an array'
+    });
+  }
+  
+  // Validate structure of each index object
+  for (const index of pinecone_indexes) {
+    if (!index.namespace || !index.index_name) {
+      return res.status(400).json({
+        error: 'Each index must have namespace and index_name properties'
+      });
+    }
+    // API_key is optional, so no validation needed for it
+  }
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Convert the array to JSON string
+    const indexesJson = JSON.stringify(pinecone_indexes);
+    
+    // Update the user's indexes
+    const result = await pool.query(
+      'UPDATE users SET pinecone_indexes = $1 WHERE id = $2 RETURNING id, username',
+      [indexesJson, id]
+    );
+    
+    res.status(200).json({ 
+      message: 'Pinecone indexes updated successfully',
+      user: {
+        id: result.rows[0].id,
+        username: result.rows[0].username
+      } 
+    });
+  } catch (error) {
+    console.error('Error updating user indexes:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
