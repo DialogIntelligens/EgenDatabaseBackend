@@ -1091,8 +1091,10 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
     
-    // Mark the conversation as viewed
-    await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
+    // Only mark the conversation as viewed if the user is not an admin
+    if (!req.user.isAdmin) {
+      await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
+    }
     
     res.json(result.rows[0]);
   } catch (err) {
