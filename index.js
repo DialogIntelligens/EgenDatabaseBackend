@@ -403,17 +403,24 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       // Create unique vector ID
       const vectorId = `vector-${Date.now()}`;
 
+      // Prepare vector metadata
+      const vectorMetadata = {
+        userId: targetUserId.toString(),
+        text,
+        title,
+        metadata: 'true'
+      };
+      
+      // Only add group to metadata if it's defined
+      if (group !== undefined && group !== null) {
+        vectorMetadata.group = group;
+      }
+
       // Prepare vector
       const vector = {
         id: vectorId,
         values: embedding,
-        metadata: {
-          userId: targetUserId.toString(),
-          text,
-          title,
-          metadata: 'true',
-          group: group || null // Store group in metadata if provided
-        },
+        metadata: vectorMetadata
       };
 
       // Upsert into Pinecone
@@ -429,18 +436,30 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
       }
 
       // Add group to the metadata field in the database
-      const metadata = { group };
+      const metadata = group ? { group } : {};
 
-      // Insert record with the target user's ID (which might be the admin's or another user's)
-      const result = await pool.query(
-        `INSERT INTO pinecone_data 
-          (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *`,
-        [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, JSON.stringify(metadata)]
-      );
-
-      res.status(201).json(result.rows[0]);
+      try {
+        // Try with metadata column
+        const result = await pool.query(
+          `INSERT INTO pinecone_data 
+            (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *`,
+          [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, JSON.stringify(metadata)]
+        );
+        res.status(201).json(result.rows[0]);
+      } catch (dbError) {
+        // If metadata column doesn't exist, try without it
+        console.error('Error with metadata column, trying without it:', dbError);
+        const fallbackResult = await pool.query(
+          `INSERT INTO pinecone_data 
+            (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
+        );
+        res.status(201).json(fallbackResult.rows[0]);
+      }
     } catch (error) {
       console.error('API key error:', error);
       return res.status(400).json({ error: error.message });
@@ -503,6 +522,22 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
         metadata.group = group;
       }
 
+      // Prepare vector metadata
+      const vectorMetadata = {
+        userId: dataOwnerId.toString(),
+        text,
+        title,
+        metadata: 'true'
+      };
+      
+      // Only add group to metadata if it's defined
+      if (group !== undefined && group !== null) {
+        vectorMetadata.group = group;
+      } else if (metadata.group) {
+        // If there's an existing group in the metadata, use it
+        vectorMetadata.group = metadata.group;
+      }
+
       // Update in Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
       const index = pineconeClient.index(namespace);
@@ -511,23 +546,26 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
         {
           id: pinecone_vector_id,
           values: embedding,
-          metadata: {
-            userId: dataOwnerId.toString(),
-            text,
-            title,
-            metadata: 'true',
-            group: metadata.group || null
-          },
+          metadata: vectorMetadata
         },
       ], { namespace });
 
-      // Update in DB
-      const result = await pool.query(
-        'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3 WHERE id = $4 RETURNING *',
-        [title, text, JSON.stringify(metadata), id]
-      );
-
-      res.json(result.rows[0]);
+      try {
+        // Try to update with metadata
+        const result = await pool.query(
+          'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3 WHERE id = $4 RETURNING *',
+          [title, text, JSON.stringify(metadata), id]
+        );
+        res.json(result.rows[0]);
+      } catch (dbError) {
+        // If metadata column doesn't exist, try without it
+        console.error('Error with metadata column, trying without it:', dbError);
+        const fallbackResult = await pool.query(
+          'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
+          [title, text, id]
+        );
+        res.json(fallbackResult.rows[0]);
+      }
     } catch (error) {
       console.error('API key error:', error);
       return res.status(400).json({ error: error.message });
