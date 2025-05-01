@@ -104,6 +104,11 @@ export async function generateStatisticsReport(data, timePeriod) {
         }
       }
       
+      // Add text analysis results if available
+      if (data.textAnalysis) {
+        addTextAnalysisSection(doc, data.textAnalysis);
+      }
+      
       // Add footer
       doc.moveDown(2);
       const date = new Date();
@@ -116,6 +121,139 @@ export async function generateStatisticsReport(data, timePeriod) {
       reject(error);
     }
   });
+}
+
+/**
+ * Add text analysis section to the report
+ * @param {PDFDocument} doc - The PDF document
+ * @param {Object} textAnalysis - The text analysis results
+ */
+function addTextAnalysisSection(doc, textAnalysis) {
+  try {
+    // Add a page break for this section
+    doc.addPage();
+    
+    // Add section title
+    doc.fontSize(18).text('Conversation Text Analysis', { align: 'center' });
+    doc.moveDown();
+    
+    // Add dataset information
+    doc.fontSize(12).text(`Analysis based on ${textAnalysis.trainingSize + textAnalysis.testingSize} conversations`);
+    doc.fontSize(12).text(`Training set: ${textAnalysis.trainingSize} conversations`);
+    doc.fontSize(12).text(`Testing set: ${textAnalysis.testingSize} conversations`);
+    doc.moveDown();
+    
+    // Add test results
+    if (textAnalysis.testResults) {
+      doc.fontSize(16).text('Model Performance', { underline: true });
+      doc.moveDown();
+      
+      const { 
+        meanAbsoluteError, 
+        rootMeanSquaredError, 
+        correlationCoefficient,
+        sampleSize 
+      } = textAnalysis.testResults;
+      
+      doc.fontSize(12).text(`Sample Size: ${sampleSize} conversations`);
+      doc.fontSize(12).text(`Mean Absolute Error: ${meanAbsoluteError.toFixed(2)}`);
+      doc.fontSize(12).text(`Root Mean Squared Error: ${rootMeanSquaredError.toFixed(2)}`);
+      doc.fontSize(12).text(`Correlation Coefficient: ${correlationCoefficient.toFixed(2)}`);
+      doc.moveDown(2);
+    }
+    
+    // Add positive correlations
+    if (textAnalysis.positiveCorrelations) {
+      doc.fontSize(16).text('Positive Score Correlations', { underline: true });
+      doc.moveDown();
+      
+      // Monograms
+      if (textAnalysis.positiveCorrelations.monograms && textAnalysis.positiveCorrelations.monograms.length > 0) {
+        doc.fontSize(14).text('Top Words (Monograms)');
+        doc.moveDown(0.5);
+        
+        textAnalysis.positiveCorrelations.monograms.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+      }
+      
+      // Bigrams
+      if (textAnalysis.positiveCorrelations.bigrams && textAnalysis.positiveCorrelations.bigrams.length > 0) {
+        doc.fontSize(14).text('Top Word Pairs (Bigrams)');
+        doc.moveDown(0.5);
+        
+        textAnalysis.positiveCorrelations.bigrams.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+      }
+      
+      // Trigrams
+      if (textAnalysis.positiveCorrelations.trigrams && textAnalysis.positiveCorrelations.trigrams.length > 0) {
+        doc.fontSize(14).text('Top Word Triplets (Trigrams)');
+        doc.moveDown(0.5);
+        
+        textAnalysis.positiveCorrelations.trigrams.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+      }
+    }
+    
+    // Add a page break for negative correlations
+    doc.addPage();
+    
+    // Add negative correlations
+    if (textAnalysis.negativeCorrelations) {
+      doc.fontSize(16).text('Negative Score Correlations', { underline: true });
+      doc.moveDown();
+      
+      // Monograms
+      if (textAnalysis.negativeCorrelations.monograms && textAnalysis.negativeCorrelations.monograms.length > 0) {
+        doc.fontSize(14).text('Bottom Words (Monograms)');
+        doc.moveDown(0.5);
+        
+        textAnalysis.negativeCorrelations.monograms.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+      }
+      
+      // Bigrams
+      if (textAnalysis.negativeCorrelations.bigrams && textAnalysis.negativeCorrelations.bigrams.length > 0) {
+        doc.fontSize(14).text('Bottom Word Pairs (Bigrams)');
+        doc.moveDown(0.5);
+        
+        textAnalysis.negativeCorrelations.bigrams.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+      }
+      
+      // Trigrams
+      if (textAnalysis.negativeCorrelations.trigrams && textAnalysis.negativeCorrelations.trigrams.length > 0) {
+        doc.fontSize(14).text('Bottom Word Triplets (Trigrams)');
+        doc.moveDown(0.5);
+        
+        textAnalysis.negativeCorrelations.trigrams.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+      }
+    }
+    
+    // Add interpretation note
+    doc.moveDown();
+    doc.fontSize(11).text('Note: These correlations indicate words/phrases that tend to appear in conversations with higher or lower satisfaction scores. The score range is based on your conversation rating system.', {
+      align: 'left',
+      width: 500
+    });
+    
+  } catch (error) {
+    console.error('Error adding text analysis to report:', error);
+    doc.fontSize(12).text('Error generating text analysis section');
+  }
 }
 
 // Helper function to format time period information
