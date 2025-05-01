@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
+import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 
 const { Pool } = pg;
 
@@ -1317,10 +1318,83 @@ cron.schedule('0 * * * *', async () => {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-    const { statisticsData, timePeriod } = req.body;
+    const { statisticsData, timePeriod, chatbot_id } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
+    }
+    
+    // Get chatbot_id from the request or use user's chatbot IDs
+    let chatbotIds;
+    if (!chatbot_id || chatbot_id === 'ALL') {
+      // Get all chatbot IDs from the user
+      const userResult = await pool.query('SELECT chatbot_ids FROM users WHERE id = $1', [req.user.userId]);
+      if (userResult.rows.length === 0 || !userResult.rows[0].chatbot_ids) {
+        return res.status(400).json({ error: 'No chatbot IDs found for user' });
+      }
+      chatbotIds = userResult.rows[0].chatbot_ids;
+    } else {
+      // Use the specific chatbot ID
+      chatbotIds = [chatbot_id];
+    }
+    
+    // Prepare date range for analysis based on time period
+    let start_date = null;
+    let end_date = new Date().toISOString();
+    
+    if (timePeriod === '7') {
+      const date = new Date();
+      date.setDate(date.getDate() - 7);
+      start_date = date.toISOString();
+    } else if (timePeriod === '30') {
+      const date = new Date();
+      date.setDate(date.getDate() - 30);
+      start_date = date.toISOString();
+    } else if (timePeriod === 'yesterday') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      start_date = yesterday.toISOString();
+      end_date = new Date(yesterday.setHours(23, 59, 59, 999)).toISOString();
+    } else if (timePeriod.custom && timePeriod.startDate && timePeriod.endDate) {
+      start_date = new Date(timePeriod.startDate).toISOString();
+      end_date = new Date(timePeriod.endDate).toISOString();
+    }
+    
+    // Get text analysis if we have enough data
+    let textAnalysisResults = null;
+    try {
+      // Build query to fetch conversations with scores
+      let queryText = `
+        SELECT id, created_at, conversation_data, score
+        FROM conversations
+        WHERE chatbot_id = ANY($1) AND score IS NOT NULL
+      `;
+      let queryParams = [Array.isArray(chatbotIds) ? chatbotIds : [chatbotIds]];
+      let paramIndex = 2;
+      
+      // Add date filters if provided
+      if (start_date && end_date) {
+        queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+        queryParams.push(start_date, end_date);
+      }
+      
+      // Get conversations
+      const result = await pool.query(queryText, queryParams);
+      
+      if (result.rows.length >= 10) {
+        // We have enough data for analysis
+        textAnalysisResults = await analyzeConversations(result.rows);
+      }
+    } catch (error) {
+      console.error('Error performing text analysis:', error);
+      // Continue with report generation even if analysis fails
+    }
+    
+    // Include text analysis in the statistics data if available
+    if (textAnalysisResults && !textAnalysisResults.error) {
+      statisticsData.textAnalysis = textAnalysisResults;
     }
     
     // Generate the PDF report
@@ -1336,6 +1410,56 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report', details: error.message });
+  }
+});
+
+/* ================================
+   Text Analysis Endpoint
+================================ */
+app.post('/analyze-conversations', authenticateToken, async (req, res) => {
+  try {
+    const { chatbot_id, start_date, end_date } = req.body;
+    
+    if (!chatbot_id) {
+      return res.status(400).json({ error: 'chatbot_id is required' });
+    }
+    
+    // Convert comma-separated IDs into an array
+    const chatbotIds = chatbot_id.split(',');
+    
+    // Build query to fetch conversations with scores
+    let queryText = `
+      SELECT id, created_at, conversation_data, score
+      FROM conversations
+      WHERE chatbot_id = ANY($1) AND score IS NOT NULL
+    `;
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+    
+    // Add date filters if provided
+    if (start_date && end_date) {
+      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+    
+    // Get conversations
+    const result = await pool.query(queryText, queryParams);
+    
+    if (result.rows.length < 10) {
+      return res.status(400).json({ 
+        error: 'Insufficient data for analysis',
+        minimumRequired: 10,
+        provided: result.rows.length
+      });
+    }
+    
+    // Perform text analysis
+    const analysisResults = await analyzeConversations(result.rows);
+    
+    res.json(analysisResults);
+  } catch (error) {
+    console.error('Error analyzing conversations:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 });
 
