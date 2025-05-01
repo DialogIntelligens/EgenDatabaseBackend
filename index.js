@@ -1386,6 +1386,66 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       const result = await pool.query(queryText, queryParams);
       console.log(`Found ${result.rows.length} conversations with scores for analysis`);
       
+      // Validate and log a sample conversation for debugging
+      if (result.rows.length > 0) {
+        try {
+          const sampleConversation = result.rows[0];
+          console.log("Sample conversation ID:", sampleConversation.id);
+          console.log("Sample conversation score:", sampleConversation.score);
+          
+          // Parse and check the conversation_data structure
+          const conversationData = typeof sampleConversation.conversation_data === 'string'
+            ? JSON.parse(sampleConversation.conversation_data)
+            : sampleConversation.conversation_data;
+            
+          if (Array.isArray(conversationData)) {
+            console.log("Sample conversation structure (first 3 messages):", 
+              JSON.stringify(conversationData.slice(0, Math.min(3, conversationData.length)), null, 2));
+            
+            // Check for expected structure
+            const hasUserMessages = conversationData.some(msg => msg && msg.isUser === true);
+            console.log("Has user messages:", hasUserMessages);
+            
+            // If we don't have the expected structure, try to fix the data
+            if (!hasUserMessages) {
+              console.log("Conversation data doesn't have isUser property, trying to fix...");
+              
+              // Fix the data by inferring structure - assume odd indexes are user messages
+              result.rows = result.rows.map(conv => {
+                try {
+                  let data = typeof conv.conversation_data === 'string'
+                    ? JSON.parse(conv.conversation_data)
+                    : conv.conversation_data;
+                    
+                  if (Array.isArray(data)) {
+                    // Transform to expected format
+                    data = data.map((msg, idx) => {
+                      if (typeof msg === 'string') {
+                        return { text: msg, isUser: idx % 2 === 1 };
+                      } else if (typeof msg === 'object' && msg !== null) {
+                        return { ...msg, isUser: msg.isUser !== undefined ? msg.isUser : idx % 2 === 1 };
+                      }
+                      return msg;
+                    });
+                    
+                    return { ...conv, conversation_data: data };
+                  }
+                } catch (error) {
+                  console.warn(`Could not fix conversation ${conv.id}:`, error.message);
+                }
+                return conv;
+              });
+              
+              console.log("Data transformation applied");
+            }
+          } else {
+            console.log("Conversation data is not an array");
+          }
+        } catch (validateError) {
+          console.error("Error validating conversation data:", validateError);
+        }
+      }
+      
       if (result.rows.length >= 10) {
         // We have enough data for analysis
         console.log("Performing text analysis on conversation data...");

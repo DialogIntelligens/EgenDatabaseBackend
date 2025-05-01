@@ -13,15 +13,19 @@ const tokenizer = new natural.WordTokenizer();
 function extractTextFromConversation(conversationData) {
   try {
     if (!Array.isArray(conversationData)) {
+      console.log("Conversation data is not an array");
       return '';
     }
     
-    // Extract all user messages (typically at odd indexes)
-    return conversationData
-      .filter((_, index) => index % 2 === 1) // Get user messages
-      .map(message => typeof message === 'string' ? message : 
-           (message?.content || ''))
+    // Extract all user messages - in the format we have messages with isUser: true
+    const userMessages = conversationData
+      .filter(message => message && message.isUser === true)
+      .map(message => message.text || '')
+      .filter(text => text && text.trim() !== '')
       .join(' ');
+    
+    console.log(`Extracted ${userMessages.length} characters of user text`);
+    return userMessages;
   } catch (error) {
     console.error('Error extracting text from conversation:', error);
     return '';
@@ -129,6 +133,12 @@ export async function analyzeConversations(conversations) {
           conversationData = typeof conversation.conversation_data === 'string' 
             ? JSON.parse(conversation.conversation_data) 
             : conversation.conversation_data;
+          
+          // Log a sample of the conversation structure for debugging
+          if (index === 0) {
+            console.log("Sample conversation structure:", 
+              JSON.stringify(conversationData.slice(0, Math.min(3, conversationData.length)), null, 2));
+          }
         } catch (parseError) {
           console.warn(`Conversation ${index} skipped: Parse error - ${parseError.message}`);
           invalidConversations++;
@@ -348,6 +358,12 @@ function evaluateOnTestSet(testSet, correlations) {
         conversationData = typeof conversation.conversation_data === 'string' 
           ? JSON.parse(conversation.conversation_data) 
           : conversation.conversation_data;
+        
+        // Log a sample of the test conversation structure for debugging
+        if (index === 0) {
+          console.log("Sample test conversation structure:", 
+            JSON.stringify(conversationData.slice(0, Math.min(3, conversationData.length)), null, 2));
+        }
       } catch (parseError) {
         console.warn(`Test conversation ${index} skipped: Parse error - ${parseError.message}`);
         skippedCount++;
