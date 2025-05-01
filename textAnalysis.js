@@ -1,5 +1,7 @@
 import natural from 'natural';
 import stopword from 'stopword';
+// Import specific language stopwords
+import { removeStopwords } from 'stopword';
 
 const tokenizer = new natural.WordTokenizer();
 
@@ -41,13 +43,8 @@ function tokenizeAndClean(text) {
   // Tokenize
   const tokens = tokenizer.tokenize(cleanedText) || [];
   
-  // Remove stopwords (in multiple languages)
-  return stopword.removeStopwords(tokens, [
-    ...stopword.en, 
-    ...stopword.da, 
-    ...stopword.sv,
-    ...stopword.no
-  ]);
+  // Just use default English stopwords since the multi-language approach caused issues
+  return removeStopwords(tokens);
 }
 
 /**
@@ -100,15 +97,32 @@ export async function analyzeConversations(conversations) {
     };
     
     // Process training set
+    let validConversations = 0;
     trainingSet.forEach(conversation => {
       try {
+        // Skip if no conversation_data
+        if (!conversation.conversation_data) return;
+        
         // Parse conversation data
-        const conversationData = typeof conversation.conversation_data === 'string' 
-          ? JSON.parse(conversation.conversation_data) 
-          : conversation.conversation_data;
+        let conversationData;
+        try {
+          conversationData = typeof conversation.conversation_data === 'string' 
+            ? JSON.parse(conversation.conversation_data) 
+            : conversation.conversation_data;
+        } catch (parseError) {
+          console.warn('Error parsing conversation data:', parseError.message);
+          return; // Skip this conversation
+        }
+        
+        // Skip if no valid conversation data
+        if (!Array.isArray(conversationData)) return;
         
         // Extract text and score
         const text = extractTextFromConversation(conversationData);
+        
+        // Skip if no text
+        if (!text || text.trim() === '') return;
+        
         const score = parseFloat(conversation.score);
         
         // Skip if no valid score
@@ -117,8 +131,14 @@ export async function analyzeConversations(conversations) {
         // Tokenize
         const tokens = tokenizeAndClean(text);
         
+        // Skip if no tokens
+        if (!tokens || tokens.length === 0) return;
+        
         // Process n-grams
         for (let n = 1; n <= 3; n++) {
+          // Skip if not enough tokens for this n-gram size
+          if (tokens.length < n) continue;
+          
           const ngrams = generateNgrams(tokens, n);
           
           ngrams.forEach(ngram => {
@@ -132,10 +152,21 @@ export async function analyzeConversations(conversations) {
             ngramScores[n][ngram].push(score);
           });
         }
+        
+        validConversations++;
       } catch (error) {
         console.error('Error processing conversation:', error);
       }
     });
+    
+    // Check if we have enough valid conversations for analysis
+    if (validConversations < 5) {
+      return {
+        error: 'Insufficient valid data for analysis',
+        minimumRequired: 5,
+        provided: validConversations
+      };
+    }
     
     // Calculate average scores and correlations
     const correlations = {
@@ -173,7 +204,9 @@ export async function analyzeConversations(conversations) {
     
     return {
       trainingSize: trainingSet.length,
+      validTrainingSize: validConversations,
       testingSize: testingSet.length,
+      validTestingSize: testResults.sampleSize,
       positiveCorrelations: {
         monograms: correlations['1'].slice(0, 10),
         bigrams: correlations['2'].slice(0, 10),
@@ -204,22 +237,41 @@ function evaluateOnTestSet(testSet, correlations) {
   
   testSet.forEach(conversation => {
     try {
+      // Skip if no conversation_data
+      if (!conversation.conversation_data) return;
+      
       // Parse conversation data
-      const conversationData = typeof conversation.conversation_data === 'string' 
-        ? JSON.parse(conversation.conversation_data) 
-        : conversation.conversation_data;
+      let conversationData;
+      try {
+        conversationData = typeof conversation.conversation_data === 'string' 
+          ? JSON.parse(conversation.conversation_data) 
+          : conversation.conversation_data;
+      } catch (parseError) {
+        console.warn('Error parsing conversation data:', parseError.message);
+        return; // Skip this conversation
+      }
+      
+      // Skip if no valid conversation data
+      if (!Array.isArray(conversationData)) return;
       
       // Extract text and actual score
       const text = extractTextFromConversation(conversationData);
+      
+      // Skip if no text
+      if (!text || text.trim() === '') return;
+      
       const actualScore = parseFloat(conversation.score);
       
       // Skip if no valid score
       if (isNaN(actualScore)) return;
       
-      actualScores.push(actualScore);
-      
       // Tokenize
       const tokens = tokenizeAndClean(text);
+      
+      // Skip if no tokens
+      if (!tokens || tokens.length === 0) return;
+      
+      actualScores.push(actualScore);
       
       // Calculate predicted score based on n-gram correlations
       let scoreContributions = 0;
@@ -227,6 +279,9 @@ function evaluateOnTestSet(testSet, correlations) {
       
       // Check for each n-gram type
       for (let n = 1; n <= 3; n++) {
+        // Skip if not enough tokens for this n-gram size
+        if (tokens.length < n) continue;
+        
         const ngrams = generateNgrams(tokens, n);
         
         ngrams.forEach(ngram => {
@@ -250,6 +305,16 @@ function evaluateOnTestSet(testSet, correlations) {
       console.error('Error evaluating conversation:', error);
     }
   });
+  
+  // Check if we have enough predictions to evaluate
+  if (actualScores.length === 0 || predictedScores.length === 0) {
+    return {
+      meanAbsoluteError: 0,
+      rootMeanSquaredError: 0,
+      correlationCoefficient: 0,
+      sampleSize: 0
+    };
+  }
   
   // Calculate evaluation metrics
   const meanAbsoluteError = calculateMAE(actualScores, predictedScores);
