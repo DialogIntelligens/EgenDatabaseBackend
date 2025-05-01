@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
+import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
 
 const { Pool } = pg;
 
@@ -1308,6 +1309,33 @@ cron.schedule('0 * * * *', async () => {
     }
   } catch (err) {
     console.error('Error deleting expired data:', err);
+  }
+});
+
+/* ================================
+   Report Generation Endpoint
+================================ */
+app.post('/generate-report', authenticateToken, async (req, res) => {
+  try {
+    const { statisticsData, timePeriod } = req.body;
+    
+    if (!statisticsData) {
+      return res.status(400).json({ error: 'Statistics data is required' });
+    }
+    
+    // Generate the PDF report
+    const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
+    
+    // Set appropriate headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send the PDF buffer as the response
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating report:', error);
+    res.status(500).json({ error: 'Failed to generate report', details: error.message });
   }
 });
 
