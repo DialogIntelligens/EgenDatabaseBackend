@@ -68,8 +68,11 @@ function generateNgrams(tokens, n) {
  */
 export async function analyzeConversations(conversations) {
   try {
+    console.log(`Starting analysis of ${conversations.length} conversations`);
+    
     // Validate input
     if (!Array.isArray(conversations) || conversations.length < 10) {
+      console.log(`Insufficient data for analysis: ${conversations?.length || 0} conversations (minimum 10 required)`);
       return {
         error: 'Insufficient data for analysis',
         minimumRequired: 10,
@@ -82,6 +85,8 @@ export async function analyzeConversations(conversations) {
     const splitPoint = Math.floor(shuffled.length * 0.8);
     const trainingSet = shuffled.slice(0, splitPoint);
     const testingSet = shuffled.slice(splitPoint);
+    
+    console.log(`Split data: ${trainingSet.length} training, ${testingSet.length} testing conversations`);
     
     // Process conversations
     const ngramCounts = {
@@ -98,10 +103,25 @@ export async function analyzeConversations(conversations) {
     
     // Process training set
     let validConversations = 0;
-    trainingSet.forEach(conversation => {
+    let invalidConversations = 0;
+    let invalidReasons = {
+      noData: 0,
+      parseError: 0,
+      notArray: 0,
+      noText: 0,
+      noScore: 0,
+      noTokens: 0
+    };
+    
+    trainingSet.forEach((conversation, index) => {
       try {
         // Skip if no conversation_data
-        if (!conversation.conversation_data) return;
+        if (!conversation.conversation_data) {
+          console.log(`Conversation ${index} skipped: No conversation_data`);
+          invalidConversations++;
+          invalidReasons.noData++;
+          return;
+        }
         
         // Parse conversation data
         let conversationData;
@@ -110,36 +130,63 @@ export async function analyzeConversations(conversations) {
             ? JSON.parse(conversation.conversation_data) 
             : conversation.conversation_data;
         } catch (parseError) {
-          console.warn('Error parsing conversation data:', parseError.message);
+          console.warn(`Conversation ${index} skipped: Parse error - ${parseError.message}`);
+          invalidConversations++;
+          invalidReasons.parseError++;
           return; // Skip this conversation
         }
         
         // Skip if no valid conversation data
-        if (!Array.isArray(conversationData)) return;
+        if (!Array.isArray(conversationData)) {
+          console.log(`Conversation ${index} skipped: conversation_data is not an array`);
+          invalidConversations++;
+          invalidReasons.notArray++;
+          return;
+        }
         
         // Extract text and score
         const text = extractTextFromConversation(conversationData);
         
         // Skip if no text
-        if (!text || text.trim() === '') return;
+        if (!text || text.trim() === '') {
+          console.log(`Conversation ${index} skipped: No text extracted`);
+          invalidConversations++;
+          invalidReasons.noText++;
+          return;
+        }
         
         const score = parseFloat(conversation.score);
         
         // Skip if no valid score
-        if (isNaN(score)) return;
+        if (isNaN(score)) {
+          console.log(`Conversation ${index} skipped: Invalid score - ${conversation.score}`);
+          invalidConversations++;
+          invalidReasons.noScore++;
+          return;
+        }
         
         // Tokenize
         const tokens = tokenizeAndClean(text);
         
         // Skip if no tokens
-        if (!tokens || tokens.length === 0) return;
+        if (!tokens || tokens.length === 0) {
+          console.log(`Conversation ${index} skipped: No tokens after cleaning`);
+          invalidConversations++;
+          invalidReasons.noTokens++;
+          return;
+        }
         
         // Process n-grams
+        let ngramCount = 0;
         for (let n = 1; n <= 3; n++) {
           // Skip if not enough tokens for this n-gram size
-          if (tokens.length < n) continue;
+          if (tokens.length < n) {
+            console.log(`Skipping ${n}-grams for conversation ${index}: Not enough tokens (${tokens.length})`);
+            continue;
+          }
           
           const ngrams = generateNgrams(tokens, n);
+          ngramCount += ngrams.length;
           
           ngrams.forEach(ngram => {
             // Count occurrences
@@ -153,20 +200,35 @@ export async function analyzeConversations(conversations) {
           });
         }
         
+        console.log(`Processed conversation ${index}: Score ${score}, Tokens ${tokens.length}, N-grams ${ngramCount}`);
         validConversations++;
       } catch (error) {
-        console.error('Error processing conversation:', error);
+        console.error(`Error processing conversation ${index}:`, error);
+        invalidConversations++;
       }
     });
     
+    console.log(`Processed training data: ${validConversations} valid, ${invalidConversations} invalid conversations`);
+    console.log('Invalid reasons:', JSON.stringify(invalidReasons));
+    
     // Check if we have enough valid conversations for analysis
     if (validConversations < 5) {
+      console.log(`Insufficient valid conversations: ${validConversations} (minimum 5 required)`);
       return {
         error: 'Insufficient valid data for analysis',
         minimumRequired: 5,
-        provided: validConversations
+        provided: validConversations,
+        invalidReasons
       };
     }
+    
+    // Count the ngrams collected
+    const ngramStats = {
+      '1': Object.keys(ngramCounts['1']).length,
+      '2': Object.keys(ngramCounts['2']).length,
+      '3': Object.keys(ngramCounts['3']).length
+    };
+    console.log('N-gram counts:', JSON.stringify(ngramStats));
     
     // Calculate average scores and correlations
     const correlations = {
@@ -176,6 +238,7 @@ export async function analyzeConversations(conversations) {
     };
     
     const minOccurrences = 3; // Minimum occurrences to consider
+    let filteredCounts = { '1': 0, '2': 0, '3': 0 };
     
     // Process each n-gram type
     for (let n = 1; n <= 3; n++) {
@@ -184,6 +247,7 @@ export async function analyzeConversations(conversations) {
         
         // Only consider n-grams that appear multiple times
         if (count >= minOccurrences) {
+          filteredCounts[n]++;
           const scores = ngramScores[n][ngram];
           const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
           
@@ -197,12 +261,21 @@ export async function analyzeConversations(conversations) {
       
       // Sort by average score
       correlations[n].sort((a, b) => b.avgScore - a.avgScore);
+      
+      console.log(`Found ${correlations[n].length} ${n}-grams with ≥${minOccurrences} occurrences`);
+      if (correlations[n].length > 0) {
+        console.log(`  Top ${n}-gram: "${correlations[n][0]?.ngram}" (Score: ${correlations[n][0]?.avgScore.toFixed(2)})`);
+        console.log(`  Bottom ${n}-gram: "${correlations[n][correlations[n].length-1]?.ngram}" (Score: ${correlations[n][correlations[n].length-1]?.avgScore.toFixed(2)})`);
+      }
     }
     
+    console.log("Starting evaluation on test set...");
     // Evaluate on test set
     const testResults = evaluateOnTestSet(testingSet, correlations);
+    console.log("Test results:", JSON.stringify(testResults));
     
-    return {
+    // Prepare result object with positive and negative correlations
+    const result = {
       trainingSize: trainingSet.length,
       validTrainingSize: validConversations,
       testingSize: testingSet.length,
@@ -217,11 +290,23 @@ export async function analyzeConversations(conversations) {
         bigrams: correlations['2'].slice(-10).reverse(),
         trigrams: correlations['3'].slice(-10).reverse()
       },
-      testResults
+      testResults,
+      ngramStats
     };
+    
+    console.log("Text analysis completed successfully");
+    
+    // Debug log for correlation counts
+    console.log(`Positive monograms: ${result.positiveCorrelations.monograms.length}`);
+    console.log(`Negative monograms: ${result.negativeCorrelations.monograms.length}`);
+    
+    return result;
   } catch (error) {
     console.error('Error analyzing conversations:', error);
-    return { error: error.message };
+    return { 
+      error: error.message,
+      stack: error.stack
+    };
   }
 }
 
@@ -232,13 +317,30 @@ export async function analyzeConversations(conversations) {
  * @returns {Object} - Test results
  */
 function evaluateOnTestSet(testSet, correlations) {
+  console.log(`Evaluating model on ${testSet.length} test conversations`);
+  
   const predictedScores = [];
   const actualScores = [];
+  let processedCount = 0;
+  let skippedCount = 0;
+  let skippedReasons = {
+    noData: 0,
+    parseError: 0,
+    notArray: 0,
+    noText: 0,
+    noScore: 0,
+    noTokens: 0
+  };
   
-  testSet.forEach(conversation => {
+  testSet.forEach((conversation, index) => {
     try {
       // Skip if no conversation_data
-      if (!conversation.conversation_data) return;
+      if (!conversation.conversation_data) {
+        console.log(`Test conversation ${index} skipped: No conversation_data`);
+        skippedCount++;
+        skippedReasons.noData++;
+        return;
+      }
       
       // Parse conversation data
       let conversationData;
@@ -247,29 +349,51 @@ function evaluateOnTestSet(testSet, correlations) {
           ? JSON.parse(conversation.conversation_data) 
           : conversation.conversation_data;
       } catch (parseError) {
-        console.warn('Error parsing conversation data:', parseError.message);
+        console.warn(`Test conversation ${index} skipped: Parse error - ${parseError.message}`);
+        skippedCount++;
+        skippedReasons.parseError++;
         return; // Skip this conversation
       }
       
       // Skip if no valid conversation data
-      if (!Array.isArray(conversationData)) return;
+      if (!Array.isArray(conversationData)) {
+        console.log(`Test conversation ${index} skipped: conversation_data is not an array`);
+        skippedCount++;
+        skippedReasons.notArray++;
+        return;
+      }
       
       // Extract text and actual score
       const text = extractTextFromConversation(conversationData);
       
       // Skip if no text
-      if (!text || text.trim() === '') return;
+      if (!text || text.trim() === '') {
+        console.log(`Test conversation ${index} skipped: No text extracted`);
+        skippedCount++;
+        skippedReasons.noText++;
+        return;
+      }
       
       const actualScore = parseFloat(conversation.score);
       
       // Skip if no valid score
-      if (isNaN(actualScore)) return;
+      if (isNaN(actualScore)) {
+        console.log(`Test conversation ${index} skipped: Invalid score - ${conversation.score}`);
+        skippedCount++;
+        skippedReasons.noScore++;
+        return;
+      }
       
       // Tokenize
       const tokens = tokenizeAndClean(text);
       
       // Skip if no tokens
-      if (!tokens || tokens.length === 0) return;
+      if (!tokens || tokens.length === 0) {
+        console.log(`Test conversation ${index} skipped: No tokens after cleaning`);
+        skippedCount++;
+        skippedReasons.noTokens++;
+        return;
+      }
       
       actualScores.push(actualScore);
       
@@ -301,18 +425,27 @@ function evaluateOnTestSet(testSet, correlations) {
         : 3; // Default middle score
       
       predictedScores.push(predictedScore);
+      processedCount++;
+      
+      console.log(`Test conversation ${index}: Actual score ${actualScore}, Predicted score ${predictedScore.toFixed(2)}, Contributing n-grams: ${contributingNgrams}`);
     } catch (error) {
-      console.error('Error evaluating conversation:', error);
+      console.error(`Error evaluating test conversation ${index}:`, error);
+      skippedCount++;
     }
   });
   
+  console.log(`Evaluation complete: ${processedCount} processed, ${skippedCount} skipped`);
+  console.log('Skipped reasons:', JSON.stringify(skippedReasons));
+  
   // Check if we have enough predictions to evaluate
   if (actualScores.length === 0 || predictedScores.length === 0) {
+    console.log('No valid test data for evaluation');
     return {
       meanAbsoluteError: 0,
       rootMeanSquaredError: 0,
       correlationCoefficient: 0,
-      sampleSize: 0
+      sampleSize: 0,
+      skippedReasons
     };
   }
   
@@ -321,11 +454,14 @@ function evaluateOnTestSet(testSet, correlations) {
   const rootMeanSquaredError = calculateRMSE(actualScores, predictedScores);
   const correlationCoefficient = calculateCorrelation(actualScores, predictedScores);
   
+  console.log(`Evaluation metrics: MAE=${meanAbsoluteError.toFixed(2)}, RMSE=${rootMeanSquaredError.toFixed(2)}, Correlation=${correlationCoefficient.toFixed(2)}`);
+  
   return {
     meanAbsoluteError,
     rootMeanSquaredError,
     correlationCoefficient,
-    sampleSize: actualScores.length
+    sampleSize: actualScores.length,
+    skippedReasons
   };
 }
 

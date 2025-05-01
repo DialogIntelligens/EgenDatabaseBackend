@@ -1365,6 +1365,8 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     // Get text analysis if we have enough data
     let textAnalysisResults = null;
     try {
+      console.log("Fetching conversation data for text analysis...");
+      
       // Build query to fetch conversations with scores
       let queryText = `
         SELECT id, created_at, conversation_data, score
@@ -1382,10 +1384,29 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       
       // Get conversations
       const result = await pool.query(queryText, queryParams);
+      console.log(`Found ${result.rows.length} conversations with scores for analysis`);
       
       if (result.rows.length >= 10) {
         // We have enough data for analysis
+        console.log("Performing text analysis on conversation data...");
         textAnalysisResults = await analyzeConversations(result.rows);
+        
+        if (textAnalysisResults && !textAnalysisResults.error) {
+          console.log("Text analysis completed successfully");
+          console.log(`Training size: ${textAnalysisResults.trainingSize}, Testing size: ${textAnalysisResults.testingSize}`);
+          console.log(`Valid training: ${textAnalysisResults.validTrainingSize}, Valid testing: ${textAnalysisResults.validTestingSize}`);
+          
+          // Verify we have data for the report
+          const hasPositiveMonograms = textAnalysisResults.positiveCorrelations?.monograms?.length > 0;
+          const hasNegativeMonograms = textAnalysisResults.negativeCorrelations?.monograms?.length > 0;
+          
+          console.log(`Positive monograms: ${hasPositiveMonograms ? 'Yes' : 'No'}`);
+          console.log(`Negative monograms: ${hasNegativeMonograms ? 'Yes' : 'No'}`);
+        } else {
+          console.log("Text analysis error:", textAnalysisResults?.error || "Unknown error");
+        }
+      } else {
+        console.log("Insufficient conversation data for text analysis");
       }
     } catch (error) {
       console.error('Error performing text analysis:', error);
@@ -1394,19 +1415,33 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     
     // Include text analysis in the statistics data if available
     if (textAnalysisResults && !textAnalysisResults.error) {
+      console.log("Adding text analysis results to statistics data");
       statisticsData.textAnalysis = textAnalysisResults;
+    } else {
+      console.log("No text analysis results to add to report");
     }
     
     // Generate the PDF report
-    const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
-    
-    // Set appropriate headers for PDF download
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
-    res.setHeader('Content-Length', pdfBuffer.length);
-    
-    // Send the PDF buffer as the response
-    res.send(pdfBuffer);
+    console.log("Generating PDF report...");
+    try {
+      const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
+      console.log("PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+      
+      // Set appropriate headers for PDF download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      
+      // Send the PDF buffer as the response
+      res.send(pdfBuffer);
+    } catch (pdfError) {
+      console.error('Error generating PDF report:', pdfError);
+      res.status(500).json({ 
+        error: 'Failed to generate PDF report', 
+        details: pdfError.message,
+        stack: pdfError.stack
+      });
+    }
   } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report', details: error.message });

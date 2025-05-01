@@ -369,7 +369,21 @@ export async function generateStatisticsReport(data, timePeriod) {
       
       // Add text analysis results if available
       if (data.textAnalysis) {
-        addTextAnalysisSection(doc, data.textAnalysis);
+        try {
+          // Explicitly await the text analysis section
+          await addTextAnalysisSection(doc, data.textAnalysis);
+          console.log("Text analysis section added successfully");
+        } catch (analysisError) {
+          console.error("Error adding text analysis section:", analysisError);
+          // Add error information to the PDF
+          doc.addPage();
+          doc.fontSize(16).text('Text Analysis', { align: 'center' });
+          doc.moveDown();
+          doc.fontSize(12).text('An error occurred while generating the text analysis section.');
+          doc.fontSize(10).text(`Error: ${analysisError.message}`);
+        }
+      } else {
+        console.log("No text analysis data available for the report");
       }
       
       // Add footer
