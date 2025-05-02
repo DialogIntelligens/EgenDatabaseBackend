@@ -513,6 +513,17 @@ async function addTextAnalysisSection(doc, textAnalysis) {
         
         // Create chart data
         const monograms = textAnalysis.positiveCorrelations.monograms;
+        
+        // Log monograms for debugging
+        console.log("Positive monograms for PDF:", JSON.stringify(monograms));
+        
+        // First add text representation of the monograms to ensure they appear
+        monograms.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+        
+        // Then try to add chart if possible
         try {
           // Create chart configuration for positive monograms
           const chartConfig = {
@@ -567,12 +578,10 @@ async function addTextAnalysisSection(doc, textAnalysis) {
           }
         } catch (chartError) {
           console.error('Error generating monograms chart:', chartError);
-          // Fallback to text display
-          monograms.forEach((item, index) => {
-            doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-          });
+          // Fallback to text display already done above
         }
-        doc.moveDown();
+      } else {
+        doc.fontSize(12).text('No significant monogram correlations found.');
       }
       
       // Bigrams - add text only to keep the PDF size manageable
@@ -611,6 +620,17 @@ async function addTextAnalysisSection(doc, textAnalysis) {
         
         // Create chart data
         const monograms = textAnalysis.negativeCorrelations.monograms;
+        
+        // Log monograms for debugging
+        console.log("Negative monograms for PDF:", JSON.stringify(monograms));
+        
+        // First add text representation of the monograms to ensure they appear
+        monograms.forEach((item, index) => {
+          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        });
+        doc.moveDown();
+        
+        // Then try to add chart if possible
         try {
           // Create chart configuration for negative monograms
           const chartConfig = {
@@ -665,12 +685,10 @@ async function addTextAnalysisSection(doc, textAnalysis) {
           }
         } catch (chartError) {
           console.error('Error generating negative monograms chart:', chartError);
-          // Fallback to text display
-          monograms.forEach((item, index) => {
-            doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-          });
+          // Fallback to text display already done above
         }
-        doc.moveDown();
+      } else {
+        doc.fontSize(12).text('No significant negative monogram correlations found.');
       }
       
       // Bigrams - add text only to keep the PDF size manageable
