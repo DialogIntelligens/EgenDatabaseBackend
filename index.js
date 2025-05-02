@@ -1318,7 +1318,7 @@ cron.schedule('0 * * * *', async () => {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-    const { statisticsData, timePeriod, chatbot_id } = req.body;
+    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
@@ -1473,12 +1473,13 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       // Continue with report generation even if analysis fails
     }
     
-    // Include text analysis in the statistics data if available
-    if (textAnalysisResults && !textAnalysisResults.error) {
+    // Include text analysis in the statistics data if available and requested
+    if (includeTextAnalysis && textAnalysisResults && !textAnalysisResults.error) {
       console.log("Adding text analysis results to statistics data");
       statisticsData.textAnalysis = textAnalysisResults;
+      statisticsData.includeTextAnalysis = true;
     } else {
-      console.log("No text analysis results to add to report");
+      console.log("Text analysis not requested or not available");
     }
     
     // Generate the PDF report
