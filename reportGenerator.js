@@ -1,44 +1,31 @@
 import PDFDocument from 'pdfkit';
 import { Readable } from 'stream';
-import { ChartJSNodeCanvas } from 'chartjs-node-canvas';
-import { Chart } from 'chart.js/auto';
 
-// Configure the chart canvas with error handling
-let chartJSNodeCanvas;
-try {
-  // Configure the chart canvas
-  chartJSNodeCanvas = new ChartJSNodeCanvas({ 
-    width: 800, // Chart width in pixels
-    height: 500, // Chart height in pixels
-    backgroundColour: 'white', // Set the background color to white
-    chartCallback: (ChartJS) => {
-      // Global chart configuration to match dashboard
-      ChartJS.defaults.font.family = 'Arial, Helvetica, sans-serif';
-      ChartJS.defaults.font.size = 12;
-      ChartJS.defaults.color = '#123443';
-      ChartJS.defaults.plugins.title.font.size = 16;
-      ChartJS.defaults.plugins.title.color = '#686BF1';
-    }
-  });
-} catch (error) {
-  console.error('Error initializing ChartJSNodeCanvas:', error);
-  // Create a fallback function that always returns null
-  chartJSNodeCanvas = {
-    renderToBuffer: async () => null
-  };
-}
-
-// Helper function to generate a chart image buffer
-async function generateChartBuffer(chartConfig) {
+// Helper function to add a base64 image to the PDF
+function addBase64ImageToPdf(doc, base64String, options = {}) {
+  if (!base64String) {
+    console.log('Base64 image data is missing');
+    return false;
+  }
+  
   try {
-    if (!chartJSNodeCanvas) {
-      console.error('ChartJSNodeCanvas not available');
-      return null;
-    }
-    return await chartJSNodeCanvas.renderToBuffer(chartConfig);
+    // Remove the data URL prefix if present
+    const imageData = base64String.includes('base64,') 
+      ? base64String.split('base64,')[1] 
+      : base64String;
+    
+    // Add image to the PDF
+    doc.image(Buffer.from(imageData, 'base64'), {
+      fit: [500, 350],
+      align: 'center',
+      valign: 'center',
+      ...options
+    });
+    
+    return true;
   } catch (error) {
-    console.error('Error generating chart:', error);
-    return null;
+    console.error('Error adding base64 image to PDF:', error);
+    return false;
   }
 }
 
@@ -175,7 +162,8 @@ export async function generateStatisticsReport(data, timePeriod) {
         overallConversionRate,
         chatbotConversionRate,
         nonChatbotConversionRate,
-        showPurchase
+        showPurchase,
+        chartImages
       } = data;
       
       // Add basic statistics
@@ -203,322 +191,70 @@ export async function generateStatisticsReport(data, timePeriod) {
         doc.fontSize(12).text(`Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%`);
       }
       
-      // Generate and add message volume chart (daily/weekly)
-      if (data.dailyData) {
+      // Add daily/weekly messages chart
+      if (chartImages?.dailyChart || data.dailyData) {
         doc.addPage();
         doc.fontSize(16).text('Message Volume Over Time', { align: 'center' });
         doc.moveDown();
         
-        const chartData = data.dailyData;
-        if (chartData.labels && chartData.datasets && chartData.datasets.length > 0) {
-          try {
-            // Use exact same configuration as in the dashboard
-            const isWeekly = data.dailyData.isWeekly;
-            const chartConfig = {
-              type: 'line',
-              data: {
-                labels: data.dailyData.labels,
-                datasets: [
-                  {
-                    label: isWeekly ? 'Weekly Messages' : 'Daily Messages',
-                    data: data.dailyData.datasets[0].data,
-                    fill: false,
-                    backgroundColor: '#777BFF',
-                    borderColor: '#686BF1',
-                    borderWidth: 2,
-                  },
-                ],
-              },
-              options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                  legend: {
-                    display: false,
-                    position: 'top',
-                    labels: { color: '#123443' },
-                  },
-                  tooltip: {
-                    callbacks: {
-                      title: function(tooltipItems) {
-                        if (isWeekly) {
-                          return `Week of ${tooltipItems[0].label}`;
-                        }
-                        return tooltipItems[0].label;
-                      }
-                    }
-                  }
-                },
-                scales: {
-                  x: {
-                    ticks: { 
-                      color: '#123443',
-                      autoSkip: false,
-                      callback: function(val, index, ticks) {
-                        // Show the first and last dates
-                        return index === 0 || index === data.dailyData.labels.length - 1 
-                          ? data.dailyData.labels[index] 
-                          : '';
-                      },
-                      maxRotation: 0,
-                      minRotation: 0
-                    },
-                    title: {
-                      display: false,
-                      text: 'Date',
-                      color: '#686BF1',
-                      font: { size: 16 },
-                    },
-                    grid: { color: 'rgba(0,0,0,0)' },
-                  },
-                  y: {
-                    ticks: { color: '#123443' },
-                    title: {
-                      display: true,
-                      text: '',
-                      color: '#686BF1',
-                      font: { size: 16 },
-                    },
-                    grid: { color: 'rgba(0,0,0,0)' },
-                  },
-                },
-              },
-            };
-            
-            // Generate chart image
-            const chartImage = await generateChartBuffer(chartConfig);
-            if (chartImage) {
-              // Add the chart image to the PDF
-              doc.image(chartImage, {
-                fit: [500, 350],
-                align: 'center',
-                valign: 'center'
-              });
-              doc.moveDown();
-            } else {
-              throw new Error("Chart generation failed");
-            }
-          } catch (error) {
-            console.log("Falling back to table view for daily data:", error.message);
-            // Fallback to table view
-            const tableData = chartData.labels.map((label, index) => ({
-              label,
-              value: chartData.datasets[0].data[index],
-              count: 1
-            }));
-            
-            await createVisualTable(doc, tableData, 'Message Volume by Date', {
-              color: '#686BF1',
-              valueSuffix: ' msgs',
-              showCounts: false
-            });
+        // Try to use the captured chart image
+        if (chartImages?.dailyChart) {
+          const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart);
+          if (imageAdded) {
+            doc.moveDown();
+          } else {
+            // Fallback to text-based representation if image fails
+            createFallbackDailyChart(doc, data.dailyData);
           }
         } else {
-          doc.fontSize(12).text('No message volume data available');
+          // Fallback if no image is available
+          createFallbackDailyChart(doc, data.dailyData);
         }
       }
       
-      // Generate and add hourly distribution chart
-      if (data.hourlyData) {
+      // Add hourly distribution chart
+      if (chartImages?.hourlyChart || data.hourlyData) {
         doc.addPage();
         doc.fontSize(16).text('Message Distribution by Time of Day', { align: 'center' });
         doc.moveDown();
         
-        const hourlyData = data.hourlyData;
-        if (hourlyData.labels && hourlyData.datasets && hourlyData.datasets.length > 0) {
-          try {
-            // Match dashboard configuration exactly
-            const chartConfig = {
-              type: 'bar',
-              data: {
-                labels: hourlyData.labels,
-                datasets: [
-                  {
-                    label: 'Time of Day',
-                    data: hourlyData.datasets[0].data,
-                    backgroundColor: '#777BFF',
-                    borderColor: '#686BF1',
-                    borderWidth: 2,
-                  },
-                ],
-              },
-              options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                  legend: {
-                    display: false,
-                    position: 'top',
-                    labels: { color: '#123443' },
-                  },
-                },
-                scales: {
-                  x: {
-                    ticks: { 
-                      color: '#123443',
-                      maxRotation: 0,
-                      minRotation: 0
-                    },
-                    title: {
-                      display: true,
-                      text: 'kl',
-                      color: '#686BF1',
-                      font: { size: 12 },
-                    },
-                    grid: { color: 'rgba(0,0,0,0)' },
-                  },
-                  y: {
-                    ticks: { color: '#123443' },
-                    title: {
-                      display: true,
-                      text: '',
-                      color: '#686BF1',
-                      font: { size: 16 },
-                    },
-                    grid: { color: 'rgba(0,0,0,0)' },
-                  },
-                },
-              },
-            };
-            
-            // Generate chart image
-            const chartImage = await generateChartBuffer(chartConfig);
-            if (chartImage) {
-              // Add the chart image to the PDF
-              doc.image(chartImage, {
-                fit: [500, 350],
-                align: 'center',
-                valign: 'center'
-              });
-              doc.moveDown();
-            } else {
-              throw new Error("Chart generation failed");
-            }
-          } catch (error) {
-            console.log("Falling back to table view for hourly data:", error.message);
-            // Fallback to table view
-            const tableData = hourlyData.labels.map((label, index) => ({
-              label: `Hour ${label}`,
-              value: hourlyData.datasets[0].data[index],
-              count: 1
-            }));
-            
-            await createVisualTable(doc, tableData, 'Messages by Hour of Day', {
-              color: '#686BF1',
-              valueSuffix: ' msgs',
-              showCounts: false
-            });
+        // Try to use the captured chart image
+        if (chartImages?.hourlyChart) {
+          const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart);
+          if (imageAdded) {
+            doc.moveDown();
+          } else {
+            // Fallback to table view if image fails
+            createFallbackHourlyChart(doc, data.hourlyData);
           }
         } else {
-          doc.fontSize(12).text('No hourly distribution data available');
+          // Fallback if no image is available
+          createFallbackHourlyChart(doc, data.hourlyData);
         }
       }
       
-      // Generate and add topic distribution chart
-      if (data.emneData) {
+      // Add topic distribution chart
+      if (chartImages?.topicChart || data.emneData) {
         doc.addPage();
         doc.fontSize(16).text('Conversation Topics Distribution', { align: 'center' });
         doc.moveDown();
         
-        const emneData = data.emneData;
-        if (emneData.labels && emneData.datasets && emneData.datasets.length > 0) {
-          try {
-            // Match dashboard configuration exactly
-            const chartConfig = {
-              type: 'bar',
-              data: {
-                labels: emneData.labels,
-                datasets: [
-                  {
-                    label: 'Topic Messages',
-                    data: emneData.datasets[0].data,
-                    backgroundColor: emneData.datasets[0].backgroundColor || 
-                      emneData.labels.map(() => '#777BFF'),
-                    borderColor: emneData.datasets[0].borderColor || 
-                      emneData.labels.map(() => '#686BF1'),
-                    borderWidth: 2,
-                  },
-                ],
-              },
-              options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                  legend: {
-                    display: false,
-                    position: 'top',
-                    labels: { color: '#123443' },
-                  },
-                },
-                scales: {
-                  x: {
-                    ticks: { 
-                      color: '#123443',
-                      maxRotation: 45,
-                      minRotation: 45
-                    },
-                    title: {
-                      display: false,
-                      text: 'Topic',
-                      color: '#686BF1',
-                      font: { size: 16 },
-                    },
-                    grid: { color: 'rgba(0,0,0,0)' },
-                  },
-                  y: {
-                    ticks: { 
-                      color: '#123443',
-                      callback: function(value) {
-                        return value + '%';
-                      }
-                    },
-                    title: {
-                      display: false,
-                      text: 'Percentage',
-                      color: '#686BF1',
-                      font: { size: 16 },
-                    },
-                    grid: { color: 'rgba(0,0,0,0)' },
-                  },
-                },
-              },
-            };
-            
-            // Generate chart image
-            const chartImage = await generateChartBuffer(chartConfig);
-            if (chartImage) {
-              // Add the chart image to the PDF
-              doc.image(chartImage, {
-                fit: [500, 350],
-                align: 'center',
-                valign: 'center'
-              });
-              doc.moveDown();
-            } else {
-              throw new Error("Chart generation failed");
-            }
-          } catch (error) {
-            console.log("Falling back to table view for topic data:", error.message);
-            // Fallback to table view
-            const tableData = emneData.labels.map((label, index) => ({
-              label,
-              value: emneData.datasets[0].data[index],
-              count: 1
-            }));
-            
-            await createVisualTable(doc, tableData, 'Topics Distribution', {
-              color: '#686BF1',
-              valueSuffix: '%',
-              showCounts: false
-            });
+        // Try to use the captured chart image
+        if (chartImages?.topicChart) {
+          const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart);
+          if (imageAdded) {
+            doc.moveDown();
+          } else {
+            // Fallback to table view if image fails
+            createFallbackTopicChart(doc, data.emneData);
           }
         } else {
-          doc.fontSize(12).text('No topic distribution data available');
+          // Fallback if no image is available
+          createFallbackTopicChart(doc, data.emneData);
         }
       }
       
-      // We're not including text analysis visualizations as per user request
-      // Only include if specifically requested in the data
+      // Only include text analysis if specifically requested
       if (data.includeTextAnalysis && data.textAnalysis) {
         try {
           await addTextAnalysisSection(doc, data.textAnalysis);
@@ -539,6 +275,64 @@ export async function generateStatisticsReport(data, timePeriod) {
       console.error('Error generating report:', error);
       reject(error);
     }
+  });
+}
+
+// Fallback chart creation functions
+function createFallbackDailyChart(doc, dailyData) {
+  if (!dailyData || !dailyData.labels || !dailyData.datasets) {
+    doc.fontSize(12).text('No message volume data available');
+    return;
+  }
+  
+  const tableData = dailyData.labels.map((label, index) => ({
+    label,
+    value: dailyData.datasets[0].data[index],
+    count: 1
+  }));
+  
+  createVisualTable(doc, tableData, 'Message Volume by Date', {
+    color: '#686BF1',
+    valueSuffix: ' msgs',
+    showCounts: false
+  });
+}
+
+function createFallbackHourlyChart(doc, hourlyData) {
+  if (!hourlyData || !hourlyData.labels || !hourlyData.datasets) {
+    doc.fontSize(12).text('No hourly distribution data available');
+    return;
+  }
+  
+  const tableData = hourlyData.labels.map((label, index) => ({
+    label: `Hour ${label}`,
+    value: hourlyData.datasets[0].data[index],
+    count: 1
+  }));
+  
+  createVisualTable(doc, tableData, 'Messages by Hour of Day', {
+    color: '#686BF1',
+    valueSuffix: ' msgs',
+    showCounts: false
+  });
+}
+
+function createFallbackTopicChart(doc, emneData) {
+  if (!emneData || !emneData.labels || !emneData.datasets) {
+    doc.fontSize(12).text('No topic distribution data available');
+    return;
+  }
+  
+  const tableData = emneData.labels.map((label, index) => ({
+    label,
+    value: emneData.datasets[0].data[index],
+    count: 1
+  }));
+  
+  createVisualTable(doc, tableData, 'Topics Distribution', {
+    color: '#686BF1',
+    valueSuffix: '%',
+    showCounts: false
   });
 }
 
@@ -606,9 +400,6 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       
       // Monograms
       if (textAnalysis.positiveCorrelations.monograms && textAnalysis.positiveCorrelations.monograms.length > 0) {
-        // Log monograms for debugging
-        console.log("Positive monograms for PDF:", JSON.stringify(textAnalysis.positiveCorrelations.monograms));
-        
         // Use visual table to display monograms
         await createVisualTable(doc, textAnalysis.positiveCorrelations.monograms, 'Top Words (Monograms)', {
           color: '#4CAF50'
@@ -651,9 +442,6 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       
       // Monograms
       if (textAnalysis.negativeCorrelations.monograms && textAnalysis.negativeCorrelations.monograms.length > 0) {
-        // Log monograms for debugging
-        console.log("Negative monograms for PDF:", JSON.stringify(textAnalysis.negativeCorrelations.monograms));
-        
         // Use visual table to display monograms
         await createVisualTable(doc, textAnalysis.negativeCorrelations.monograms, 'Bottom Words (Monograms)', {
           color: '#F44336'
