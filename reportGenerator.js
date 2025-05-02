@@ -8,16 +8,16 @@ let chartJSNodeCanvas;
 try {
   // Configure the chart canvas
   chartJSNodeCanvas = new ChartJSNodeCanvas({ 
-    width: 800, // Chart width in pixels (increased for better quality)
-    height: 500, // Chart height in pixels (increased for better quality)
+    width: 800, // Chart width in pixels
+    height: 500, // Chart height in pixels
     backgroundColour: 'white', // Set the background color to white
     chartCallback: (ChartJS) => {
-      // Global chart configuration
+      // Global chart configuration to match dashboard
       ChartJS.defaults.font.family = 'Arial, Helvetica, sans-serif';
       ChartJS.defaults.font.size = 12;
-      ChartJS.defaults.color = '#666';
+      ChartJS.defaults.color = '#123443';
       ChartJS.defaults.plugins.title.font.size = 16;
-      ChartJS.defaults.plugins.title.color = '#333';
+      ChartJS.defaults.plugins.title.color = '#686BF1';
     }
   });
 } catch (error) {
@@ -212,7 +212,7 @@ export async function generateStatisticsReport(data, timePeriod) {
         const chartData = data.dailyData;
         if (chartData.labels && chartData.datasets && chartData.datasets.length > 0) {
           try {
-            // Try to generate chart with Chart.js
+            // Use exact same configuration as in the dashboard
             const isWeekly = data.dailyData.isWeekly;
             const chartConfig = {
               type: 'line',
@@ -226,41 +226,61 @@ export async function generateStatisticsReport(data, timePeriod) {
                     backgroundColor: '#777BFF',
                     borderColor: '#686BF1',
                     borderWidth: 2,
-                    tension: 0.4,
                   },
                 ],
               },
               options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                   legend: {
+                    display: false,
                     position: 'top',
-                    labels: { font: { size: 12 } }
+                    labels: { color: '#123443' },
                   },
-                  title: {
-                    display: true,
-                    text: isWeekly ? 'Weekly Message Volume' : 'Daily Message Volume',
-                    font: { size: 16 }
+                  tooltip: {
+                    callbacks: {
+                      title: function(tooltipItems) {
+                        if (isWeekly) {
+                          return `Week of ${tooltipItems[0].label}`;
+                        }
+                        return tooltipItems[0].label;
+                      }
+                    }
                   }
                 },
                 scales: {
                   x: {
-                    title: {
-                      display: true,
-                      text: 'Date'
+                    ticks: { 
+                      color: '#123443',
+                      autoSkip: false,
+                      callback: function(val, index, ticks) {
+                        // Show the first and last dates
+                        return index === 0 || index === data.dailyData.labels.length - 1 
+                          ? data.dailyData.labels[index] 
+                          : '';
+                      },
+                      maxRotation: 0,
+                      minRotation: 0
                     },
-                    ticks: {
-                      autoSkip: true,
-                      maxTicksLimit: 10
-                    }
+                    title: {
+                      display: false,
+                      text: 'Date',
+                      color: '#686BF1',
+                      font: { size: 16 },
+                    },
+                    grid: { color: 'rgba(0,0,0,0)' },
                   },
                   y: {
+                    ticks: { color: '#123443' },
                     title: {
                       display: true,
-                      text: 'Number of Messages'
+                      text: '',
+                      color: '#686BF1',
+                      font: { size: 16 },
                     },
-                    beginAtZero: true
-                  }
+                    grid: { color: 'rgba(0,0,0,0)' },
+                  },
                 },
               },
             };
@@ -275,9 +295,6 @@ export async function generateStatisticsReport(data, timePeriod) {
                 valign: 'center'
               });
               doc.moveDown();
-              doc.fontSize(10).text(isWeekly ? 'Weekly message volume data' : 'Daily message volume data', {
-                align: 'center'
-              });
             } else {
               throw new Error("Chart generation failed");
             }
@@ -310,14 +327,14 @@ export async function generateStatisticsReport(data, timePeriod) {
         const hourlyData = data.hourlyData;
         if (hourlyData.labels && hourlyData.datasets && hourlyData.datasets.length > 0) {
           try {
-            // Try to generate chart with Chart.js
+            // Match dashboard configuration exactly
             const chartConfig = {
               type: 'bar',
               data: {
                 labels: hourlyData.labels,
                 datasets: [
                   {
-                    label: 'Messages by Hour',
+                    label: 'Time of Day',
                     data: hourlyData.datasets[0].data,
                     backgroundColor: '#777BFF',
                     borderColor: '#686BF1',
@@ -327,31 +344,39 @@ export async function generateStatisticsReport(data, timePeriod) {
               },
               options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                   legend: {
+                    display: false,
                     position: 'top',
-                    labels: { font: { size: 12 } }
+                    labels: { color: '#123443' },
                   },
-                  title: {
-                    display: true,
-                    text: 'Message Distribution by Hour',
-                    font: { size: 16 }
-                  }
                 },
                 scales: {
                   x: {
+                    ticks: { 
+                      color: '#123443',
+                      maxRotation: 0,
+                      minRotation: 0
+                    },
                     title: {
                       display: true,
-                      text: 'Hour of Day'
-                    }
+                      text: 'kl',
+                      color: '#686BF1',
+                      font: { size: 12 },
+                    },
+                    grid: { color: 'rgba(0,0,0,0)' },
                   },
                   y: {
+                    ticks: { color: '#123443' },
                     title: {
                       display: true,
-                      text: 'Number of Messages'
+                      text: '',
+                      color: '#686BF1',
+                      font: { size: 16 },
                     },
-                    beginAtZero: true
-                  }
+                    grid: { color: 'rgba(0,0,0,0)' },
+                  },
                 },
               },
             };
@@ -398,14 +423,14 @@ export async function generateStatisticsReport(data, timePeriod) {
         const emneData = data.emneData;
         if (emneData.labels && emneData.datasets && emneData.datasets.length > 0) {
           try {
-            // Try to generate chart with Chart.js
+            // Match dashboard configuration exactly
             const chartConfig = {
               type: 'bar',
               data: {
                 labels: emneData.labels,
                 datasets: [
                   {
-                    label: 'Topic Distribution (%)',
+                    label: 'Topic Messages',
                     data: emneData.datasets[0].data,
                     backgroundColor: emneData.datasets[0].backgroundColor || 
                       emneData.labels.map(() => '#777BFF'),
@@ -417,35 +442,44 @@ export async function generateStatisticsReport(data, timePeriod) {
               },
               options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                   legend: {
+                    display: false,
                     position: 'top',
-                    labels: { font: { size: 12 } }
+                    labels: { color: '#123443' },
                   },
-                  title: {
-                    display: true,
-                    text: 'Topic Distribution',
-                    font: { size: 16 }
-                  }
                 },
                 scales: {
                   x: {
-                    title: {
-                      display: true,
-                      text: 'Topic'
-                    },
-                    ticks: {
+                    ticks: { 
+                      color: '#123443',
                       maxRotation: 45,
                       minRotation: 45
-                    }
+                    },
+                    title: {
+                      display: false,
+                      text: 'Topic',
+                      color: '#686BF1',
+                      font: { size: 16 },
+                    },
+                    grid: { color: 'rgba(0,0,0,0)' },
                   },
                   y: {
-                    title: {
-                      display: true,
-                      text: 'Percentage (%)'
+                    ticks: { 
+                      color: '#123443',
+                      callback: function(value) {
+                        return value + '%';
+                      }
                     },
-                    beginAtZero: true
-                  }
+                    title: {
+                      display: false,
+                      text: 'Percentage',
+                      color: '#686BF1',
+                      font: { size: 16 },
+                    },
+                    grid: { color: 'rgba(0,0,0,0)' },
+                  },
                 },
               },
             };
@@ -483,23 +517,14 @@ export async function generateStatisticsReport(data, timePeriod) {
         }
       }
       
-      // Add text analysis results if available
-      if (data.textAnalysis) {
+      // We're not including text analysis visualizations as per user request
+      // Only include if specifically requested in the data
+      if (data.includeTextAnalysis && data.textAnalysis) {
         try {
-          // Explicitly await the text analysis section
           await addTextAnalysisSection(doc, data.textAnalysis);
-          console.log("Text analysis section added successfully");
         } catch (analysisError) {
           console.error("Error adding text analysis section:", analysisError);
-          // Add error information to the PDF
-          doc.addPage();
-          doc.fontSize(16).text('Text Analysis', { align: 'center' });
-          doc.moveDown();
-          doc.fontSize(12).text('An error occurred while generating the text analysis section.');
-          doc.fontSize(10).text(`Error: ${analysisError.message}`);
         }
-      } else {
-        console.log("No text analysis data available for the report");
       }
       
       // Add footer
