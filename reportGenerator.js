@@ -42,6 +42,101 @@ async function generateChartBuffer(chartConfig) {
   }
 }
 
+// Helper function to create a simple visual bar in the PDF
+function drawBarInPdf(doc, value, maxValue, width, height, color, x, y) {
+  const barWidth = (value / maxValue) * width;
+  
+  // Draw background bar
+  doc.rect(x, y, width, height).fill('#f0f0f0');
+  
+  // Draw value bar
+  doc.rect(x, y, barWidth, height).fill(color);
+  
+  // Return the bottom y position
+  return y + height;
+}
+
+// Helper function to create a visual representation of data
+async function createVisualTable(doc, items, title, options = {}) {
+  const {
+    maxItems = 10,
+    barWidth = 300,
+    barHeight = 20,
+    spacing = 25,
+    labelWidth = 150,
+    startX = 70,
+    startY = doc.y + 10,
+    color = '#777BFF',
+    sortOrder = 'desc',
+    valuePrefix = '',
+    valueSuffix = '',
+    showCounts = true,
+    maxValue = null
+  } = options;
+  
+  // Set title
+  doc.fontSize(14).text(title, { underline: true });
+  doc.moveDown(0.5);
+  
+  if (!items || items.length === 0) {
+    doc.fontSize(12).text('No data available');
+    doc.moveDown();
+    return;
+  }
+  
+  // Calculate max value if not provided
+  const calculatedMax = maxValue || Math.max(...items.map(item => 
+    typeof item.avgScore !== 'undefined' ? item.avgScore : 
+    typeof item.value !== 'undefined' ? item.value : 0
+  ));
+  
+  // Limit items and ensure consistent property access
+  const limitedItems = items.slice(0, maxItems).map(item => ({
+    label: item.ngram || item.label || 'Unknown',
+    value: item.avgScore || item.value || 0,
+    count: item.count || 0
+  }));
+  
+  // Sort items if needed
+  if (sortOrder === 'desc') {
+    limitedItems.sort((a, b) => b.value - a.value);
+  } else if (sortOrder === 'asc') {
+    limitedItems.sort((a, b) => a.value - b.value);
+  }
+  
+  let currentY = startY;
+  
+  // Draw items
+  limitedItems.forEach((item, index) => {
+    // Draw index and label
+    doc.fontSize(10).text(`${index + 1}.`, startX, currentY);
+    doc.fontSize(10).text(`"${item.label}"`, startX + 20, currentY, { width: labelWidth });
+    
+    // Draw value text
+    const valueText = `${valuePrefix}${item.value.toFixed(2)}${valueSuffix}${showCounts ? ` (${item.count})` : ''}`;
+    doc.fontSize(10).text(valueText, startX + labelWidth + barWidth + 10, currentY);
+    
+    // Draw bar
+    drawBarInPdf(
+      doc, 
+      item.value, 
+      calculatedMax, 
+      barWidth, 
+      barHeight, 
+      color, 
+      startX + labelWidth, 
+      currentY
+    );
+    
+    // Move to next item
+    currentY += spacing;
+  });
+  
+  // Update document Y position
+  doc.y = currentY + 10;
+  doc.moveDown();
+}
+
 // Function to generate a PDF report based on statistics data
 export async function generateStatisticsReport(data, timePeriod) {
   return new Promise(async (resolve, reject) => {
@@ -108,92 +203,101 @@ export async function generateStatisticsReport(data, timePeriod) {
         doc.fontSize(12).text(`Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%`);
       }
       
-      // Generate and add daily/weekly message chart
+      // Generate and add message volume chart (daily/weekly)
       if (data.dailyData) {
         doc.addPage();
         doc.fontSize(16).text('Message Volume Over Time', { align: 'center' });
         doc.moveDown();
         
-        // Create chart configuration
-        const isWeekly = data.dailyData.isWeekly;
-        const chartConfig = {
-          type: 'line',
-          data: {
-            labels: data.dailyData.labels,
-            datasets: [
-              {
-                label: isWeekly ? 'Weekly Messages' : 'Daily Messages',
-                data: data.dailyData.datasets[0].data,
-                fill: false,
-                backgroundColor: '#777BFF',
-                borderColor: '#686BF1',
-                borderWidth: 2,
-                tension: 0.4,
+        const chartData = data.dailyData;
+        if (chartData.labels && chartData.datasets && chartData.datasets.length > 0) {
+          try {
+            // Try to generate chart with Chart.js
+            const isWeekly = data.dailyData.isWeekly;
+            const chartConfig = {
+              type: 'line',
+              data: {
+                labels: data.dailyData.labels,
+                datasets: [
+                  {
+                    label: isWeekly ? 'Weekly Messages' : 'Daily Messages',
+                    data: data.dailyData.datasets[0].data,
+                    fill: false,
+                    backgroundColor: '#777BFF',
+                    borderColor: '#686BF1',
+                    borderWidth: 2,
+                    tension: 0.4,
+                  },
+                ],
               },
-            ],
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: {
-                position: 'top',
-                labels: { font: { size: 12 } }
-              },
-              title: {
-                display: true,
-                text: isWeekly ? 'Weekly Message Volume' : 'Daily Message Volume',
-                font: { size: 16 }
-              }
-            },
-            scales: {
-              x: {
-                title: {
-                  display: true,
-                  text: 'Date'
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: 'top',
+                    labels: { font: { size: 12 } }
+                  },
+                  title: {
+                    display: true,
+                    text: isWeekly ? 'Weekly Message Volume' : 'Daily Message Volume',
+                    font: { size: 16 }
+                  }
                 },
-                ticks: {
-                  autoSkip: true,
-                  maxTicksLimit: 10
-                }
-              },
-              y: {
-                title: {
-                  display: true,
-                  text: 'Number of Messages'
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Date'
+                    },
+                    ticks: {
+                      autoSkip: true,
+                      maxTicksLimit: 10
+                    }
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: 'Number of Messages'
+                    },
+                    beginAtZero: true
+                  }
                 },
-                beginAtZero: true
-              }
-            },
-          },
-        };
-        
-        // Generate chart image
-        const chartImage = await generateChartBuffer(chartConfig);
-        if (chartImage) {
-          // Add the chart image to the PDF
-          doc.image(chartImage, {
-            fit: [500, 350],
-            align: 'center',
-            valign: 'center'
-          });
-          doc.moveDown();
-          doc.fontSize(10).text(isWeekly ? 'Weekly message volume data' : 'Daily message volume data', {
-            align: 'center'
-          });
-        } else {
-          // Display text data as fallback
-          doc.fontSize(14).text('Message Data:', { underline: true });
-          doc.moveDown();
+              },
+            };
             
-          const chartData = data.dailyData;
-          if (chartData.labels && chartData.datasets && chartData.datasets.length > 0) {
-            const labels = chartData.labels;
-            const values = chartData.datasets[0].data;
-            
-            for (let i = 0; i < Math.min(labels.length, values.length); i++) {
-              doc.fontSize(10).text(`${labels[i]}: ${values[i]}`);
+            // Generate chart image
+            const chartImage = await generateChartBuffer(chartConfig);
+            if (chartImage) {
+              // Add the chart image to the PDF
+              doc.image(chartImage, {
+                fit: [500, 350],
+                align: 'center',
+                valign: 'center'
+              });
+              doc.moveDown();
+              doc.fontSize(10).text(isWeekly ? 'Weekly message volume data' : 'Daily message volume data', {
+                align: 'center'
+              });
+            } else {
+              throw new Error("Chart generation failed");
             }
+          } catch (error) {
+            console.log("Falling back to table view for daily data:", error.message);
+            // Fallback to table view
+            const tableData = chartData.labels.map((label, index) => ({
+              label,
+              value: chartData.datasets[0].data[index],
+              count: 1
+            }));
+            
+            await createVisualTable(doc, tableData, 'Message Volume by Date', {
+              color: '#686BF1',
+              valueSuffix: ' msgs',
+              showCounts: false
+            });
           }
+        } else {
+          doc.fontSize(12).text('No message volume data available');
         }
       }
       
@@ -203,79 +307,85 @@ export async function generateStatisticsReport(data, timePeriod) {
         doc.fontSize(16).text('Message Distribution by Time of Day', { align: 'center' });
         doc.moveDown();
         
-        // Create chart configuration
-        const chartConfig = {
-          type: 'bar',
-          data: {
-            labels: data.hourlyData.labels,
-            datasets: [
-              {
-                label: 'Messages by Hour',
-                data: data.hourlyData.datasets[0].data,
-                backgroundColor: '#777BFF',
-                borderColor: '#686BF1',
-                borderWidth: 2,
+        const hourlyData = data.hourlyData;
+        if (hourlyData.labels && hourlyData.datasets && hourlyData.datasets.length > 0) {
+          try {
+            // Try to generate chart with Chart.js
+            const chartConfig = {
+              type: 'bar',
+              data: {
+                labels: hourlyData.labels,
+                datasets: [
+                  {
+                    label: 'Messages by Hour',
+                    data: hourlyData.datasets[0].data,
+                    backgroundColor: '#777BFF',
+                    borderColor: '#686BF1',
+                    borderWidth: 2,
+                  },
+                ],
               },
-            ],
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: {
-                position: 'top',
-                labels: { font: { size: 12 } }
-              },
-              title: {
-                display: true,
-                text: 'Message Distribution by Hour',
-                font: { size: 16 }
-              }
-            },
-            scales: {
-              x: {
-                title: {
-                  display: true,
-                  text: 'Hour of Day'
-                }
-              },
-              y: {
-                title: {
-                  display: true,
-                  text: 'Number of Messages'
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: 'top',
+                    labels: { font: { size: 12 } }
+                  },
+                  title: {
+                    display: true,
+                    text: 'Message Distribution by Hour',
+                    font: { size: 16 }
+                  }
                 },
-                beginAtZero: true
-              }
-            },
-          },
-        };
-        
-        // Generate chart image
-        const chartImage = await generateChartBuffer(chartConfig);
-        if (chartImage) {
-          // Add the chart image to the PDF
-          doc.image(chartImage, {
-            fit: [500, 350],
-            align: 'center',
-            valign: 'center'
-          });
-          doc.moveDown();
-          doc.fontSize(10).text('Distribution of messages by hour of day', {
-            align: 'center'
-          });
-        } else {
-          // Display text data as fallback
-          doc.fontSize(14).text('Hourly Message Data:', { underline: true });
-          doc.moveDown();
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Hour of Day'
+                    }
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: 'Number of Messages'
+                    },
+                    beginAtZero: true
+                  }
+                },
+              },
+            };
             
-          const hourlyData = data.hourlyData;
-          if (hourlyData.labels && hourlyData.datasets && hourlyData.datasets.length > 0) {
-            const labels = hourlyData.labels;
-            const values = hourlyData.datasets[0].data;
-            
-            for (let i = 0; i < Math.min(labels.length, values.length); i++) {
-              doc.fontSize(10).text(`Hour ${labels[i]}: ${values[i]} messages`);
+            // Generate chart image
+            const chartImage = await generateChartBuffer(chartConfig);
+            if (chartImage) {
+              // Add the chart image to the PDF
+              doc.image(chartImage, {
+                fit: [500, 350],
+                align: 'center',
+                valign: 'center'
+              });
+              doc.moveDown();
+            } else {
+              throw new Error("Chart generation failed");
             }
+          } catch (error) {
+            console.log("Falling back to table view for hourly data:", error.message);
+            // Fallback to table view
+            const tableData = hourlyData.labels.map((label, index) => ({
+              label: `Hour ${label}`,
+              value: hourlyData.datasets[0].data[index],
+              count: 1
+            }));
+            
+            await createVisualTable(doc, tableData, 'Messages by Hour of Day', {
+              color: '#686BF1',
+              valueSuffix: ' msgs',
+              showCounts: false
+            });
           }
+        } else {
+          doc.fontSize(12).text('No hourly distribution data available');
         }
       }
       
@@ -285,85 +395,91 @@ export async function generateStatisticsReport(data, timePeriod) {
         doc.fontSize(16).text('Conversation Topics Distribution', { align: 'center' });
         doc.moveDown();
         
-        // Create chart configuration
-        const chartConfig = {
-          type: 'bar',
-          data: {
-            labels: data.emneData.labels,
-            datasets: [
-              {
-                label: 'Topic Distribution (%)',
-                data: data.emneData.datasets[0].data,
-                backgroundColor: data.emneData.datasets[0].backgroundColor || 
-                  data.emneData.labels.map(() => '#777BFF'),
-                borderColor: data.emneData.datasets[0].borderColor || 
-                  data.emneData.labels.map(() => '#686BF1'),
-                borderWidth: 2,
+        const emneData = data.emneData;
+        if (emneData.labels && emneData.datasets && emneData.datasets.length > 0) {
+          try {
+            // Try to generate chart with Chart.js
+            const chartConfig = {
+              type: 'bar',
+              data: {
+                labels: emneData.labels,
+                datasets: [
+                  {
+                    label: 'Topic Distribution (%)',
+                    data: emneData.datasets[0].data,
+                    backgroundColor: emneData.datasets[0].backgroundColor || 
+                      emneData.labels.map(() => '#777BFF'),
+                    borderColor: emneData.datasets[0].borderColor || 
+                      emneData.labels.map(() => '#686BF1'),
+                    borderWidth: 2,
+                  },
+                ],
               },
-            ],
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: {
-                position: 'top',
-                labels: { font: { size: 12 } }
-              },
-              title: {
-                display: true,
-                text: 'Topic Distribution',
-                font: { size: 16 }
-              }
-            },
-            scales: {
-              x: {
-                title: {
-                  display: true,
-                  text: 'Topic'
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: 'top',
+                    labels: { font: { size: 12 } }
+                  },
+                  title: {
+                    display: true,
+                    text: 'Topic Distribution',
+                    font: { size: 16 }
+                  }
                 },
-                ticks: {
-                  maxRotation: 45,
-                  minRotation: 45
-                }
-              },
-              y: {
-                title: {
-                  display: true,
-                  text: 'Percentage (%)'
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Topic'
+                    },
+                    ticks: {
+                      maxRotation: 45,
+                      minRotation: 45
+                    }
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: 'Percentage (%)'
+                    },
+                    beginAtZero: true
+                  }
                 },
-                beginAtZero: true
-              }
-            },
-          },
-        };
-        
-        // Generate chart image
-        const chartImage = await generateChartBuffer(chartConfig);
-        if (chartImage) {
-          // Add the chart image to the PDF
-          doc.image(chartImage, {
-            fit: [500, 350],
-            align: 'center',
-            valign: 'center'
-          });
-          doc.moveDown();
-          doc.fontSize(10).text('Distribution of conversations by topic', {
-            align: 'center'
-          });
-        } else {
-          // Display text data as fallback
-          doc.fontSize(14).text('Topic Distribution:', { underline: true });
-          doc.moveDown();
+              },
+            };
             
-          const emneData = data.emneData;
-          if (emneData.labels && emneData.datasets && emneData.datasets.length > 0) {
-            const labels = emneData.labels;
-            const values = emneData.datasets[0].data;
-            
-            for (let i = 0; i < Math.min(labels.length, values.length); i++) {
-              doc.fontSize(10).text(`${labels[i]}: ${values[i]}%`);
+            // Generate chart image
+            const chartImage = await generateChartBuffer(chartConfig);
+            if (chartImage) {
+              // Add the chart image to the PDF
+              doc.image(chartImage, {
+                fit: [500, 350],
+                align: 'center',
+                valign: 'center'
+              });
+              doc.moveDown();
+            } else {
+              throw new Error("Chart generation failed");
             }
+          } catch (error) {
+            console.log("Falling back to table view for topic data:", error.message);
+            // Fallback to table view
+            const tableData = emneData.labels.map((label, index) => ({
+              label,
+              value: emneData.datasets[0].data[index],
+              count: 1
+            }));
+            
+            await createVisualTable(doc, tableData, 'Topics Distribution', {
+              color: '#686BF1',
+              valueSuffix: '%',
+              showCounts: false
+            });
           }
+        } else {
+          doc.fontSize(12).text('No topic distribution data available');
         }
       }
       
@@ -439,64 +555,21 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       doc.fontSize(12).text(`Correlation Coefficient: ${correlationCoefficient.toFixed(2)}`);
       doc.moveDown(2);
       
-      // Add performance visualization
+      // Add performance visualization using visual table
       try {
-        // Create chart configuration for model performance
-        const chartConfig = {
-          type: 'bar',
-          data: {
-            labels: ['MAE', 'RMSE', 'Correlation'],
-            datasets: [
-              {
-                label: 'Model Performance Metrics',
-                data: [
-                  meanAbsoluteError,
-                  rootMeanSquaredError,
-                  correlationCoefficient
-                ],
-                backgroundColor: ['#FF5722', '#FF9800', '#4CAF50'],
-                borderColor: ['#E64A19', '#F57C00', '#388E3C'],
-                borderWidth: 2,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: {
-                display: false
-              },
-              title: {
-                display: true,
-                text: 'Model Performance Metrics',
-                font: { size: 16 }
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                title: {
-                  display: true,
-                  text: 'Value'
-                }
-              }
-            },
-          },
-        };
+        const performanceData = [
+          { label: 'Mean Absolute Error', value: meanAbsoluteError, count: sampleSize },
+          { label: 'Root Mean Squared Error', value: rootMeanSquaredError, count: sampleSize },
+          { label: 'Correlation Coefficient', value: correlationCoefficient, count: sampleSize }
+        ];
         
-        // Generate chart image
-        const chartImage = await generateChartBuffer(chartConfig);
-        if (chartImage) {
-          // Add the chart image to the PDF
-          doc.image(chartImage, {
-            fit: [400, 300],
-            align: 'center',
-            valign: 'center'
-          });
-          doc.moveDown();
-        }
+        await createVisualTable(doc, performanceData, 'Model Performance Metrics', {
+          color: '#FF9800',
+          showCounts: false,
+          maxValue: Math.max(5, meanAbsoluteError, rootMeanSquaredError, 1) // Use a reasonable max value
+        });
       } catch (chartError) {
-        console.error('Error generating performance chart:', chartError);
+        console.error('Error generating performance visualization:', chartError);
       }
     }
     
@@ -508,84 +581,21 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       
       // Monograms
       if (textAnalysis.positiveCorrelations.monograms && textAnalysis.positiveCorrelations.monograms.length > 0) {
-        doc.fontSize(14).text('Top Words (Monograms)');
-        doc.moveDown(0.5);
-        
-        // Create chart data
-        const monograms = textAnalysis.positiveCorrelations.monograms;
-        
         // Log monograms for debugging
-        console.log("Positive monograms for PDF:", JSON.stringify(monograms));
+        console.log("Positive monograms for PDF:", JSON.stringify(textAnalysis.positiveCorrelations.monograms));
         
-        // First add text representation of the monograms to ensure they appear
-        monograms.forEach((item, index) => {
-          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        // Use visual table to display monograms
+        await createVisualTable(doc, textAnalysis.positiveCorrelations.monograms, 'Top Words (Monograms)', {
+          color: '#4CAF50'
         });
-        doc.moveDown();
-        
-        // Then try to add chart if possible
-        try {
-          // Create chart configuration for positive monograms
-          const chartConfig = {
-            type: 'bar',
-            data: {
-              labels: monograms.map(item => item.ngram),
-              datasets: [
-                {
-                  label: 'Average Score',
-                  data: monograms.map(item => item.avgScore),
-                  backgroundColor: '#4CAF50',
-                  borderColor: '#388E3C',
-                  borderWidth: 2,
-                },
-              ],
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              plugins: {
-                legend: {
-                  display: false
-                },
-                title: {
-                  display: true,
-                  text: 'Top Words - Average Score',
-                  font: { size: 14 }
-                }
-              },
-              scales: {
-                x: {
-                  beginAtZero: true,
-                  title: {
-                    display: true,
-                    text: 'Average Score'
-                  }
-                }
-              },
-            },
-          };
-          
-          // Generate chart image
-          const chartImage = await generateChartBuffer(chartConfig);
-          if (chartImage) {
-            // Add the chart image to the PDF
-            doc.image(chartImage, {
-              fit: [500, 350],
-              align: 'center',
-              valign: 'center'
-            });
-            doc.moveDown();
-          }
-        } catch (chartError) {
-          console.error('Error generating monograms chart:', chartError);
-          // Fallback to text display already done above
-        }
       } else {
         doc.fontSize(12).text('No significant monogram correlations found.');
+        doc.moveDown();
       }
       
-      // Bigrams - add text only to keep the PDF size manageable
+      // Bigrams
       if (textAnalysis.positiveCorrelations.bigrams && textAnalysis.positiveCorrelations.bigrams.length > 0) {
+        // Use simple text list for bigrams to save space
         doc.fontSize(14).text('Top Word Pairs (Bigrams)');
         doc.moveDown(0.5);
         
@@ -595,8 +605,9 @@ async function addTextAnalysisSection(doc, textAnalysis) {
         doc.moveDown();
       }
       
-      // Trigrams - add text only to keep the PDF size manageable
+      // Trigrams
       if (textAnalysis.positiveCorrelations.trigrams && textAnalysis.positiveCorrelations.trigrams.length > 0) {
+        // Use simple text list for trigrams to save space
         doc.fontSize(14).text('Top Word Triplets (Trigrams)');
         doc.moveDown(0.5);
         
@@ -615,84 +626,21 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       
       // Monograms
       if (textAnalysis.negativeCorrelations.monograms && textAnalysis.negativeCorrelations.monograms.length > 0) {
-        doc.fontSize(14).text('Bottom Words (Monograms)');
-        doc.moveDown(0.5);
-        
-        // Create chart data
-        const monograms = textAnalysis.negativeCorrelations.monograms;
-        
         // Log monograms for debugging
-        console.log("Negative monograms for PDF:", JSON.stringify(monograms));
+        console.log("Negative monograms for PDF:", JSON.stringify(textAnalysis.negativeCorrelations.monograms));
         
-        // First add text representation of the monograms to ensure they appear
-        monograms.forEach((item, index) => {
-          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        // Use visual table to display monograms
+        await createVisualTable(doc, textAnalysis.negativeCorrelations.monograms, 'Bottom Words (Monograms)', {
+          color: '#F44336'
         });
-        doc.moveDown();
-        
-        // Then try to add chart if possible
-        try {
-          // Create chart configuration for negative monograms
-          const chartConfig = {
-            type: 'bar',
-            data: {
-              labels: monograms.map(item => item.ngram),
-              datasets: [
-                {
-                  label: 'Average Score',
-                  data: monograms.map(item => item.avgScore),
-                  backgroundColor: '#F44336',
-                  borderColor: '#D32F2F',
-                  borderWidth: 2,
-                },
-              ],
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              plugins: {
-                legend: {
-                  display: false
-                },
-                title: {
-                  display: true,
-                  text: 'Bottom Words - Average Score',
-                  font: { size: 14 }
-                }
-              },
-              scales: {
-                x: {
-                  beginAtZero: true,
-                  title: {
-                    display: true,
-                    text: 'Average Score'
-                  }
-                }
-              },
-            },
-          };
-          
-          // Generate chart image
-          const chartImage = await generateChartBuffer(chartConfig);
-          if (chartImage) {
-            // Add the chart image to the PDF
-            doc.image(chartImage, {
-              fit: [500, 350],
-              align: 'center',
-              valign: 'center'
-            });
-            doc.moveDown();
-          }
-        } catch (chartError) {
-          console.error('Error generating negative monograms chart:', chartError);
-          // Fallback to text display already done above
-        }
       } else {
         doc.fontSize(12).text('No significant negative monogram correlations found.');
+        doc.moveDown();
       }
       
-      // Bigrams - add text only to keep the PDF size manageable
+      // Bigrams
       if (textAnalysis.negativeCorrelations.bigrams && textAnalysis.negativeCorrelations.bigrams.length > 0) {
+        // Use simple text list for bigrams to save space
         doc.fontSize(14).text('Bottom Word Pairs (Bigrams)');
         doc.moveDown(0.5);
         
@@ -702,8 +650,9 @@ async function addTextAnalysisSection(doc, textAnalysis) {
         doc.moveDown();
       }
       
-      // Trigrams - add text only to keep the PDF size manageable
+      // Trigrams
       if (textAnalysis.negativeCorrelations.trigrams && textAnalysis.negativeCorrelations.trigrams.length > 0) {
+        // Use simple text list for trigrams to save space
         doc.fontSize(14).text('Bottom Word Triplets (Trigrams)');
         doc.moveDown(0.5);
         
@@ -723,7 +672,7 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     
   } catch (error) {
     console.error('Error adding text analysis to report:', error);
-    doc.fontSize(12).text('Error generating text analysis section');
+    throw error;
   }
 }
 
