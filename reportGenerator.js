@@ -222,146 +222,114 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     // Add section title
     doc.fillColor('#333')
        .fontSize(18)
-       .text('Conversation Text Analysis', { align: 'center' });
-    
+       .text('Conversation & Text Analysis', { align: 'center' });
     doc.moveDown();
     
-    // Add dataset information
-    doc.fillColor('#666')
-       .fontSize(12)
-       .text(`Analysis based on ${textAnalysis.trainingSize + textAnalysis.testingSize} conversations`);
-    
-    doc.fontSize(12)
-       .text(`Training set: ${textAnalysis.trainingSize} conversations (${textAnalysis.validTrainingSize} valid)`);
-    
-    doc.fontSize(12)
-       .text(`Testing set: ${textAnalysis.testingSize} conversations (${textAnalysis.validTestingSize} valid)`);
-    
+    // --- Display Rating/Score Correlation ---
+    doc.fillColor('#333').fontSize(14).text('Rating vs. Score Correlation', { underline: true });
+    doc.moveDown(0.5);
+    if (textAnalysis.ratingScoreCorrelation && textAnalysis.ratingScoreCorrelation.count > 1) {
+      doc.fillColor('#666').fontSize(11).text(
+        `Pearson Correlation between Customer Rating (1-5) and AI Score (1-10): r = ${textAnalysis.ratingScoreCorrelation.value?.toFixed(4) ?? 'N/A'} (based on ${textAnalysis.ratingScoreCorrelation.count} conversations)`
+      );
+    } else {
+      doc.fillColor('#666').fontSize(11).text('Not enough data to calculate rating vs. score correlation.');
+    }
     doc.moveDown();
+
+    // --- Display Average Ratings/Scores per Topic ---
+    doc.fillColor('#333').fontSize(14).text('Average Scores & Ratings per Topic', { underline: true });
+    doc.moveDown(0.5);
     
-    // Add test results as text (no visualizations)
-    if (textAnalysis.testResults) {
-      doc.fillColor('#333')
-         .fontSize(16)
-         .text('Model Performance', { underline: true });
-      
-      doc.moveDown();
-      
-      const { 
-        meanAbsoluteError, 
-        rootMeanSquaredError, 
-        correlationCoefficient,
-        sampleSize 
-      } = textAnalysis.testResults;
-      
-      doc.fillColor('#666').fontSize(12);
-      doc.text(`Sample Size: ${sampleSize} conversations`);
-      doc.text(`Mean Absolute Error: ${meanAbsoluteError.toFixed(2)}`);
-      doc.text(`Root Mean Squared Error: ${rootMeanSquaredError.toFixed(2)}`);
-      doc.text(`Correlation Coefficient: ${correlationCoefficient.toFixed(2)}`);
-      doc.moveDown();
+    // Table Header
+    const startX = doc.x;
+    const startY = doc.y;
+    const colWidths = [200, 100, 100, 100]; // Topic, Avg Rating, Avg Score, Count
+    doc.font('Helvetica-Bold').fontSize(10);
+    doc.text('Topic', startX, startY);
+    doc.text('Avg Rating', startX + colWidths[0], startY, { width: colWidths[1], align: 'right' });
+    doc.text('Avg Score', startX + colWidths[0] + colWidths[1], startY, { width: colWidths[2], align: 'right' });
+    doc.text('Count', startX + colWidths[0] + colWidths[1] + colWidths[2], startY, { width: colWidths[3], align: 'right' });
+    doc.moveDown(0.5);
+    // Draw header line
+    doc.moveTo(startX, doc.y).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+
+    // Table Rows
+    doc.font('Helvetica').fontSize(9).fillColor('#666');
+    const combinedTopicStats = {};
+    textAnalysis.avgRatingPerTopic?.forEach(item => {
+      if (!combinedTopicStats[item.topic]) combinedTopicStats[item.topic] = {};
+      combinedTopicStats[item.topic].avgRating = item.averageRating;
+      combinedTopicStats[item.topic].ratingCount = item.count;
+    });
+    textAnalysis.avgScorePerTopic?.forEach(item => {
+      if (!combinedTopicStats[item.topic]) combinedTopicStats[item.topic] = {};
+      combinedTopicStats[item.topic].avgScore = item.averageScore;
+      combinedTopicStats[item.topic].scoreCount = item.count;
+    });
+
+    // Sort combined stats by count (using rating count or score count)
+    const sortedTopics = Object.entries(combinedTopicStats)
+        .map(([topic, data]) => ({ topic, ...data }))
+        .sort((a, b) => (b.ratingCount || b.scoreCount || 0) - (a.ratingCount || a.scoreCount || 0));
+
+    sortedTopics.slice(0, 15).forEach(item => { // Limit rows displayed
+        const rowY = doc.y;
+        doc.text(item.topic, startX, rowY, { width: colWidths[0] - 10, ellipsis: true }); // Allow ellipsis
+        doc.text(item.avgRating?.toFixed(2) ?? 'N/A', startX + colWidths[0], rowY, { width: colWidths[1], align: 'right' });
+        doc.text(item.avgScore?.toFixed(2) ?? 'N/A', startX + colWidths[0] + colWidths[1], rowY, { width: colWidths[2], align: 'right' });
+        doc.text(item.ratingCount ?? (item.scoreCount ?? 0), startX + colWidths[0] + colWidths[1] + colWidths[2], rowY, { width: colWidths[3], align: 'right' });
+        doc.moveDown(0.5);
+    });
+    doc.moveDown();
+
+    // --- Display N-gram Correlations ---
+    doc.fillColor('#333').fontSize(14).text('N-Gram Score Correlation (Pearson r)', { underline: true });
+    doc.moveDown(0.5);
+    doc.fillColor('#666').fontSize(11).text(
+        `Based on TF-IDF values from ${textAnalysis.analyzedDocumentsCount} conversations. Top ${textAnalysis.positiveCorrelations?.length} positive and ${textAnalysis.negativeCorrelations?.length} negative shown.`
+    );
+    doc.moveDown();
+
+    // Positive Correlations
+    doc.fillColor('#333').fontSize(12).text('Top Positively Correlated N-Grams:');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(9).fillColor('#666');
+    if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.length > 0) {
+      textAnalysis.positiveCorrelations.forEach((item, index) => {
+        doc.text(`${index + 1}. "${item.ngram}" (r = ${item.correlation.toFixed(4)})`);
+      });
+    } else {
+      doc.text('No significant positive correlations found.');
     }
-    
-    // Add positive correlations as text lists
-    if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.monograms) {
-      doc.addPage();
-      
-      doc.fillColor('#333')
-         .fontSize(16)
-         .text('Positive Score Correlations', { underline: true });
-      
-      doc.moveDown();
-      
-      // Monograms as text list
-      if (textAnalysis.positiveCorrelations.monograms && textAnalysis.positiveCorrelations.monograms.length > 0) {
-        doc.fillColor('#333').fontSize(14).text('Top Words (Monograms)');
-        doc.moveDown(0.5);
-        
-        doc.fillColor('#666').fontSize(10);
-        textAnalysis.positiveCorrelations.monograms.slice(0, 15).forEach((item, index) => {
-          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-        });
-        doc.moveDown();
-      } else {
-        doc.fillColor('#666').fontSize(12).text('No significant monogram correlations found.');
-        doc.moveDown();
-      }
-      
-      // Bigrams as text list
-      if (textAnalysis.positiveCorrelations.bigrams && textAnalysis.positiveCorrelations.bigrams.length > 0) {
-        doc.fillColor('#333')
-           .fontSize(14)
-           .text('Top Word Pairs (Bigrams)');
-        
-        doc.moveDown(0.5);
-        
-        doc.fillColor('#666')
-           .fontSize(10);
-        
-        textAnalysis.positiveCorrelations.bigrams.slice(0, 10).forEach((item, index) => {
-          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-        });
-        
-        doc.moveDown();
-      }
+    doc.moveDown();
+
+    // Negative Correlations
+    doc.fillColor('#333').fontSize(12).text('Top Negatively Correlated N-Grams:');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(9).fillColor('#666');
+    if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.length > 0) {
+      textAnalysis.negativeCorrelations.forEach((item, index) => {
+        doc.text(`${index + 1}. "${item.ngram}" (r = ${item.correlation.toFixed(4)})`);
+      });
+    } else {
+      doc.text('No significant negative correlations found.');
     }
-    
-    // Add negative correlations as text lists
-    if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.monograms) {
-      doc.addPage();
-      
-      doc.fillColor('#333')
-         .fontSize(16)
-         .text('Negative Score Correlations', { underline: true });
-      
-      doc.moveDown();
-      
-      // Monograms as text list
-      if (textAnalysis.negativeCorrelations.monograms && textAnalysis.negativeCorrelations.monograms.length > 0) {
-        doc.fillColor('#333').fontSize(14).text('Bottom Words (Monograms)');
-        doc.moveDown(0.5);
-        
-        doc.fillColor('#666').fontSize(10);
-        textAnalysis.negativeCorrelations.monograms.slice(0, 15).forEach((item, index) => {
-          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-        });
-        doc.moveDown();
-      } else {
-        doc.fillColor('#666').fontSize(12).text('No significant negative monogram correlations found.');
-        doc.moveDown();
-      }
-      
-      // Bigrams as text list
-      if (textAnalysis.negativeCorrelations.bigrams && textAnalysis.negativeCorrelations.bigrams.length > 0) {
-        doc.fillColor('#333')
-           .fontSize(14)
-           .text('Bottom Word Pairs (Bigrams)');
-        
-        doc.moveDown(0.5);
-        
-        doc.fillColor('#666')
-           .fontSize(10);
-        
-        textAnalysis.negativeCorrelations.bigrams.slice(0, 10).forEach((item, index) => {
-          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-        });
-        
-        doc.moveDown();
-      }
-    }
+    doc.moveDown();
     
     // Add interpretation note
     doc.moveDown();
-    
     doc.fillColor('#666')
-       .fontSize(11)
-       .text('Note: These correlations indicate words/phrases that tend to appear in conversations with higher or lower satisfaction scores. The score range is based on your conversation rating system.', {
+       .fontSize(10)
+       .text('Note: Correlation (r) measures the linear relationship between the TF-IDF value of an n-gram and the conversation score. Values closer to +1 indicate a positive relationship, while values closer to -1 indicate a negative relationship.', {
         align: 'left',
         width: 500
       });
-    
+
   } catch (error) {
-    console.error('Error adding text analysis to report:', error);
-    throw error;
+    console.error('Error adding text analysis section to report:', error);
+    // Optionally add error message to PDF
+    doc.addPage().fontSize(12).fillColor('red').text('Error generating text analysis section.');
   }
 } 
