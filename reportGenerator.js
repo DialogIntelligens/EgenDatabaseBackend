@@ -29,7 +29,7 @@ function addBase64ImageToPdf(doc, base64String, options = {}) {
   }
 }
 
-// Helper function to create a simple visual bar in the PDF
+// Helper function to create a visual bar in the PDF
 function drawBarInPdf(doc, value, maxValue, width, height, color, x, y) {
   const barWidth = (value / maxValue) * width;
   
@@ -43,10 +43,10 @@ function drawBarInPdf(doc, value, maxValue, width, height, color, x, y) {
   return y + height;
 }
 
-// Helper function to create a visual representation of data
-async function createVisualTable(doc, items, title, options = {}) {
+// Function to create a visual data table in the PDF
+function createVisualTable(doc, items, title, options = {}) {
   const {
-    maxItems = 10,
+    maxItems = 20,
     barWidth = 300,
     barHeight = 20,
     spacing = 25,
@@ -57,7 +57,7 @@ async function createVisualTable(doc, items, title, options = {}) {
     sortOrder = 'desc',
     valuePrefix = '',
     valueSuffix = '',
-    showCounts = true,
+    showPercent = false,
     maxValue = null
   } = options;
   
@@ -72,36 +72,41 @@ async function createVisualTable(doc, items, title, options = {}) {
   }
   
   // Calculate max value if not provided
-  const calculatedMax = maxValue || Math.max(...items.map(item => 
-    typeof item.avgScore !== 'undefined' ? item.avgScore : 
-    typeof item.value !== 'undefined' ? item.value : 0
-  ));
+  const calculatedMax = maxValue || Math.max(...items.map(item => item.value || 0));
   
-  // Limit items and ensure consistent property access
-  const limitedItems = items.slice(0, maxItems).map(item => ({
-    label: item.ngram || item.label || 'Unknown',
-    value: item.avgScore || item.value || 0,
-    count: item.count || 0
-  }));
+  // Prepare data for display
+  let displayItems = [...items];
   
-  // Sort items if needed
+  // Sort if needed
   if (sortOrder === 'desc') {
-    limitedItems.sort((a, b) => b.value - a.value);
+    displayItems.sort((a, b) => b.value - a.value);
   } else if (sortOrder === 'asc') {
-    limitedItems.sort((a, b) => a.value - b.value);
+    displayItems.sort((a, b) => a.value - b.value);
   }
+  
+  // Limit items to maxItems
+  displayItems = displayItems.slice(0, maxItems);
   
   let currentY = startY;
   
+  // Draw headers
+  doc.font('Helvetica-Bold')
+     .fontSize(10)
+     .text('Label', startX, currentY)
+     .text('Value', startX + labelWidth + barWidth + 10, currentY);
+  
+  currentY += 20;
+  
   // Draw items
-  limitedItems.forEach((item, index) => {
-    // Draw index and label
-    doc.fontSize(10).text(`${index + 1}.`, startX, currentY);
-    doc.fontSize(10).text(`"${item.label}"`, startX + 20, currentY, { width: labelWidth });
+  displayItems.forEach((item, index) => {
+    // Draw label
+    doc.font('Helvetica')
+       .fontSize(10)
+       .text(item.label || 'Unknown', startX, currentY, { width: labelWidth });
     
     // Draw value text
-    const valueText = `${valuePrefix}${item.value.toFixed(2)}${valueSuffix}${showCounts ? ` (${item.count})` : ''}`;
-    doc.fontSize(10).text(valueText, startX + labelWidth + barWidth + 10, currentY);
+    const valueText = `${valuePrefix}${item.value.toFixed(1)}${valueSuffix}${showPercent ? '%' : ''}`;
+    doc.text(valueText, startX + labelWidth + barWidth + 10, currentY);
     
     // Draw bar
     drawBarInPdf(
@@ -122,6 +127,8 @@ async function createVisualTable(doc, items, title, options = {}) {
   // Update document Y position
   doc.y = currentY + 10;
   doc.moveDown();
+  
+  return doc.y;
 }
 
 // Function to generate a PDF report based on statistics data
@@ -139,16 +146,25 @@ export async function generateStatisticsReport(data, timePeriod) {
         resolve(pdfData);
       });
       
-      // Add title
-      doc.fontSize(20).text('Statistics Report', { align: 'center' });
+      // Add logo and title
+      doc.fontSize(20)
+         .fillColor('#333')
+         .text('Statistics Report', { align: 'center' });
+      
       doc.moveDown();
       
       // Add time period information
-      doc.fontSize(12).text(`Time Period: ${formatTimePeriod(timePeriod)}`, { align: 'center' });
+      doc.fontSize(12)
+         .fillColor('#666')
+         .text(`Time Period: ${formatTimePeriod(timePeriod)}`, { align: 'center' });
+      
       doc.moveDown(2);
       
       // Add summary statistics
-      doc.fontSize(16).text('Summary Statistics', { underline: true });
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Summary Statistics', { underline: true });
+      
       doc.moveDown();
       
       const { 
@@ -163,95 +179,128 @@ export async function generateStatisticsReport(data, timePeriod) {
         chatbotConversionRate,
         nonChatbotConversionRate,
         showPurchase,
-        chartImages
+        dailyData,
+        hourlyData,
+        emneData
       } = data;
       
-      // Add basic statistics
-      doc.fontSize(12).text(`Total Messages: ${totalMessages}`);
-      doc.fontSize(12).text(`Average Messages Per Day: ${averageMessagesPerDay}`);
-      doc.fontSize(12).text(`Total Conversations: ${totalConversations}`);
-      doc.fontSize(12).text(`Total User Ratings: ${totalCustomerRatings}`);
+      // Create a summary statistics table
+      doc.fillColor('#333');
+      const statItems = [
+        { label: 'Total Messages', value: totalMessages },
+        { label: 'Average Messages Per Day', value: parseFloat(averageMessagesPerDay) },
+        { label: 'Total Conversations', value: totalConversations },
+        { label: 'Total User Ratings', value: totalCustomerRatings },
+        { label: thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating', 
+          value: thumbsRating ? parseFloat(averageCustomerRating) : parseFloat(averageCustomerRating) }
+      ];
       
-      // Rating information
-      if (thumbsRating) {
-        doc.fontSize(12).text(`Thumbs Up Percentage: ${averageCustomerRating}`);
-      } else {
-        doc.fontSize(12).text(`Average Rating: ${averageCustomerRating}`);
-      }
+      createVisualTable(doc, statItems, 'Key Metrics', {
+        barWidth: 200,
+        color: '#686BF1',
+        showPercent: false,
+        sortOrder: null // Don't sort these
+      });
       
       // Add conversion statistics if applicable
       if (showPurchase) {
         doc.moveDown();
-        doc.fontSize(16).text('Conversion Statistics', { underline: true });
+        doc.fillColor('#333')
+           .fontSize(16)
+           .text('Conversion Statistics', { underline: true });
+        
         doc.moveDown();
         
-        doc.fontSize(12).text(`Total Visitors: ${totalVisitors}`);
-        doc.fontSize(12).text(`Overall Conversion Rate: ${overallConversionRate}%`);
-        doc.fontSize(12).text(`Chatbot Conversion Rate: ${chatbotConversionRate}%`);
-        doc.fontSize(12).text(`Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%`);
+        const conversionItems = [
+          { label: 'Total Visitors', value: totalVisitors },
+          { label: 'Overall Conversion Rate', value: parseFloat(overallConversionRate) },
+          { label: 'Chatbot Conversion Rate', value: parseFloat(chatbotConversionRate) },
+          { label: 'Non-Chatbot Conversion Rate', value: parseFloat(nonChatbotConversionRate) }
+        ];
+        
+        createVisualTable(doc, conversionItems, 'Conversion Metrics', {
+          barWidth: 200,
+          color: '#4CAF50',
+          showPercent: true,
+          sortOrder: null, // Don't sort these
+          maxValue: 100 // Max is 100%
+        });
       }
       
-      // Add daily/weekly messages chart
-      if (chartImages?.dailyChart || data.dailyData) {
+      // Add daily/weekly messages visualization
+      if (dailyData && dailyData.labels && dailyData.datasets && dailyData.datasets.length > 0) {
         doc.addPage();
-        doc.fontSize(16).text('Message Volume Over Time', { align: 'center' });
+        
+        doc.fillColor('#333')
+           .fontSize(16)
+           .text(dailyData.isWeekly ? 'Weekly Message Volume' : 'Daily Message Volume', { align: 'center' });
+        
         doc.moveDown();
         
-        // Try to use the captured chart image
-        if (chartImages?.dailyChart) {
-          const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart);
-          if (imageAdded) {
-            doc.moveDown();
-          } else {
-            // Fallback to text-based representation if image fails
-            createFallbackDailyChart(doc, data.dailyData);
-          }
-        } else {
-          // Fallback if no image is available
-          createFallbackDailyChart(doc, data.dailyData);
-        }
+        // Create data items from the chart data
+        const messageItems = dailyData.labels.map((label, index) => ({
+          label: label,
+          value: dailyData.datasets[0].data[index]
+        }));
+        
+        // Add visualization
+        createVisualTable(doc, messageItems, 
+          dailyData.isWeekly ? 'Messages by Week' : 'Messages by Day', {
+          barWidth: 300,
+          color: '#686BF1',
+          sortOrder: null, // Keep original order
+          valueSuffix: ' msgs'
+        });
       }
       
-      // Add hourly distribution chart
-      if (chartImages?.hourlyChart || data.hourlyData) {
+      // Add hourly distribution visualization
+      if (hourlyData && hourlyData.labels && hourlyData.datasets && hourlyData.datasets.length > 0) {
         doc.addPage();
-        doc.fontSize(16).text('Message Distribution by Time of Day', { align: 'center' });
+        
+        doc.fillColor('#333')
+           .fontSize(16)
+           .text('Message Distribution by Time of Day', { align: 'center' });
+        
         doc.moveDown();
         
-        // Try to use the captured chart image
-        if (chartImages?.hourlyChart) {
-          const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart);
-          if (imageAdded) {
-            doc.moveDown();
-          } else {
-            // Fallback to table view if image fails
-            createFallbackHourlyChart(doc, data.hourlyData);
-          }
-        } else {
-          // Fallback if no image is available
-          createFallbackHourlyChart(doc, data.hourlyData);
-        }
+        // Create data items from the chart data
+        const hourlyItems = hourlyData.labels.map((label, index) => ({
+          label: `Hour ${label}`,
+          value: hourlyData.datasets[0].data[index]
+        }));
+        
+        // Add visualization
+        createVisualTable(doc, hourlyItems, 'Messages by Hour', {
+          barWidth: 300,
+          color: '#686BF1',
+          sortOrder: null, // Keep original order
+          valueSuffix: ' msgs'
+        });
       }
       
-      // Add topic distribution chart
-      if (chartImages?.topicChart || data.emneData) {
+      // Add topic distribution visualization
+      if (emneData && emneData.labels && emneData.datasets && emneData.datasets.length > 0) {
         doc.addPage();
-        doc.fontSize(16).text('Conversation Topics Distribution', { align: 'center' });
+        
+        doc.fillColor('#333')
+           .fontSize(16)
+           .text('Conversation Topics Distribution', { align: 'center' });
+        
         doc.moveDown();
         
-        // Try to use the captured chart image
-        if (chartImages?.topicChart) {
-          const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart);
-          if (imageAdded) {
-            doc.moveDown();
-          } else {
-            // Fallback to table view if image fails
-            createFallbackTopicChart(doc, data.emneData);
-          }
-        } else {
-          // Fallback if no image is available
-          createFallbackTopicChart(doc, data.emneData);
-        }
+        // Create data items from the chart data, with percentage values
+        const topicItems = emneData.labels.map((label, index) => ({
+          label: label,
+          value: emneData.datasets[0].data[index]
+        }));
+        
+        // Add visualization
+        createVisualTable(doc, topicItems, 'Topics by Percentage', {
+          barWidth: 300,
+          color: '#686BF1',
+          sortOrder: 'desc', // Sort highest first
+          showPercent: true
+        });
       }
       
       // Only include text analysis if specifically requested
@@ -266,7 +315,10 @@ export async function generateStatisticsReport(data, timePeriod) {
       // Add footer
       doc.moveDown(2);
       const date = new Date();
-      doc.fontSize(10).text(`Report generated on ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}`, { align: 'center' });
+      
+      doc.fontSize(10)
+         .fillColor('#999')
+         .text(`Report generated on ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}`, { align: 'center' });
       
       // Finalize the PDF
       doc.end();
@@ -278,68 +330,8 @@ export async function generateStatisticsReport(data, timePeriod) {
   });
 }
 
-// Fallback chart creation functions
-function createFallbackDailyChart(doc, dailyData) {
-  if (!dailyData || !dailyData.labels || !dailyData.datasets) {
-    doc.fontSize(12).text('No message volume data available');
-    return;
-  }
-  
-  const tableData = dailyData.labels.map((label, index) => ({
-    label,
-    value: dailyData.datasets[0].data[index],
-    count: 1
-  }));
-  
-  createVisualTable(doc, tableData, 'Message Volume by Date', {
-    color: '#686BF1',
-    valueSuffix: ' msgs',
-    showCounts: false
-  });
-}
-
-function createFallbackHourlyChart(doc, hourlyData) {
-  if (!hourlyData || !hourlyData.labels || !hourlyData.datasets) {
-    doc.fontSize(12).text('No hourly distribution data available');
-    return;
-  }
-  
-  const tableData = hourlyData.labels.map((label, index) => ({
-    label: `Hour ${label}`,
-    value: hourlyData.datasets[0].data[index],
-    count: 1
-  }));
-  
-  createVisualTable(doc, tableData, 'Messages by Hour of Day', {
-    color: '#686BF1',
-    valueSuffix: ' msgs',
-    showCounts: false
-  });
-}
-
-function createFallbackTopicChart(doc, emneData) {
-  if (!emneData || !emneData.labels || !emneData.datasets) {
-    doc.fontSize(12).text('No topic distribution data available');
-    return;
-  }
-  
-  const tableData = emneData.labels.map((label, index) => ({
-    label,
-    value: emneData.datasets[0].data[index],
-    count: 1
-  }));
-  
-  createVisualTable(doc, tableData, 'Topics Distribution', {
-    color: '#686BF1',
-    valueSuffix: '%',
-    showCounts: false
-  });
-}
-
 /**
  * Add text analysis section to the report
- * @param {PDFDocument} doc - The PDF document
- * @param {Object} textAnalysis - The text analysis results
  */
 async function addTextAnalysisSection(doc, textAnalysis) {
   try {
@@ -347,18 +339,31 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     doc.addPage();
     
     // Add section title
-    doc.fontSize(18).text('Conversation Text Analysis', { align: 'center' });
+    doc.fillColor('#333')
+       .fontSize(18)
+       .text('Conversation Text Analysis', { align: 'center' });
+    
     doc.moveDown();
     
     // Add dataset information
-    doc.fontSize(12).text(`Analysis based on ${textAnalysis.trainingSize + textAnalysis.testingSize} conversations`);
-    doc.fontSize(12).text(`Training set: ${textAnalysis.trainingSize} conversations (${textAnalysis.validTrainingSize} valid)`);
-    doc.fontSize(12).text(`Testing set: ${textAnalysis.testingSize} conversations (${textAnalysis.validTestingSize} valid)`);
+    doc.fillColor('#666')
+       .fontSize(12)
+       .text(`Analysis based on ${textAnalysis.trainingSize + textAnalysis.testingSize} conversations`);
+    
+    doc.fontSize(12)
+       .text(`Training set: ${textAnalysis.trainingSize} conversations (${textAnalysis.validTrainingSize} valid)`);
+    
+    doc.fontSize(12)
+       .text(`Testing set: ${textAnalysis.testingSize} conversations (${textAnalysis.validTestingSize} valid)`);
+    
     doc.moveDown();
     
     // Add test results
     if (textAnalysis.testResults) {
-      doc.fontSize(16).text('Model Performance', { underline: true });
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Model Performance', { underline: true });
+      
       doc.moveDown();
       
       const { 
@@ -368,120 +373,123 @@ async function addTextAnalysisSection(doc, textAnalysis) {
         sampleSize 
       } = textAnalysis.testResults;
       
-      doc.fontSize(12).text(`Sample Size: ${sampleSize} conversations`);
-      doc.fontSize(12).text(`Mean Absolute Error: ${meanAbsoluteError.toFixed(2)}`);
-      doc.fontSize(12).text(`Root Mean Squared Error: ${rootMeanSquaredError.toFixed(2)}`);
-      doc.fontSize(12).text(`Correlation Coefficient: ${correlationCoefficient.toFixed(2)}`);
-      doc.moveDown(2);
+      const performanceItems = [
+        { label: 'Mean Absolute Error', value: meanAbsoluteError },
+        { label: 'Root Mean Squared Error', value: rootMeanSquaredError },
+        { label: 'Correlation Coefficient', value: correlationCoefficient }
+      ];
       
-      // Add performance visualization using visual table
-      try {
-        const performanceData = [
-          { label: 'Mean Absolute Error', value: meanAbsoluteError, count: sampleSize },
-          { label: 'Root Mean Squared Error', value: rootMeanSquaredError, count: sampleSize },
-          { label: 'Correlation Coefficient', value: correlationCoefficient, count: sampleSize }
-        ];
-        
-        await createVisualTable(doc, performanceData, 'Model Performance Metrics', {
-          color: '#FF9800',
-          showCounts: false,
-          maxValue: Math.max(5, meanAbsoluteError, rootMeanSquaredError, 1) // Use a reasonable max value
-        });
-      } catch (chartError) {
-        console.error('Error generating performance visualization:', chartError);
-      }
+      createVisualTable(doc, performanceItems, 'Model Performance Metrics', {
+        color: '#FF9800',
+        sortOrder: null
+      });
     }
     
     // Add positive correlations
-    if (textAnalysis.positiveCorrelations) {
+    if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.monograms) {
       doc.addPage();
-      doc.fontSize(16).text('Positive Score Correlations', { underline: true });
+      
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Positive Score Correlations', { underline: true });
+      
       doc.moveDown();
       
       // Monograms
       if (textAnalysis.positiveCorrelations.monograms && textAnalysis.positiveCorrelations.monograms.length > 0) {
-        // Use visual table to display monograms
-        await createVisualTable(doc, textAnalysis.positiveCorrelations.monograms, 'Top Words (Monograms)', {
-          color: '#4CAF50'
+        const monogramItems = textAnalysis.positiveCorrelations.monograms.map(item => ({
+          label: item.ngram,
+          value: item.avgScore
+        }));
+        
+        createVisualTable(doc, monogramItems, 'Top Words (Monograms)', {
+          color: '#4CAF50',
+          sortOrder: 'desc'
         });
       } else {
-        doc.fontSize(12).text('No significant monogram correlations found.');
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('No significant monogram correlations found.');
+        
         doc.moveDown();
       }
       
-      // Bigrams
+      // Bigrams - simplified as a list
       if (textAnalysis.positiveCorrelations.bigrams && textAnalysis.positiveCorrelations.bigrams.length > 0) {
-        // Use simple text list for bigrams to save space
-        doc.fontSize(14).text('Top Word Pairs (Bigrams)');
+        doc.fillColor('#333')
+           .fontSize(14)
+           .text('Top Word Pairs (Bigrams)');
+        
         doc.moveDown(0.5);
         
-        textAnalysis.positiveCorrelations.bigrams.forEach((item, index) => {
-          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-        });
-        doc.moveDown();
-      }
-      
-      // Trigrams
-      if (textAnalysis.positiveCorrelations.trigrams && textAnalysis.positiveCorrelations.trigrams.length > 0) {
-        // Use simple text list for trigrams to save space
-        doc.fontSize(14).text('Top Word Triplets (Trigrams)');
-        doc.moveDown(0.5);
+        doc.fillColor('#666')
+           .fontSize(10);
         
-        textAnalysis.positiveCorrelations.trigrams.forEach((item, index) => {
-          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        textAnalysis.positiveCorrelations.bigrams.slice(0, 10).forEach((item, index) => {
+          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
         });
+        
         doc.moveDown();
       }
     }
     
     // Add negative correlations
-    if (textAnalysis.negativeCorrelations) {
+    if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.monograms) {
       doc.addPage();
-      doc.fontSize(16).text('Negative Score Correlations', { underline: true });
+      
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Negative Score Correlations', { underline: true });
+      
       doc.moveDown();
       
       // Monograms
       if (textAnalysis.negativeCorrelations.monograms && textAnalysis.negativeCorrelations.monograms.length > 0) {
-        // Use visual table to display monograms
-        await createVisualTable(doc, textAnalysis.negativeCorrelations.monograms, 'Bottom Words (Monograms)', {
-          color: '#F44336'
+        const monogramItems = textAnalysis.negativeCorrelations.monograms.map(item => ({
+          label: item.ngram,
+          value: item.avgScore
+        }));
+        
+        createVisualTable(doc, monogramItems, 'Bottom Words (Monograms)', {
+          color: '#F44336',
+          sortOrder: 'asc'
         });
       } else {
-        doc.fontSize(12).text('No significant negative monogram correlations found.');
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('No significant negative monogram correlations found.');
+        
         doc.moveDown();
       }
       
-      // Bigrams
+      // Bigrams - simplified as a list
       if (textAnalysis.negativeCorrelations.bigrams && textAnalysis.negativeCorrelations.bigrams.length > 0) {
-        // Use simple text list for bigrams to save space
-        doc.fontSize(14).text('Bottom Word Pairs (Bigrams)');
+        doc.fillColor('#333')
+           .fontSize(14)
+           .text('Bottom Word Pairs (Bigrams)');
+        
         doc.moveDown(0.5);
         
-        textAnalysis.negativeCorrelations.bigrams.forEach((item, index) => {
-          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
-        });
-        doc.moveDown();
-      }
-      
-      // Trigrams
-      if (textAnalysis.negativeCorrelations.trigrams && textAnalysis.negativeCorrelations.trigrams.length > 0) {
-        // Use simple text list for trigrams to save space
-        doc.fontSize(14).text('Bottom Word Triplets (Trigrams)');
-        doc.moveDown(0.5);
+        doc.fillColor('#666')
+           .fontSize(10);
         
-        textAnalysis.negativeCorrelations.trigrams.forEach((item, index) => {
-          doc.fontSize(10).text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
+        textAnalysis.negativeCorrelations.bigrams.slice(0, 10).forEach((item, index) => {
+          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
         });
+        
         doc.moveDown();
       }
     }
     
     // Add interpretation note
     doc.moveDown();
-    doc.fontSize(11).text('Note: These correlations indicate words/phrases that tend to appear in conversations with higher or lower satisfaction scores. The score range is based on your conversation rating system.', {
-      align: 'left',
-      width: 500
-    });
+    
+    doc.fillColor('#666')
+       .fontSize(11)
+       .text('Note: These correlations indicate words/phrases that tend to appear in conversations with higher or lower satisfaction scores. The score range is based on your conversation rating system.', {
+        align: 'left',
+        width: 500
+      });
     
   } catch (error) {
     console.error('Error adding text analysis to report:', error);
