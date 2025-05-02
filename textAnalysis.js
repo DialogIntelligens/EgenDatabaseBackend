@@ -1,6 +1,7 @@
 import natural from 'natural';
 import stopword from 'stopword';
-import { pearson } from 'stats-lite';
+import pkg from 'stats-lite';
+const { pearson } = pkg;
 
 // Helper function to extract user messages
 function extractUserMessages(conversationData) {
