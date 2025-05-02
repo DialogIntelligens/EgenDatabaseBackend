@@ -43,7 +43,7 @@ function drawBarInPdf(doc, value, maxValue, width, height, color, x, y) {
   return y + height;
 }
 
-// Function to create a visual data table in the PDF
+// Function to create a visual data table in the PDF (used as fallback)
 function createVisualTable(doc, items, title, options = {}) {
   const {
     maxItems = 20,
@@ -146,7 +146,7 @@ export async function generateStatisticsReport(data, timePeriod) {
         resolve(pdfData);
       });
       
-      // Add logo and title
+      // Add title
       doc.fontSize(20)
          .fillColor('#333')
          .text('Statistics Report', { align: 'center' });
@@ -181,129 +181,96 @@ export async function generateStatisticsReport(data, timePeriod) {
         showPurchase,
         dailyData,
         hourlyData,
-        emneData
+        emneData,
+        chartImages // <-- Use chart images
       } = data;
       
-      // Create a summary statistics table
-      doc.fillColor('#333');
+      // Use visual table for summary stats
       const statItems = [
         { label: 'Total Messages', value: totalMessages },
-        { label: 'Average Messages Per Day', value: parseFloat(averageMessagesPerDay) },
+        { label: 'Average Messages Per Day', value: parseFloat(averageMessagesPerDay) || 0 },
         { label: 'Total Conversations', value: totalConversations },
         { label: 'Total User Ratings', value: totalCustomerRatings },
         { label: thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating', 
-          value: thumbsRating ? parseFloat(averageCustomerRating) : parseFloat(averageCustomerRating) }
+          value: parseFloat(averageCustomerRating) || 0 }
       ];
-      
       createVisualTable(doc, statItems, 'Key Metrics', {
-        barWidth: 200,
-        color: '#686BF1',
-        showPercent: false,
-        sortOrder: null // Don't sort these
+        barWidth: 200, color: '#686BF1', showPercent: thumbsRating, sortOrder: null, maxValue: thumbsRating ? 100 : null
       });
-      
+
       // Add conversion statistics if applicable
       if (showPurchase) {
         doc.moveDown();
         doc.fillColor('#333')
            .fontSize(16)
            .text('Conversion Statistics', { underline: true });
-        
         doc.moveDown();
-        
         const conversionItems = [
           { label: 'Total Visitors', value: totalVisitors },
-          { label: 'Overall Conversion Rate', value: parseFloat(overallConversionRate) },
-          { label: 'Chatbot Conversion Rate', value: parseFloat(chatbotConversionRate) },
-          { label: 'Non-Chatbot Conversion Rate', value: parseFloat(nonChatbotConversionRate) }
+          { label: 'Overall Conversion Rate', value: parseFloat(overallConversionRate) || 0 },
+          { label: 'Chatbot Conversion Rate', value: parseFloat(chatbotConversionRate) || 0 },
+          { label: 'Non-Chatbot Conversion Rate', value: parseFloat(nonChatbotConversionRate) || 0 }
         ];
-        
         createVisualTable(doc, conversionItems, 'Conversion Metrics', {
-          barWidth: 200,
-          color: '#4CAF50',
-          showPercent: true,
-          sortOrder: null, // Don't sort these
-          maxValue: 100 // Max is 100%
+          barWidth: 200, color: '#4CAF50', showPercent: true, sortOrder: null, maxValue: 100
         });
       }
       
-      // Add daily/weekly messages visualization
-      if (dailyData && dailyData.labels && dailyData.datasets && dailyData.datasets.length > 0) {
-        doc.addPage();
-        
-        doc.fillColor('#333')
-           .fontSize(16)
-           .text(dailyData.isWeekly ? 'Weekly Message Volume' : 'Daily Message Volume', { align: 'center' });
-        
-        doc.moveDown();
-        
-        // Create data items from the chart data
-        const messageItems = dailyData.labels.map((label, index) => ({
-          label: label,
-          value: dailyData.datasets[0].data[index]
-        }));
-        
-        // Add visualization
-        createVisualTable(doc, messageItems, 
-          dailyData.isWeekly ? 'Messages by Week' : 'Messages by Day', {
-          barWidth: 300,
-          color: '#686BF1',
-          sortOrder: null, // Keep original order
-          valueSuffix: ' msgs'
-        });
+      // Add daily/weekly messages chart image or fallback table
+      doc.addPage();
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Message Volume Over Time', { align: 'center' });
+      doc.moveDown();
+      if (chartImages?.dailyChart) {
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart);
+        if (!imageAdded) {
+          console.log('Fallback to table for daily chart');
+          createFallbackDailyChart(doc, dailyData); // Use fallback function
+        }
+      } else if (dailyData) {
+        createFallbackDailyChart(doc, dailyData);
+      } else {
+        doc.fontSize(12).text('No message volume data available.');
+      }
+
+      // Add hourly distribution chart image or fallback table
+      doc.addPage();
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Message Distribution by Time of Day', { align: 'center' });
+      doc.moveDown();
+      if (chartImages?.hourlyChart) {
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart);
+        if (!imageAdded) {
+          console.log('Fallback to table for hourly chart');
+          createFallbackHourlyChart(doc, hourlyData);
+        }
+      } else if (hourlyData) {
+        createFallbackHourlyChart(doc, hourlyData);
+      } else {
+        doc.fontSize(12).text('No hourly distribution data available.');
+      }
+
+      // Add topic distribution chart image or fallback table
+      doc.addPage();
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Conversation Topics Distribution', { align: 'center' });
+      doc.moveDown();
+      if (chartImages?.topicChart) {
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart);
+        if (!imageAdded) {
+          console.log('Fallback to table for topic chart');
+          createFallbackTopicChart(doc, emneData);
+        }
+      } else if (emneData) {
+        createFallbackTopicChart(doc, emneData);
+      } else {
+        doc.fontSize(12).text('No topic distribution data available.');
       }
       
-      // Add hourly distribution visualization
-      if (hourlyData && hourlyData.labels && hourlyData.datasets && hourlyData.datasets.length > 0) {
-        doc.addPage();
-        
-        doc.fillColor('#333')
-           .fontSize(16)
-           .text('Message Distribution by Time of Day', { align: 'center' });
-        
-        doc.moveDown();
-        
-        // Create data items from the chart data
-        const hourlyItems = hourlyData.labels.map((label, index) => ({
-          label: `Hour ${label}`,
-          value: hourlyData.datasets[0].data[index]
-        }));
-        
-        // Add visualization
-        createVisualTable(doc, hourlyItems, 'Messages by Hour', {
-          barWidth: 300,
-          color: '#686BF1',
-          sortOrder: null, // Keep original order
-          valueSuffix: ' msgs'
-        });
-      }
-      
-      // Add topic distribution visualization
-      if (emneData && emneData.labels && emneData.datasets && emneData.datasets.length > 0) {
-        doc.addPage();
-        
-        doc.fillColor('#333')
-           .fontSize(16)
-           .text('Conversation Topics Distribution', { align: 'center' });
-        
-        doc.moveDown();
-        
-        // Create data items from the chart data, with percentage values
-        const topicItems = emneData.labels.map((label, index) => ({
-          label: label,
-          value: emneData.datasets[0].data[index]
-        }));
-        
-        // Add visualization
-        createVisualTable(doc, topicItems, 'Topics by Percentage', {
-          barWidth: 300,
-          color: '#686BF1',
-          sortOrder: 'desc', // Sort highest first
-          showPercent: true
-        });
-      }
-      
-      // Only include text analysis if specifically requested
+      // Text analysis section remains the same...
       if (data.includeTextAnalysis && data.textAnalysis) {
         try {
           await addTextAnalysisSection(doc, data.textAnalysis);
@@ -315,7 +282,6 @@ export async function generateStatisticsReport(data, timePeriod) {
       // Add footer
       doc.moveDown(2);
       const date = new Date();
-      
       doc.fontSize(10)
          .fillColor('#999')
          .text(`Report generated on ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}`, { align: 'center' });
@@ -330,9 +296,50 @@ export async function generateStatisticsReport(data, timePeriod) {
   });
 }
 
-/**
- * Add text analysis section to the report
- */
+// Fallback chart creation functions (using visual tables)
+function createFallbackDailyChart(doc, dailyData) {
+  if (!dailyData || !dailyData.labels || !dailyData.datasets || dailyData.datasets.length === 0) {
+    doc.fontSize(12).text('No message volume data available.');
+    return;
+  }
+  const items = dailyData.labels.map((label, index) => ({
+    label: label,
+    value: dailyData.datasets[0].data[index] || 0
+  }));
+  createVisualTable(doc, items, dailyData.isWeekly ? 'Messages by Week' : 'Messages by Day', {
+    color: '#686BF1', sortOrder: null, valueSuffix: ' msgs'
+  });
+}
+
+function createFallbackHourlyChart(doc, hourlyData) {
+  if (!hourlyData || !hourlyData.labels || !hourlyData.datasets || hourlyData.datasets.length === 0) {
+    doc.fontSize(12).text('No hourly distribution data available.');
+    return;
+  }
+  const items = hourlyData.labels.map((label, index) => ({
+    label: `Hour ${label}`,
+    value: hourlyData.datasets[0].data[index] || 0
+  }));
+  createVisualTable(doc, items, 'Messages by Hour', {
+    color: '#686BF1', sortOrder: null, valueSuffix: ' msgs'
+  });
+}
+
+function createFallbackTopicChart(doc, emneData) {
+  if (!emneData || !emneData.labels || !emneData.datasets || emneData.datasets.length === 0) {
+    doc.fontSize(12).text('No topic distribution data available.');
+    return;
+  }
+  const items = emneData.labels.map((label, index) => ({
+    label: label,
+    value: emneData.datasets[0].data[index] || 0
+  }));
+  createVisualTable(doc, items, 'Topics by Percentage', {
+    color: '#686BF1', sortOrder: 'desc', showPercent: true
+  });
+}
+
+// Text analysis section (remains the same)
 async function addTextAnalysisSection(doc, textAnalysis) {
   try {
     // Add a page break for this section
