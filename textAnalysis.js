@@ -66,98 +66,290 @@ function generateNgrams(tokens, n) {
 }
 
 /**
- * Analyzes conversations to find word correlations with satisfaction scores
- * Enhanced with TF-IDF and better statistical measures
+ * Calculate correlation between n-grams and scores
+ * @param {Array} conversations - Array of conversation objects
+ * @returns {Object} - Analysis results
  */
 export async function analyzeConversations(conversations) {
   try {
-    console.log(`Starting analysis on ${conversations.length} conversations`);
+    console.log(`Starting analysis of ${conversations.length} conversations`);
     
-    // 1. Data preprocessing - Split into training/testing sets
-    const shuffled = shuffleArray([...conversations]);
-    const splitIndex = Math.floor(shuffled.length * 0.8); // 80/20 split
-    const trainingSet = shuffled.slice(0, splitIndex);
-    const testingSet = shuffled.slice(splitIndex);
-    
-    console.log(`Training set: ${trainingSet.length}, Testing set: ${testingSet.length}`);
-    
-    // 2. Extract text and scores from conversations
-    const trainingData = extractTextAndScores(trainingSet);
-    const testingData = extractTextAndScores(testingSet);
-    
-    if (trainingData.valid.length < 10) {
+    // Validate input
+    if (!Array.isArray(conversations) || conversations.length < 10) {
+      console.log(`Insufficient data for analysis: ${conversations?.length || 0} conversations (minimum 10 required)`);
       return {
-        error: "Not enough valid training data (need at least 10 conversations)",
-        trainingSize: trainingSet.length,
-        testingSize: testingSet.length,
-        validTrainingSize: trainingData.valid.length,
-        validTestingSize: testingData.valid.length
+        error: 'Insufficient data for analysis',
+        minimumRequired: 10,
+        provided: conversations?.length || 0
       };
     }
     
-    console.log(`Valid training data: ${trainingData.valid.length}, Valid testing data: ${testingData.valid.length}`);
+    // Split data into training (80%) and testing (20%)
+    const shuffled = [...conversations].sort(() => 0.5 - Math.random());
+    const splitPoint = Math.floor(shuffled.length * 0.8);
+    const trainingSet = shuffled.slice(0, splitPoint);
+    const testingSet = shuffled.slice(splitPoint);
     
-    // 3. Create document-term matrix with TF-IDF weighting
-    const { allTerms, tfIdfMatrix, documentFrequencies } = buildTfIdfMatrix(trainingData.valid);
-    console.log(`Created TF-IDF matrix with ${allTerms.length} terms`);
+    console.log(`Split data: ${trainingSet.length} training, ${testingSet.length} testing conversations`);
     
-    // 4. Analyze correlations with scores
-    const correlations = calculateCorrelations(
-      tfIdfMatrix, 
-      trainingData.valid.map(item => item.score),
-      allTerms,
-      documentFrequencies,
-      trainingData.valid.length
-    );
+    // Process conversations
+    const ngramCounts = {
+      '1': {}, // Monograms
+      '2': {}, // Bigrams
+      '3': {}  // Trigrams
+    };
     
-    // 5. Evaluate on test set (simple linear model based on term weights)
-    const testResults = evaluateOnTestSet(correlations.allWords, testingData.valid, allTerms);
+    const ngramScores = {
+      '1': {}, // Monograms
+      '2': {}, // Bigrams
+      '3': {}  // Trigrams
+    };
     
-    console.log("Analysis complete");
+    // Process training set
+    let validConversations = 0;
+    let invalidConversations = 0;
+    let invalidReasons = {
+      noData: 0,
+      parseError: 0,
+      notArray: 0,
+      noText: 0,
+      noScore: 0,
+      noTokens: 0
+    };
     
-    return {
+    trainingSet.forEach((conversation, index) => {
+      try {
+        // Skip if no conversation_data
+        if (!conversation.conversation_data) {
+          console.log(`Conversation ${index} skipped: No conversation_data`);
+          invalidConversations++;
+          invalidReasons.noData++;
+          return;
+        }
+        
+        // Parse conversation data
+        let conversationData;
+        try {
+          conversationData = typeof conversation.conversation_data === 'string' 
+            ? JSON.parse(conversation.conversation_data) 
+            : conversation.conversation_data;
+          
+          // Log a sample of the conversation structure for debugging
+          if (index === 0) {
+            console.log("Sample conversation structure:", 
+              JSON.stringify(conversationData.slice(0, Math.min(3, conversationData.length)), null, 2));
+          }
+        } catch (parseError) {
+          console.warn(`Conversation ${index} skipped: Parse error - ${parseError.message}`);
+          invalidConversations++;
+          invalidReasons.parseError++;
+          return; // Skip this conversation
+        }
+        
+        // Skip if no valid conversation data
+        if (!Array.isArray(conversationData)) {
+          console.log(`Conversation ${index} skipped: conversation_data is not an array`);
+          invalidConversations++;
+          invalidReasons.notArray++;
+          return;
+        }
+        
+        // Extract text and score
+        const text = extractTextFromConversation(conversationData);
+        
+        // Skip if no text
+        if (!text || text.trim() === '') {
+          console.log(`Conversation ${index} skipped: No text extracted`);
+          invalidConversations++;
+          invalidReasons.noText++;
+          return;
+        }
+        
+        const score = parseFloat(conversation.score);
+        
+        // Skip if no valid score
+        if (isNaN(score)) {
+          console.log(`Conversation ${index} skipped: Invalid score - ${conversation.score}`);
+          invalidConversations++;
+          invalidReasons.noScore++;
+          return;
+        }
+        
+        // Tokenize
+        const tokens = tokenizeAndClean(text);
+        
+        // Skip if no tokens
+        if (!tokens || tokens.length === 0) {
+          console.log(`Conversation ${index} skipped: No tokens after cleaning`);
+          invalidConversations++;
+          invalidReasons.noTokens++;
+          return;
+        }
+        
+        // Process n-grams
+        let ngramCount = 0;
+        for (let n = 1; n <= 3; n++) {
+          // Skip if not enough tokens for this n-gram size
+          if (tokens.length < n) {
+            console.log(`Skipping ${n}-grams for conversation ${index}: Not enough tokens (${tokens.length})`);
+            continue;
+          }
+          
+          const ngrams = generateNgrams(tokens, n);
+          ngramCount += ngrams.length;
+          
+          ngrams.forEach(ngram => {
+            // Count occurrences
+            if (!ngramCounts[n][ngram]) {
+              ngramCounts[n][ngram] = 0;
+              ngramScores[n][ngram] = [];
+            }
+            
+            ngramCounts[n][ngram]++;
+            ngramScores[n][ngram].push(score);
+          });
+        }
+        
+        console.log(`Processed conversation ${index}: Score ${score}, Tokens ${tokens.length}, N-grams ${ngramCount}`);
+        validConversations++;
+      } catch (error) {
+        console.error(`Error processing conversation ${index}:`, error);
+        invalidConversations++;
+      }
+    });
+    
+    console.log(`Processed training data: ${validConversations} valid, ${invalidConversations} invalid conversations`);
+    console.log('Invalid reasons:', JSON.stringify(invalidReasons));
+    
+    // Check if we have enough valid conversations for analysis
+    if (validConversations < 5) {
+      console.log(`Insufficient valid conversations: ${validConversations} (minimum 5 required)`);
+      return {
+        error: 'Insufficient valid data for analysis',
+        minimumRequired: 5,
+        provided: validConversations,
+        invalidReasons
+      };
+    }
+    
+    // Count the ngrams collected
+    const ngramStats = {
+      '1': Object.keys(ngramCounts['1']).length,
+      '2': Object.keys(ngramCounts['2']).length,
+      '3': Object.keys(ngramCounts['3']).length
+    };
+    console.log('N-gram counts:', JSON.stringify(ngramStats));
+    
+    // Calculate average scores and correlations
+    const correlations = {
+      '1': [], // Monograms
+      '2': [], // Bigrams
+      '3': []  // Trigrams
+    };
+    
+    const minOccurrences = 3; // Minimum occurrences to consider
+    let filteredCounts = { '1': 0, '2': 0, '3': 0 };
+    
+    // Process each n-gram type
+    for (let n = 1; n <= 3; n++) {
+      Object.keys(ngramCounts[n]).forEach(ngram => {
+        const count = ngramCounts[n][ngram];
+        
+        // Only consider n-grams that appear multiple times
+        if (count >= minOccurrences) {
+          filteredCounts[n]++;
+          const scores = ngramScores[n][ngram];
+          const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+          
+          correlations[n].push({
+            ngram,
+            count,
+            avgScore
+          });
+        }
+      });
+      
+      // Sort by average score
+      correlations[n].sort((a, b) => b.avgScore - a.avgScore);
+      
+      console.log(`Found ${correlations[n].length} ${n}-grams with ≥${minOccurrences} occurrences`);
+      if (correlations[n].length > 0) {
+        console.log(`  Top ${n}-gram: "${correlations[n][0]?.ngram}" (Score: ${correlations[n][0]?.avgScore.toFixed(2)})`);
+        console.log(`  Bottom ${n}-gram: "${correlations[n][correlations[n].length-1]?.ngram}" (Score: ${correlations[n][correlations[n].length-1]?.avgScore.toFixed(2)})`);
+      }
+    }
+    
+    console.log("Starting evaluation on test set...");
+    // Evaluate on test set
+    const testResults = evaluateOnTestSet(testingSet, correlations);
+    console.log("Test results:", JSON.stringify(testResults));
+    
+    // Prepare result object with positive and negative correlations
+    const result = {
+      trainingSize: trainingSet.length,
+      validTrainingSize: validConversations,
+      testingSize: testingSet.length,
+      validTestingSize: testResults.sampleSize,
       positiveCorrelations: {
-        monograms: correlations.topPositive.filter(term => !term.ngram.includes(' ')).slice(0, 20),
-        bigrams: correlations.topPositive.filter(term => term.ngram.split(' ').length === 2).slice(0, 15),
-        trigrams: correlations.topPositive.filter(term => term.ngram.split(' ').length === 3).slice(0, 10)
+        monograms: correlations['1'].slice(0, 10),
+        bigrams: correlations['2'].slice(0, 10),
+        trigrams: correlations['3'].slice(0, 10)
       },
       negativeCorrelations: {
-        monograms: correlations.topNegative.filter(term => !term.ngram.includes(' ')).slice(0, 20),
-        bigrams: correlations.topNegative.filter(term => term.ngram.split(' ').length === 2).slice(0, 15),
-        trigrams: correlations.topNegative.filter(term => term.ngram.split(' ').length === 3).slice(0, 10)
+        monograms: correlations['1'].slice(-10).reverse(),
+        bigrams: correlations['2'].slice(-10).reverse(),
+        trigrams: correlations['3'].slice(-10).reverse()
       },
       testResults,
-      trainingSize: trainingSet.length,
-      testingSize: testingSet.length,
-      validTrainingSize: trainingData.valid.length,
-      validTestingSize: testingData.valid.length
+      ngramStats
     };
+    
+    console.log("Text analysis completed successfully");
+    
+    // Debug log for correlation counts
+    console.log(`Positive monograms: ${result.positiveCorrelations.monograms.length}`);
+    console.log(`Negative monograms: ${result.negativeCorrelations.monograms.length}`);
+    
+    return result;
   } catch (error) {
-    console.error("Error in text analysis:", error);
+    console.error('Error analyzing conversations:', error);
     return { 
       error: error.message,
-      trainingSize: conversations.length,
-      testingSize: 0,
-      validTrainingSize: 0,
-      validTestingSize: 0
+      stack: error.stack
     };
   }
 }
 
 /**
- * Extract text from user messages in conversations
+ * Evaluate the correlations on the test set
+ * @param {Array} testSet - The test set of conversations
+ * @param {Object} correlations - The correlations from training
+ * @returns {Object} - Test results
  */
-function extractTextAndScores(conversations) {
-  const valid = [];
-  const invalid = [];
+function evaluateOnTestSet(testSet, correlations) {
+  console.log(`Evaluating model on ${testSet.length} test conversations`);
   
-  for (const conversation of conversations) {
+  const predictedScores = [];
+  const actualScores = [];
+  let processedCount = 0;
+  let skippedCount = 0;
+  let skippedReasons = {
+    noData: 0,
+    parseError: 0,
+    notArray: 0,
+    noText: 0,
+    noScore: 0,
+    noTokens: 0
+  };
+  
+  testSet.forEach((conversation, index) => {
     try {
-      // Parse score as float and validate
-      const score = parseFloat(conversation.score);
-      if (isNaN(score)) {
-        invalid.push({ reason: "Invalid score", id: conversation.id });
-        continue;
+      // Skip if no conversation_data
+      if (!conversation.conversation_data) {
+        console.log(`Test conversation ${index} skipped: No conversation_data`);
+        skippedCount++;
+        skippedReasons.noData++;
+        return;
       }
       
       // Parse conversation data
@@ -166,315 +358,200 @@ function extractTextAndScores(conversations) {
         conversationData = typeof conversation.conversation_data === 'string' 
           ? JSON.parse(conversation.conversation_data) 
           : conversation.conversation_data;
-      } catch (e) {
-        invalid.push({ reason: "Invalid conversation data format", id: conversation.id });
-        continue;
+        
+        // Log a sample of the test conversation structure for debugging
+        if (index === 0) {
+          console.log("Sample test conversation structure:", 
+            JSON.stringify(conversationData.slice(0, Math.min(3, conversationData.length)), null, 2));
+        }
+      } catch (parseError) {
+        console.warn(`Test conversation ${index} skipped: Parse error - ${parseError.message}`);
+        skippedCount++;
+        skippedReasons.parseError++;
+        return; // Skip this conversation
       }
       
+      // Skip if no valid conversation data
       if (!Array.isArray(conversationData)) {
-        invalid.push({ reason: "Conversation data is not an array", id: conversation.id });
-        continue;
+        console.log(`Test conversation ${index} skipped: conversation_data is not an array`);
+        skippedCount++;
+        skippedReasons.notArray++;
+        return;
       }
       
-      // Extract user messages
-      // This specifically looks for messages where isUser is true or sender is 'user'
-      const userMessages = conversationData.filter(msg => 
-        msg && (msg.isUser === true || msg.sender === 'user')
-      ).map(msg => msg.text || '').filter(Boolean);
+      // Extract text and actual score
+      const text = extractTextFromConversation(conversationData);
       
-      if (userMessages.length === 0) {
-        invalid.push({ reason: "No user messages found", id: conversation.id });
-        continue;
+      // Skip if no text
+      if (!text || text.trim() === '') {
+        console.log(`Test conversation ${index} skipped: No text extracted`);
+        skippedCount++;
+        skippedReasons.noText++;
+        return;
       }
       
-      // Combine user messages into single text
-      const text = userMessages.join(' ');
-      if (text.trim().length < 10) {
-        invalid.push({ reason: "User text too short", id: conversation.id });
-        continue;
+      const actualScore = parseFloat(conversation.score);
+      
+      // Skip if no valid score
+      if (isNaN(actualScore)) {
+        console.log(`Test conversation ${index} skipped: Invalid score - ${conversation.score}`);
+        skippedCount++;
+        skippedReasons.noScore++;
+        return;
       }
       
-      valid.push({
-        id: conversation.id,
-        text,
-        score,
-        messageCount: userMessages.length
-      });
+      // Tokenize
+      const tokens = tokenizeAndClean(text);
       
+      // Skip if no tokens
+      if (!tokens || tokens.length === 0) {
+        console.log(`Test conversation ${index} skipped: No tokens after cleaning`);
+        skippedCount++;
+        skippedReasons.noTokens++;
+        return;
+      }
+      
+      actualScores.push(actualScore);
+      
+      // Calculate predicted score based on n-gram correlations
+      let scoreContributions = 0;
+      let contributingNgrams = 0;
+      
+      // Check for each n-gram type
+      for (let n = 1; n <= 3; n++) {
+        // Skip if not enough tokens for this n-gram size
+        if (tokens.length < n) continue;
+        
+        const ngrams = generateNgrams(tokens, n);
+        
+        ngrams.forEach(ngram => {
+          // Find this n-gram in our correlations
+          const match = correlations[n].find(item => item.ngram === ngram);
+          
+          if (match) {
+            scoreContributions += match.avgScore;
+            contributingNgrams++;
+          }
+        });
+      }
+      
+      // Calculate predicted score (or default to average if no matches)
+      const predictedScore = contributingNgrams > 0 
+        ? scoreContributions / contributingNgrams 
+        : 3; // Default middle score
+      
+      predictedScores.push(predictedScore);
+      processedCount++;
+      
+      console.log(`Test conversation ${index}: Actual score ${actualScore}, Predicted score ${predictedScore.toFixed(2)}, Contributing n-grams: ${contributingNgrams}`);
     } catch (error) {
-      console.error(`Error processing conversation ${conversation.id}:`, error);
-      invalid.push({ reason: error.message, id: conversation.id });
+      console.error(`Error evaluating test conversation ${index}:`, error);
+      skippedCount++;
     }
-  }
+  });
   
-  return { valid, invalid };
-}
-
-/**
- * Build TF-IDF matrix from preprocessed text documents
- */
-function buildTfIdfMatrix(documents) {
-  // Create tokenizer for words
-  const tokenizer = new natural.WordTokenizer();
+  console.log(`Evaluation complete: ${processedCount} processed, ${skippedCount} skipped`);
+  console.log('Skipped reasons:', JSON.stringify(skippedReasons));
   
-  // Process each document
-  const processedDocs = documents.map(doc => {
-    // Tokenize and normalize text
-    const tokens = tokenizer.tokenize(doc.text.toLowerCase());
-    
-    // Remove stopwords and short words
-    const filteredTokens = stopword.removeStopwords(tokens)
-      .filter(token => token.length > 2 && /^[a-zæøåäö]+$/.test(token));
-    
-    // Extract bigrams and trigrams
-    const bigrams = extractNgrams(filteredTokens, 2);
-    const trigrams = extractNgrams(filteredTokens, 3);
-    
-    // Combine unigrams, bigrams, and trigrams
-    return { 
-      unigrams: filteredTokens,
-      bigrams,
-      trigrams,
-      allTerms: [...filteredTokens, ...bigrams, ...trigrams]
+  // Check if we have enough predictions to evaluate
+  if (actualScores.length === 0 || predictedScores.length === 0) {
+    console.log('No valid test data for evaluation');
+    return {
+      meanAbsoluteError: 0,
+      rootMeanSquaredError: 0,
+      correlationCoefficient: 0,
+      sampleSize: 0,
+      skippedReasons
     };
-  });
-  
-  // Build term frequency matrix
-  const docTermFrequencies = [];
-  const termCounts = new Map();
-  
-  // Count terms in each document
-  processedDocs.forEach(doc => {
-    const termFreq = new Map();
-    
-    // Count term frequencies in this document
-    doc.allTerms.forEach(term => {
-      termFreq.set(term, (termFreq.get(term) || 0) + 1);
-      termCounts.set(term, (termCounts.get(term) || 0) + 1);
-    });
-    
-    docTermFrequencies.push(termFreq);
-  });
-  
-  // Get unique terms that appear in at least 2 documents
-  // and fewer than 95% of documents (to filter extremely common terms)
-  const minDocFreq = 2;
-  const maxDocFreqPct = 0.95;
-  const maxDocFreq = Math.floor(documents.length * maxDocFreqPct);
-  
-  const documentFrequencies = new Map();
-  termCounts.forEach((count, term) => {
-    if (count >= minDocFreq && count <= maxDocFreq) {
-      documentFrequencies.set(term, count);
-    }
-  });
-  
-  // Create final list of terms to use
-  const allTerms = Array.from(documentFrequencies.keys());
-  
-  // Calculate TF-IDF matrix
-  const tfIdfMatrix = [];
-  const numDocuments = documents.length;
-  
-  docTermFrequencies.forEach(docTerms => {
-    const tfIdfVector = new Map();
-    
-    // For each term in our vocabulary
-    allTerms.forEach(term => {
-      const tf = docTerms.get(term) || 0;
-      if (tf > 0) {
-        const df = documentFrequencies.get(term);
-        const idf = Math.log(numDocuments / df);
-        const tfIdf = tf * idf;
-        tfIdfVector.set(term, tfIdf);
-      }
-    });
-    
-    tfIdfMatrix.push(tfIdfVector);
-  });
-  
-  return { allTerms, tfIdfMatrix, documentFrequencies };
-}
-
-/**
- * Extract n-grams from a list of tokens
- */
-function extractNgrams(tokens, n) {
-  if (tokens.length < n) return [];
-  
-  const ngrams = [];
-  for (let i = 0; i <= tokens.length - n; i++) {
-    ngrams.push(tokens.slice(i, i + n).join(' '));
   }
   
-  return ngrams;
-}
-
-/**
- * Calculate correlation between terms and scores using TF-IDF weights
- */
-function calculateCorrelations(tfIdfMatrix, scores, allTerms, documentFrequencies, numDocuments) {
-  // For each term, calculate correlation with scores
-  const termStats = [];
+  // Calculate evaluation metrics
+  const meanAbsoluteError = calculateMAE(actualScores, predictedScores);
+  const rootMeanSquaredError = calculateRMSE(actualScores, predictedScores);
+  const correlationCoefficient = calculateCorrelation(actualScores, predictedScores);
   
-  allTerms.forEach(term => {
-    // Extract term vectors and scores where the term exists
-    const termValues = [];
-    const matchingScores = [];
-    
-    tfIdfMatrix.forEach((docVector, docIndex) => {
-      const value = docVector.get(term) || 0;
-      if (value > 0) {
-        termValues.push(value);
-        matchingScores.push(scores[docIndex]);
-      }
-    });
-    
-    if (termValues.length < 3) return; // Skip terms with too few occurrences
-    
-    // Calculate correlation coefficient
-    const correlation = calculatePearsonCorrelation(termValues, matchingScores);
-    
-    // Calculate importance score (correlation * log(df))
-    const df = documentFrequencies.get(term);
-    const importance = correlation * Math.log(df);
-    
-    // Average score when term is present
-    const avgScore = matchingScores.reduce((sum, score) => sum + score, 0) / matchingScores.length;
-    
-    termStats.push({
-      ngram: term,
-      correlation,
-      importance,
-      avgScore,
-      count: df,
-      frequency: df / numDocuments
-    });
-  });
-  
-  // Sort terms by correlation
-  termStats.sort((a, b) => a.correlation - b.correlation);
-  const topNegative = termStats.slice(0, 50);
-  const topPositive = termStats.slice(-50).reverse();
-  
-  return { 
-    allWords: termStats, 
-    topNegative, 
-    topPositive 
-  };
-}
-
-/**
- * Calculate Pearson correlation coefficient
- */
-function calculatePearsonCorrelation(x, y) {
-  const n = x.length;
-  if (n !== y.length || n === 0) return 0;
-  
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
-  
-  for (let i = 0; i < n; i++) {
-    sumX += x[i];
-    sumY += y[i];
-    sumXY += x[i] * y[i];
-    sumX2 += x[i] * x[i];
-    sumY2 += y[i] * y[i];
-  }
-  
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-  
-  return denominator === 0 ? 0 : numerator / denominator;
-}
-
-/**
- * Evaluate model on test set
- */
-function evaluateOnTestSet(weightedTerms, testSet, vocabulary) {
-  // Create a simple linear model from term weights
-  const termWeights = new Map();
-  weightedTerms.forEach(term => {
-    termWeights.set(term.ngram, term.correlation);
-  });
-  
-  // Tokenize test documents
-  const tokenizer = new natural.WordTokenizer();
-  const predictions = [];
-  const actuals = [];
-  let sumError = 0;
-  let sumSquaredError = 0;
-  
-  // Make predictions on test documents
-  testSet.forEach(doc => {
-    // Tokenize and extract n-grams
-    const tokens = tokenizer.tokenize(doc.text.toLowerCase());
-    const filteredTokens = stopword.removeStopwords(tokens)
-      .filter(token => token.length > 2 && /^[a-zæøåäö]+$/.test(token));
-    
-    const bigrams = extractNgrams(filteredTokens, 2);
-    const trigrams = extractNgrams(filteredTokens, 3);
-    const allTerms = [...filteredTokens, ...bigrams, ...trigrams];
-    
-    // Count terms
-    const termCounts = new Map();
-    allTerms.forEach(term => {
-      if (vocabulary.includes(term)) {
-        termCounts.set(term, (termCounts.get(term) || 0) + 1);
-      }
-    });
-    
-    // Calculate prediction (weighted sum of term weights)
-    let prediction = 0;
-    let totalWeight = 0;
-    
-    termCounts.forEach((count, term) => {
-      const weight = termWeights.get(term) || 0;
-      prediction += weight * count;
-      totalWeight += Math.abs(weight) * count;
-    });
-    
-    // Normalize prediction based on vocabulary coverage
-    if (totalWeight > 0) {
-      // Scale to expected score range
-      const minScore = 1;
-      const maxScore = 10;
-      const scaledPrediction = 5 + prediction * 3; // Center at 5, scale effect
-      
-      // Clamp to valid range
-      prediction = Math.max(minScore, Math.min(maxScore, scaledPrediction));
-    } else {
-      prediction = 5; // Default to middle if no vocabulary matches
-    }
-    
-    predictions.push(prediction);
-    actuals.push(doc.score);
-    
-    const error = Math.abs(prediction - doc.score);
-    sumError += error;
-    sumSquaredError += error * error;
-  });
-  
-  // Calculate metrics
-  const meanAbsoluteError = sumError / testSet.length;
-  const rootMeanSquaredError = Math.sqrt(sumSquaredError / testSet.length);
-  const correlation = calculatePearsonCorrelation(predictions, actuals);
+  console.log(`Evaluation metrics: MAE=${meanAbsoluteError.toFixed(2)}, RMSE=${rootMeanSquaredError.toFixed(2)}, Correlation=${correlationCoefficient.toFixed(2)}`);
   
   return {
     meanAbsoluteError,
     rootMeanSquaredError,
-    correlationCoefficient: correlation,
-    sampleSize: testSet.length
+    correlationCoefficient,
+    sampleSize: actualScores.length,
+    skippedReasons
   };
 }
 
 /**
- * Shuffle array using Fisher-Yates algorithm
+ * Calculate Mean Absolute Error
+ * @param {number[]} actual - Actual values
+ * @param {number[]} predicted - Predicted values
+ * @returns {number} - MAE value
  */
-function shuffleArray(array) {
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
+function calculateMAE(actual, predicted) {
+  if (actual.length !== predicted.length || actual.length === 0) {
+    return 0;
   }
-  return result;
+  
+  const sum = actual.reduce((acc, val, i) => {
+    return acc + Math.abs(val - predicted[i]);
+  }, 0);
+  
+  return sum / actual.length;
+}
+
+/**
+ * Calculate Root Mean Squared Error
+ * @param {number[]} actual - Actual values
+ * @param {number[]} predicted - Predicted values
+ * @returns {number} - RMSE value
+ */
+function calculateRMSE(actual, predicted) {
+  if (actual.length !== predicted.length || actual.length === 0) {
+    return 0;
+  }
+  
+  const sum = actual.reduce((acc, val, i) => {
+    return acc + Math.pow(val - predicted[i], 2);
+  }, 0);
+  
+  return Math.sqrt(sum / actual.length);
+}
+
+/**
+ * Calculate Pearson correlation coefficient
+ * @param {number[]} x - First array
+ * @param {number[]} y - Second array
+ * @returns {number} - Correlation coefficient
+ */
+function calculateCorrelation(x, y) {
+  if (x.length !== y.length || x.length === 0) {
+    return 0;
+  }
+  
+  const n = x.length;
+  
+  // Calculate means
+  const xMean = x.reduce((a, b) => a + b, 0) / n;
+  const yMean = y.reduce((a, b) => a + b, 0) / n;
+  
+  // Calculate sums for correlation formula
+  let numerator = 0;
+  let xDenom = 0;
+  let yDenom = 0;
+  
+  for (let i = 0; i < n; i++) {
+    const xDiff = x[i] - xMean;
+    const yDiff = y[i] - yMean;
+    
+    numerator += xDiff * yDiff;
+    xDenom += xDiff * xDiff;
+    yDenom += yDiff * yDiff;
+  }
+  
+  // Prevent division by zero
+  if (xDenom === 0 || yDenom === 0) {
+    return 0;
+  }
+  
+  return numerator / Math.sqrt(xDenom * yDenom);
 } 
