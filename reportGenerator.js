@@ -29,107 +29,8 @@ function addBase64ImageToPdf(doc, base64String, options = {}) {
   }
 }
 
-// Helper function to create a visual bar in the PDF
-function drawBarInPdf(doc, value, maxValue, width, height, color, x, y) {
-  const barWidth = (value / maxValue) * width;
-  
-  // Draw background bar
-  doc.rect(x, y, width, height).fill('#f0f0f0');
-  
-  // Draw value bar
-  doc.rect(x, y, barWidth, height).fill(color);
-  
-  // Return the bottom y position
-  return y + height;
-}
-
-// Function to create a visual data table in the PDF (used as fallback)
-function createVisualTable(doc, items, title, options = {}) {
-  const {
-    maxItems = 20,
-    barWidth = 300,
-    barHeight = 20,
-    spacing = 25,
-    labelWidth = 150,
-    startX = 70,
-    startY = doc.y + 10,
-    color = '#777BFF',
-    sortOrder = 'desc',
-    valuePrefix = '',
-    valueSuffix = '',
-    showPercent = false,
-    maxValue = null
-  } = options;
-  
-  // Set title
-  doc.fontSize(14).text(title, { underline: true });
-  doc.moveDown(0.5);
-  
-  if (!items || items.length === 0) {
-    doc.fontSize(12).text('No data available');
-    doc.moveDown();
-    return;
-  }
-  
-  // Calculate max value if not provided
-  const calculatedMax = maxValue || Math.max(...items.map(item => item.value || 0));
-  
-  // Prepare data for display
-  let displayItems = [...items];
-  
-  // Sort if needed
-  if (sortOrder === 'desc') {
-    displayItems.sort((a, b) => b.value - a.value);
-  } else if (sortOrder === 'asc') {
-    displayItems.sort((a, b) => a.value - b.value);
-  }
-  
-  // Limit items to maxItems
-  displayItems = displayItems.slice(0, maxItems);
-  
-  let currentY = startY;
-  
-  // Draw headers
-  doc.font('Helvetica-Bold')
-     .fontSize(10)
-     .text('Label', startX, currentY)
-     .text('Value', startX + labelWidth + barWidth + 10, currentY);
-  
-  currentY += 20;
-  
-  // Draw items
-  displayItems.forEach((item, index) => {
-    // Draw label
-    doc.font('Helvetica')
-       .fontSize(10)
-       .text(item.label || 'Unknown', startX, currentY, { width: labelWidth });
-    
-    // Draw value text
-    const valueText = `${valuePrefix}${item.value.toFixed(1)}${valueSuffix}${showPercent ? '%' : ''}`;
-    doc.text(valueText, startX + labelWidth + barWidth + 10, currentY);
-    
-    // Draw bar
-    drawBarInPdf(
-      doc, 
-      item.value, 
-      calculatedMax, 
-      barWidth, 
-      barHeight, 
-      color, 
-      startX + labelWidth, 
-      currentY
-    );
-    
-    // Move to next item
-    currentY += spacing;
-  });
-  
-  // Update document Y position
-  doc.y = currentY + 10;
-  doc.moveDown();
-  
-  return doc.y;
-}
+// We can remove the drawBarInPdf and createVisualTable functions
+// since we're not using them anymore for fallback visualizations
 
 // Function to generate a PDF report based on statistics data
 export async function generateStatisticsReport(data, timePeriod) {
@@ -179,24 +80,16 @@ export async function generateStatisticsReport(data, timePeriod) {
         chatbotConversionRate,
         nonChatbotConversionRate,
         showPurchase,
-        dailyData,
-        hourlyData,
-        emneData,
-        chartImages // <-- Use chart images
+        chartImages // Chart images from screen capture
       } = data;
       
-      // Use visual table for summary stats
-      const statItems = [
-        { label: 'Total Messages', value: totalMessages },
-        { label: 'Average Messages Per Day', value: parseFloat(averageMessagesPerDay) || 0 },
-        { label: 'Total Conversations', value: totalConversations },
-        { label: 'Total User Ratings', value: totalCustomerRatings },
-        { label: thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating', 
-          value: parseFloat(averageCustomerRating) || 0 }
-      ];
-      createVisualTable(doc, statItems, 'Key Metrics', {
-        barWidth: 200, color: '#686BF1', showPercent: thumbsRating, sortOrder: null, maxValue: thumbsRating ? 100 : null
-      });
+      // Add basic statistics as simple text (not visualized)
+      doc.fillColor('#333').fontSize(12);
+      doc.text(`Total Messages: ${totalMessages}`);
+      doc.text(`Average Messages Per Day: ${averageMessagesPerDay}`);
+      doc.text(`Total Conversations: ${totalConversations}`);
+      doc.text(`Total User Ratings: ${totalCustomerRatings}`);
+      doc.text(`${thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating'}: ${averageCustomerRating}`);
 
       // Add conversion statistics if applicable
       if (showPurchase) {
@@ -205,69 +98,72 @@ export async function generateStatisticsReport(data, timePeriod) {
            .fontSize(16)
            .text('Conversion Statistics', { underline: true });
         doc.moveDown();
-        const conversionItems = [
-          { label: 'Total Visitors', value: totalVisitors },
-          { label: 'Overall Conversion Rate', value: parseFloat(overallConversionRate) || 0 },
-          { label: 'Chatbot Conversion Rate', value: parseFloat(chatbotConversionRate) || 0 },
-          { label: 'Non-Chatbot Conversion Rate', value: parseFloat(nonChatbotConversionRate) || 0 }
-        ];
-        createVisualTable(doc, conversionItems, 'Conversion Metrics', {
-          barWidth: 200, color: '#4CAF50', showPercent: true, sortOrder: null, maxValue: 100
-        });
+        
+        doc.fillColor('#333').fontSize(12);
+        doc.text(`Total Visitors: ${totalVisitors}`);
+        doc.text(`Overall Conversion Rate: ${overallConversionRate}%`);
+        doc.text(`Chatbot Conversion Rate: ${chatbotConversionRate}%`);
+        doc.text(`Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%`);
       }
       
-      // Add daily/weekly messages chart image or fallback table
+      // Add daily/weekly messages chart (only if image is available)
       doc.addPage();
       doc.fillColor('#333')
          .fontSize(16)
          .text('Message Volume Over Time', { align: 'center' });
       doc.moveDown();
+      
       if (chartImages?.dailyChart) {
         const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart);
         if (!imageAdded) {
-          console.log('Fallback to table for daily chart');
-          createFallbackDailyChart(doc, dailyData); // Use fallback function
+          doc.fillColor('#666')
+             .fontSize(12)
+             .text('Chart image could not be generated. Please try again.', { align: 'center' });
         }
-      } else if (dailyData) {
-        createFallbackDailyChart(doc, dailyData);
       } else {
-        doc.fontSize(12).text('No message volume data available.');
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('Chart image not available for this time period.', { align: 'center' });
       }
 
-      // Add hourly distribution chart image or fallback table
+      // Add hourly distribution chart (only if image is available)
       doc.addPage();
       doc.fillColor('#333')
          .fontSize(16)
          .text('Message Distribution by Time of Day', { align: 'center' });
       doc.moveDown();
+      
       if (chartImages?.hourlyChart) {
         const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart);
         if (!imageAdded) {
-          console.log('Fallback to table for hourly chart');
-          createFallbackHourlyChart(doc, hourlyData);
+          doc.fillColor('#666')
+             .fontSize(12)
+             .text('Chart image could not be generated. Please try again.', { align: 'center' });
         }
-      } else if (hourlyData) {
-        createFallbackHourlyChart(doc, hourlyData);
       } else {
-        doc.fontSize(12).text('No hourly distribution data available.');
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('Chart image not available for this time period.', { align: 'center' });
       }
 
-      // Add topic distribution chart image or fallback table
+      // Add topic distribution chart (only if image is available)
       doc.addPage();
       doc.fillColor('#333')
          .fontSize(16)
          .text('Conversation Topics Distribution', { align: 'center' });
       doc.moveDown();
+      
       if (chartImages?.topicChart) {
         const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart);
         if (!imageAdded) {
-          console.log('Fallback to table for topic chart');
-          createFallbackTopicChart(doc, emneData);
+          doc.fillColor('#666')
+             .fontSize(12)
+             .text('Chart image could not be generated. Please try again.', { align: 'center' });
         }
-      } else if (emneData) {
-        createFallbackTopicChart(doc, emneData);
       } else {
-        doc.fontSize(12).text('No topic distribution data available.');
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('Chart image not available for this time period.', { align: 'center' });
       }
       
       // Text analysis section remains the same...
@@ -296,47 +192,25 @@ export async function generateStatisticsReport(data, timePeriod) {
   });
 }
 
-// Fallback chart creation functions (using visual tables)
-function createFallbackDailyChart(doc, dailyData) {
-  if (!dailyData || !dailyData.labels || !dailyData.datasets || dailyData.datasets.length === 0) {
-    doc.fontSize(12).text('No message volume data available.');
-    return;
+// Helper function to format time period information
+function formatTimePeriod(timePeriod) {
+  if (!timePeriod) return 'All Time';
+  
+  if (timePeriod === 'all') {
+    return 'All Time';
+  } else if (timePeriod === '7') {
+    return 'Last 7 Days';
+  } else if (timePeriod === '30') {
+    return 'Last 30 Days';
+  } else if (timePeriod === 'yesterday') {
+    return 'Yesterday';
+  } else if (timePeriod === 'custom' && timePeriod.startDate && timePeriod.endDate) {
+    const start = new Date(timePeriod.startDate);
+    const end = new Date(timePeriod.endDate);
+    return `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
   }
-  const items = dailyData.labels.map((label, index) => ({
-    label: label,
-    value: dailyData.datasets[0].data[index] || 0
-  }));
-  createVisualTable(doc, items, dailyData.isWeekly ? 'Messages by Week' : 'Messages by Day', {
-    color: '#686BF1', sortOrder: null, valueSuffix: ' msgs'
-  });
-}
-
-function createFallbackHourlyChart(doc, hourlyData) {
-  if (!hourlyData || !hourlyData.labels || !hourlyData.datasets || hourlyData.datasets.length === 0) {
-    doc.fontSize(12).text('No hourly distribution data available.');
-    return;
-  }
-  const items = hourlyData.labels.map((label, index) => ({
-    label: `Hour ${label}`,
-    value: hourlyData.datasets[0].data[index] || 0
-  }));
-  createVisualTable(doc, items, 'Messages by Hour', {
-    color: '#686BF1', sortOrder: null, valueSuffix: ' msgs'
-  });
-}
-
-function createFallbackTopicChart(doc, emneData) {
-  if (!emneData || !emneData.labels || !emneData.datasets || emneData.datasets.length === 0) {
-    doc.fontSize(12).text('No topic distribution data available.');
-    return;
-  }
-  const items = emneData.labels.map((label, index) => ({
-    label: label,
-    value: emneData.datasets[0].data[index] || 0
-  }));
-  createVisualTable(doc, items, 'Topics by Percentage', {
-    color: '#686BF1', sortOrder: 'desc', showPercent: true
-  });
+  
+  return 'Custom Range';
 }
 
 // Text analysis section (remains the same)
@@ -365,7 +239,7 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     
     doc.moveDown();
     
-    // Add test results
+    // Add test results as text (no visualizations)
     if (textAnalysis.testResults) {
       doc.fillColor('#333')
          .fontSize(16)
@@ -380,19 +254,15 @@ async function addTextAnalysisSection(doc, textAnalysis) {
         sampleSize 
       } = textAnalysis.testResults;
       
-      const performanceItems = [
-        { label: 'Mean Absolute Error', value: meanAbsoluteError },
-        { label: 'Root Mean Squared Error', value: rootMeanSquaredError },
-        { label: 'Correlation Coefficient', value: correlationCoefficient }
-      ];
-      
-      createVisualTable(doc, performanceItems, 'Model Performance Metrics', {
-        color: '#FF9800',
-        sortOrder: null
-      });
+      doc.fillColor('#666').fontSize(12);
+      doc.text(`Sample Size: ${sampleSize} conversations`);
+      doc.text(`Mean Absolute Error: ${meanAbsoluteError.toFixed(2)}`);
+      doc.text(`Root Mean Squared Error: ${rootMeanSquaredError.toFixed(2)}`);
+      doc.text(`Correlation Coefficient: ${correlationCoefficient.toFixed(2)}`);
+      doc.moveDown();
     }
     
-    // Add positive correlations
+    // Add positive correlations as text lists
     if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.monograms) {
       doc.addPage();
       
@@ -402,26 +272,22 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       
       doc.moveDown();
       
-      // Monograms
+      // Monograms as text list
       if (textAnalysis.positiveCorrelations.monograms && textAnalysis.positiveCorrelations.monograms.length > 0) {
-        const monogramItems = textAnalysis.positiveCorrelations.monograms.map(item => ({
-          label: item.ngram,
-          value: item.avgScore
-        }));
+        doc.fillColor('#333').fontSize(14).text('Top Words (Monograms)');
+        doc.moveDown(0.5);
         
-        createVisualTable(doc, monogramItems, 'Top Words (Monograms)', {
-          color: '#4CAF50',
-          sortOrder: 'desc'
+        doc.fillColor('#666').fontSize(10);
+        textAnalysis.positiveCorrelations.monograms.slice(0, 15).forEach((item, index) => {
+          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
         });
+        doc.moveDown();
       } else {
-        doc.fillColor('#666')
-           .fontSize(12)
-           .text('No significant monogram correlations found.');
-        
+        doc.fillColor('#666').fontSize(12).text('No significant monogram correlations found.');
         doc.moveDown();
       }
       
-      // Bigrams - simplified as a list
+      // Bigrams as text list
       if (textAnalysis.positiveCorrelations.bigrams && textAnalysis.positiveCorrelations.bigrams.length > 0) {
         doc.fillColor('#333')
            .fontSize(14)
@@ -440,7 +306,7 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       }
     }
     
-    // Add negative correlations
+    // Add negative correlations as text lists
     if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.monograms) {
       doc.addPage();
       
@@ -450,26 +316,22 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       
       doc.moveDown();
       
-      // Monograms
+      // Monograms as text list
       if (textAnalysis.negativeCorrelations.monograms && textAnalysis.negativeCorrelations.monograms.length > 0) {
-        const monogramItems = textAnalysis.negativeCorrelations.monograms.map(item => ({
-          label: item.ngram,
-          value: item.avgScore
-        }));
+        doc.fillColor('#333').fontSize(14).text('Bottom Words (Monograms)');
+        doc.moveDown(0.5);
         
-        createVisualTable(doc, monogramItems, 'Bottom Words (Monograms)', {
-          color: '#F44336',
-          sortOrder: 'asc'
+        doc.fillColor('#666').fontSize(10);
+        textAnalysis.negativeCorrelations.monograms.slice(0, 15).forEach((item, index) => {
+          doc.text(`${index + 1}. "${item.ngram}" (Score: ${item.avgScore.toFixed(2)}, Count: ${item.count})`);
         });
+        doc.moveDown();
       } else {
-        doc.fillColor('#666')
-           .fontSize(12)
-           .text('No significant negative monogram correlations found.');
-        
+        doc.fillColor('#666').fontSize(12).text('No significant negative monogram correlations found.');
         doc.moveDown();
       }
       
-      // Bigrams - simplified as a list
+      // Bigrams as text list
       if (textAnalysis.negativeCorrelations.bigrams && textAnalysis.negativeCorrelations.bigrams.length > 0) {
         doc.fillColor('#333')
            .fontSize(14)
@@ -502,25 +364,4 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     console.error('Error adding text analysis to report:', error);
     throw error;
   }
-}
-
-// Helper function to format time period information
-function formatTimePeriod(timePeriod) {
-  if (!timePeriod) return 'All Time';
-  
-  if (timePeriod === 'all') {
-    return 'All Time';
-  } else if (timePeriod === '7') {
-    return 'Last 7 Days';
-  } else if (timePeriod === '30') {
-    return 'Last 30 Days';
-  } else if (timePeriod === 'yesterday') {
-    return 'Yesterday';
-  } else if (timePeriod === 'custom' && timePeriod.startDate && timePeriod.endDate) {
-    const start = new Date(timePeriod.startDate);
-    const end = new Date(timePeriod.endDate);
-    return `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
-  }
-  
-  return 'Custom Range';
 } 
