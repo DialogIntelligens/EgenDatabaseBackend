@@ -241,47 +241,104 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     doc.fillColor('#333').fontSize(14).text('Average Scores & Ratings per Topic', { underline: true });
     doc.moveDown(0.5);
     
-    // Table Header
-    const startX = doc.x;
-    const startY = doc.y;
-    const colWidths = [200, 100, 100, 100]; // Topic, Avg Rating, Avg Score, Count
-    doc.font('Helvetica-Bold').fontSize(10);
-    doc.text('Topic', startX, startY);
-    doc.text('Avg Rating', startX + colWidths[0], startY, { width: colWidths[1], align: 'right' });
-    doc.text('Avg Score', startX + colWidths[0] + colWidths[1], startY, { width: colWidths[2], align: 'right' });
-    doc.text('Count', startX + colWidths[0] + colWidths[1] + colWidths[2], startY, { width: colWidths[3], align: 'right' });
-    doc.moveDown(0.5);
-    // Draw header line
-    doc.moveTo(startX, doc.y).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), doc.y).stroke('#ccc');
-    doc.moveDown(0.5);
+    // Check if we have any topics with data
+    const hasTopicData = (textAnalysis.avgRatingPerTopic?.length > 0 || textAnalysis.avgScorePerTopic?.length > 0);
+    
+    if (!hasTopicData) {
+      doc.fillColor('#666').fontSize(11).text('No topic data available.');
+      doc.moveDown();
+    } else {
+      // Table Header
+      const startX = doc.x;
+      const startY = doc.y;
+      const colWidths = [200, 100, 100, 100]; // Topic, Avg Rating, Avg Score, Count
+      doc.font('Helvetica-Bold').fontSize(10);
+      doc.text('Topic', startX, startY);
+      doc.text('Avg Rating', startX + colWidths[0], startY, { width: colWidths[1], align: 'right' });
+      doc.text('Avg Score', startX + colWidths[0] + colWidths[1], startY, { width: colWidths[2], align: 'right' });
+      doc.text('Count', startX + colWidths[0] + colWidths[1] + colWidths[2], startY, { width: colWidths[3], align: 'right' });
+      doc.moveDown(0.5);
+      // Draw header line
+      doc.moveTo(startX, doc.y).lineTo(startX + colWidths.reduce((a, b) => a + b, 0), doc.y).stroke('#ccc');
+      doc.moveDown(0.5);
 
-    // Table Rows
-    doc.font('Helvetica').fontSize(9).fillColor('#666');
-    const combinedTopicStats = {};
-    textAnalysis.avgRatingPerTopic?.forEach(item => {
-      if (!combinedTopicStats[item.topic]) combinedTopicStats[item.topic] = {};
-      combinedTopicStats[item.topic].avgRating = item.averageRating;
-      combinedTopicStats[item.topic].ratingCount = item.count;
-    });
-    textAnalysis.avgScorePerTopic?.forEach(item => {
-      if (!combinedTopicStats[item.topic]) combinedTopicStats[item.topic] = {};
-      combinedTopicStats[item.topic].avgScore = item.averageScore;
-      combinedTopicStats[item.topic].scoreCount = item.count;
-    });
+      // Table Rows
+      doc.font('Helvetica').fontSize(9).fillColor('#666');
+      const combinedTopicStats = {};
+      
+      // First, log what we're getting for debugging
+      console.log(`Processing topics: ${textAnalysis.avgRatingPerTopic?.length || 0} with ratings, ${textAnalysis.avgScorePerTopic?.length || 0} with scores`);
+      
+      // Process all rating topics
+      textAnalysis.avgRatingPerTopic?.forEach(item => {
+        if (!combinedTopicStats[item.topic]) combinedTopicStats[item.topic] = {};
+        combinedTopicStats[item.topic].avgRating = item.averageRating;
+        combinedTopicStats[item.topic].ratingCount = item.count;
+        // Store totalConversations if available
+        if (item.totalConversations) {
+          combinedTopicStats[item.topic].totalConversations = item.totalConversations;
+        }
+      });
+      
+      // Process all score topics
+      textAnalysis.avgScorePerTopic?.forEach(item => {
+        if (!combinedTopicStats[item.topic]) combinedTopicStats[item.topic] = {};
+        combinedTopicStats[item.topic].avgScore = item.averageScore;
+        combinedTopicStats[item.topic].scoreCount = item.count;
+        // Store totalConversations if available and not already set
+        if (item.totalConversations && !combinedTopicStats[item.topic].totalConversations) {
+          combinedTopicStats[item.topic].totalConversations = item.totalConversations;
+        }
+      });
 
-    // Sort combined stats by count (using rating count or score count)
-    const sortedTopics = Object.entries(combinedTopicStats)
-        .map(([topic, data]) => ({ topic, ...data }))
-        .sort((a, b) => (b.ratingCount || b.scoreCount || 0) - (a.ratingCount || a.scoreCount || 0));
+      // Sort combined stats by count (using rating count or score count)
+      const sortedTopics = Object.entries(combinedTopicStats)
+          .map(([topic, data]) => ({ 
+            topic, 
+            avgRating: data.avgRating,
+            avgScore: data.avgScore,
+            ratingCount: data.ratingCount || 0,
+            scoreCount: data.scoreCount || 0,
+            // Use totalConversations from either rating or score data
+            totalConversations: data.totalConversations || 
+              (textAnalysis.avgRatingPerTopic?.find(t => t.topic === topic)?.totalConversations || 
+               textAnalysis.avgScorePerTopic?.find(t => t.topic === topic)?.totalConversations || 0)
+          }))
+          // Sort primarily by total conversations, secondarily by rating/score count
+          .sort((a, b) => {
+            // First sort by total conversations
+            if (b.totalConversations !== a.totalConversations) {
+              return b.totalConversations - a.totalConversations;
+            }
+            // Then by combined rating/score count
+            return (b.ratingCount + b.scoreCount) - (a.ratingCount + a.scoreCount);
+          });
+      
+      console.log(`Found ${sortedTopics.length} combined topics to display`);
 
-    sortedTopics.slice(0, 15).forEach(item => { // Limit rows displayed
-        const rowY = doc.y;
-        doc.text(item.topic, startX, rowY, { width: colWidths[0] - 10, ellipsis: true }); // Allow ellipsis
-        doc.text(item.avgRating?.toFixed(2) ?? 'N/A', startX + colWidths[0], rowY, { width: colWidths[1], align: 'right' });
-        doc.text(item.avgScore?.toFixed(2) ?? 'N/A', startX + colWidths[0] + colWidths[1], rowY, { width: colWidths[2], align: 'right' });
-        doc.text(item.ratingCount ?? (item.scoreCount ?? 0), startX + colWidths[0] + colWidths[1] + colWidths[2], rowY, { width: colWidths[3], align: 'right' });
-        doc.moveDown(0.5);
-    });
+      if (sortedTopics.length === 0) {
+        doc.fillColor('#666').fontSize(11).text('No topics with ratings or scores found.');
+      } else {
+        sortedTopics.slice(0, 15).forEach(item => { // Limit rows displayed
+          const rowY = doc.y;
+          
+          // Display topic with total count in parentheses
+          doc.text(`${item.topic} (${item.totalConversations || 0})`, startX, rowY, { width: colWidths[0] - 10, ellipsis: true });
+          
+          // Display rating and score
+          doc.text(item.avgRating !== null && item.avgRating !== undefined ? item.avgRating.toFixed(2) : 'N/A', 
+                  startX + colWidths[0], rowY, { width: colWidths[1], align: 'right' });
+          doc.text(item.avgScore !== null && item.avgScore !== undefined ? item.avgScore.toFixed(2) : 'N/A', 
+                  startX + colWidths[0] + colWidths[1], rowY, { width: colWidths[2], align: 'right' });
+          
+          // Show rating/score count 
+          const countDisplay = `${item.ratingCount}/${item.scoreCount}`;
+          doc.text(countDisplay, 
+                  startX + colWidths[0] + colWidths[1] + colWidths[2], rowY, { width: colWidths[3], align: 'right' });
+          doc.moveDown(0.5);
+        });
+      }
+    }
     doc.moveDown();
 
     // --- Display N-gram Correlations ---
