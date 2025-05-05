@@ -132,6 +132,16 @@ export async function analyzeConversations(conversations) {
   });
   console.log(`Found ${allTopics.size} unique topics across all conversations`);
 
+  // --- Create a map of all topics and their counts ---
+  const topicCounts = {};
+  conversations.forEach(conv => {
+    const topic = conv.emne?.trim();
+    if (topic) {
+      if (!topicCounts[topic]) topicCounts[topic] = 0;
+      topicCounts[topic]++;
+    }
+  });
+
   // --- 1B) Average customer_rating per topic ('emne') ---
   const topicRatingStats = {};
   // Initialize stats for all topics
@@ -149,16 +159,17 @@ export async function analyzeConversations(conversations) {
     }
   });
   
+  // Include ALL topics, even those without ratings
   const avgRatingPerTopic = Object.entries(topicRatingStats)
     .map(([topic, data]) => ({
       topic,
       averageRating: data.count > 0 ? data.total / data.count : null,
-      count: data.count
+      count: data.count,
+      totalConversations: topicCounts[topic] || 0
     }))
-    .filter(item => item.count > 0) // Only include topics with at least one rating
-    .sort((a, b) => b.count - a.count); // Sort by count desc
+    .sort((a, b) => (b.totalConversations || 0) - (a.totalConversations || 0)); // Sort by total conversations
   
-  console.log(`Calculated average customer rating for ${avgRatingPerTopic.length} topics.`);
+  console.log(`Calculated average customer rating for ${avgRatingPerTopic.filter(t => t.count > 0).length} topics with ratings (out of ${avgRatingPerTopic.length} total topics).`);
   
   // Log first 3 topics if any exist
   if (avgRatingPerTopic.length > 0) {
@@ -183,16 +194,17 @@ export async function analyzeConversations(conversations) {
     }
   });
   
+  // Include ALL topics, even those without scores
   const avgScorePerTopic = Object.entries(topicScoreStats)
     .map(([topic, data]) => ({
       topic,
       averageScore: data.count > 0 ? data.total / data.count : null,
-      count: data.count
+      count: data.count,
+      totalConversations: topicCounts[topic] || 0
     }))
-    .filter(item => item.count > 0) // Only include topics with at least one score
-    .sort((a, b) => b.count - a.count); // Sort by count desc
+    .sort((a, b) => (b.totalConversations || 0) - (a.totalConversations || 0)); // Sort by total conversations
   
-  console.log(`Calculated average score for ${avgScorePerTopic.length} topics.`);
+  console.log(`Calculated average score for ${avgScorePerTopic.filter(t => t.count > 0).length} topics with scores (out of ${avgScorePerTopic.length} total topics).`);
 
   // --- Preprocessing for TF-IDF ---
   const processedDocs = conversations.map((conv, index) => {
