@@ -47,6 +47,34 @@ export async function generateStatisticsReport(data, timePeriod) {
         resolve(pdfData);
       });
       
+      // Check if GPT analysis is included in the data
+      if (data.gptAnalysis) {
+        // Add GPT Analysis page first
+        doc.fontSize(20)
+           .fillColor('#333')
+           .text('AI Analysis Insights', { align: 'center' });
+        
+        doc.moveDown();
+        
+        // Add time period information
+        doc.fontSize(12)
+           .fillColor('#666')
+           .text(`Time Period: ${formatTimePeriod(timePeriod)}`, { align: 'center' });
+        
+        doc.moveDown(2);
+        
+        // Add the GPT analysis content
+        doc.fontSize(12)
+           .fillColor('#333')
+           .text(data.gptAnalysis, {
+             align: 'left',
+             lineGap: 2
+           });
+        
+        // Add page break before standard report
+        doc.addPage();
+      }
+      
       // Add title
       doc.fontSize(20)
          .fillColor('#333')
