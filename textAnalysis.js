@@ -68,7 +68,19 @@ function generateNgrams(text, n) {
 export async function analyzeConversations(conversations) {
   console.log(`Starting analysis on ${conversations.length} conversations.`);
 
-  // Debug topics
+  // Debug topics - show raw values of first few conversations
+  console.log("DEBUGGING TOPIC VALUES:");
+  for (let i = 0; i < Math.min(5, conversations.length); i++) {
+    const conv = conversations[i];
+    console.log(`Conversation ${i+1}:`, {
+      id: conv.id,
+      emne_raw: conv.emne, // Raw value without trimming
+      emne_type: typeof conv.emne, // Check if it's a string, null, or undefined
+      emne_trimmed: conv.emne?.trim(), // Trimmed value if possible
+      emne_length: conv.emne?.length // Length if it's a string
+    });
+  }
+
   const topicsFound = conversations.filter(conv => conv.emne?.trim()).length;
   console.log(`Found ${topicsFound} conversations with topic (emne) field`);
   

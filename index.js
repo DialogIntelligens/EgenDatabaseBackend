@@ -1369,11 +1369,11 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       
       // Build query to fetch conversations with scores
       let queryText = `
-        SELECT id, created_at, conversation_data, score
+        SELECT id, created_at, conversation_data, score, emne, customer_rating
         FROM conversations
         WHERE chatbot_id = ANY($1) AND score IS NOT NULL
       `;
-      let queryParams = [Array.isArray(chatbotIds) ? chatbotIds : [chatbotIds]];
+      let queryParams = [chatbotIds];
       let paramIndex = 2;
       
       // Add date filters if provided
@@ -1392,6 +1392,8 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
           const sampleConversation = result.rows[0];
           console.log("Sample conversation ID:", sampleConversation.id);
           console.log("Sample conversation score:", sampleConversation.score);
+          console.log("Sample conversation emne:", sampleConversation.emne);
+          console.log("Sample conversation emne type:", typeof sampleConversation.emne);
           
           // Parse and check the conversation_data structure
           const conversationData = typeof sampleConversation.conversation_data === 'string'
@@ -1525,7 +1527,7 @@ app.post('/analyze-conversations', authenticateToken, async (req, res) => {
     
     // Build query to fetch conversations with scores
     let queryText = `
-      SELECT id, created_at, conversation_data, score
+      SELECT id, created_at, conversation_data, score, emne, customer_rating
       FROM conversations
       WHERE chatbot_id = ANY($1) AND score IS NOT NULL
     `;
