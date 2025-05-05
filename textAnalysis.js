@@ -3,6 +3,40 @@ import stopword from 'stopword';
 import pkg from 'stats-lite';
 const { pearson } = pkg;
 
+// Custom implementation of Pearson correlation to avoid dependency issues
+function calculatePearson(x, y) {
+  if (x.length !== y.length) {
+    throw new Error('Arrays must have the same length');
+  }
+  
+  const n = x.length;
+  
+  // Calculate means
+  const xMean = x.reduce((sum, val) => sum + val, 0) / n;
+  const yMean = y.reduce((sum, val) => sum + val, 0) / n;
+  
+  // Calculate covariance and standard deviations
+  let covariance = 0;
+  let xVariance = 0;
+  let yVariance = 0;
+  
+  for (let i = 0; i < n; i++) {
+    const xDiff = x[i] - xMean;
+    const yDiff = y[i] - yMean;
+    covariance += xDiff * yDiff;
+    xVariance += xDiff * xDiff;
+    yVariance += yDiff * yDiff;
+  }
+  
+  // Check for zero variance (to avoid division by zero)
+  if (xVariance === 0 || yVariance === 0) {
+    return 0; // No correlation when there's no variation
+  }
+  
+  // Calculate Pearson correlation coefficient
+  return covariance / (Math.sqrt(xVariance) * Math.sqrt(yVariance));
+}
+
 // Helper function to extract user messages
 function extractUserMessages(conversationData) {
   if (!Array.isArray(conversationData)) {
@@ -78,11 +112,11 @@ export async function analyzeConversations(conversations) {
 
   if (ratings.length > 1) {
     try {
-      const corr = pearson(ratings, scoresForRatingCorr);
+      const corr = calculatePearson(ratings, scoresForRatingCorr);
       ratingScoreCorr = { value: corr, pValue: null, count: ratings.length }; // p-value not readily available
       console.log(`Customer Rating vs Score Correlation: r = ${corr?.toFixed(4)}, N = ${ratings.length}`);
     } catch (e) {
-      console.error("Error calculating rating-score correlation:", e);
+      console.error("Error calculating rating-score correlation:", e.message);
     }
   } else {
     console.log("Not enough data for rating-score correlation.");
@@ -321,7 +355,7 @@ export async function analyzeConversations(conversations) {
       }
       
       try {
-        const corr = pearson(termTfidfValues, correspondingScores);
+        const corr = calculatePearson(termTfidfValues, correspondingScores);
         if (!isNaN(corr)) {
           ngramCorrelations.push({ 
             ngram: term, 
@@ -333,7 +367,7 @@ export async function analyzeConversations(conversations) {
           nanCorrelationCount++;
         }
       } catch (e) { 
-        console.error(`Error calculating correlation for term "${term}":`, e);
+        console.error(`Error calculating correlation for term "${term}":`, e.message);
       }
     }
   });
@@ -378,7 +412,7 @@ export async function analyzeConversations(conversations) {
       // Only calculate if we have some variance (term present in some docs, absent in others)
       if (termPresence.includes(0) && termPresence.includes(1)) {
         try {
-          const corr = pearson(termPresence, correspondingScores);
+          const corr = calculatePearson(termPresence, correspondingScores);
           if (!isNaN(corr)) {
             binaryCorrelations.push({ 
               ngram: term, 
@@ -390,7 +424,7 @@ export async function analyzeConversations(conversations) {
             nanCorrelationCount++;
           }
         } catch (e) {
-          // Ignore errors
+          console.error(`Error in binary correlation for "${term}":`, e.message);
         }
       } else {
         noVarianceCount++;
