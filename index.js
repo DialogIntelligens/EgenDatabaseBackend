@@ -1319,7 +1319,7 @@ cron.schedule('0 * * * *', async () => {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis } = req.body;
+    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
@@ -1486,10 +1486,95 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     }
     
     // Generate GPT analysis if requested
-    if (req.body.includeGPTAnalysis) {
+    if (includeGPTAnalysis) {
       try {
         console.log("Generating GPT analysis...");
-        const gptAnalysis = await generateGPTAnalysis(statisticsData, timePeriod);
+        
+        // Fetch conversation content if maxConversations > 0
+        let conversationContents = [];
+        if (maxConversations > 0) {
+          console.log(`Fetching up to ${maxConversations} conversations for GPT analysis...`);
+          
+          try {
+            // Build query to fetch conversations
+            let queryText = `
+              SELECT id, created_at, conversation_data, emne, score, customer_rating
+              FROM conversations
+              WHERE chatbot_id = ANY($1)
+            `;
+            let queryParams = [chatbotIds];
+            let paramIndex = 2;
+            
+            // Add date filters if provided
+            if (start_date && end_date) {
+              queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+              queryParams.push(start_date, end_date);
+            }
+            
+            // Order by most recent and limit results
+            queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex++}`;
+            queryParams.push(maxConversations);
+            
+            // Get conversations
+            const result = await pool.query(queryText, queryParams);
+            console.log(`Fetched ${result.rows.length} conversations for GPT analysis`);
+            
+            // Process conversations
+            conversationContents = result.rows.map(conv => {
+              const topic = conv.emne || 'Uncategorized';
+              const score = conv.score || 'No score';
+              const rating = conv.customer_rating || 'No rating';
+              
+              // Parse conversation data
+              let messages = [];
+              try {
+                if (typeof conv.conversation_data === 'string') {
+                  messages = JSON.parse(conv.conversation_data);
+                } else {
+                  messages = conv.conversation_data;
+                }
+                
+                if (!Array.isArray(messages)) {
+                  messages = [];
+                }
+                
+                // Format messages
+                const formattedMessages = messages
+                  .filter(msg => msg && msg.text)
+                  .map(msg => {
+                    return {
+                      text: msg.text,
+                      isUser: msg.isUser === true
+                    };
+                  });
+                
+                return {
+                  id: conv.id,
+                  date: new Date(conv.created_at).toISOString(),
+                  topic,
+                  score,
+                  rating,
+                  messages: formattedMessages
+                };
+              } catch (error) {
+                console.error(`Error processing conversation ${conv.id}:`, error.message);
+                return {
+                  id: conv.id,
+                  date: new Date(conv.created_at).toISOString(),
+                  topic,
+                  score,
+                  rating,
+                  messages: [],
+                  error: 'Error parsing conversation data'
+                };
+              }
+            });
+          } catch (convError) {
+            console.error('Error fetching conversations for GPT analysis:', convError);
+          }
+        }
+        
+        const gptAnalysis = await generateGPTAnalysis(statisticsData, timePeriod, conversationContents);
         
         if (gptAnalysis) {
           console.log("GPT analysis generated successfully");
