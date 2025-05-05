@@ -9,9 +9,10 @@ const openai = new OpenAI({
  * Generate GPT analysis for statistics report
  * @param {Object} statisticsData - The statistics data for analysis
  * @param {string} timePeriod - The time period for the report
+ * @param {Array} conversationContents - Array of conversation content for deeper analysis
  * @returns {Promise<string>} - The GPT analysis text
  */
-export async function generateGPTAnalysis(statisticsData, timePeriod) {
+export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = []) {
   try {
     // Format time period for prompt
     let timeFrame;
@@ -95,6 +96,46 @@ CONVERSION METRICS:
         });
       }
     }
+    
+    // Add conversation content if available
+    if (conversationContents && conversationContents.length > 0) {
+      prompt += `\nCONVERSATION SAMPLES:\n`;
+      prompt += `I am providing ${conversationContents.length} conversation samples for you to analyze deeper patterns and provide insights.\n`;
+      
+      // Add up to 10 conversations to the prompt
+      const maxConvsToInclude = Math.min(10, conversationContents.length);
+      
+      for (let i = 0; i < maxConvsToInclude; i++) {
+        const conv = conversationContents[i];
+        prompt += `\nConversation #${i+1} (Topic: ${conv.topic}, Score: ${conv.score}, Rating: ${conv.rating}):\n`;
+        
+        if (conv.messages && conv.messages.length > 0) {
+          // Include at most 10 messages per conversation to keep the prompt size reasonable
+          const messages = conv.messages.slice(0, 10);
+          messages.forEach(msg => {
+            prompt += `${msg.isUser ? 'User: ' : 'Chatbot: '}${msg.text}\n`;
+          });
+          
+          if (conv.messages.length > 10) {
+            prompt += `[${conv.messages.length - 10} more messages...]\n`;
+          }
+        } else {
+          prompt += `[No messages available]\n`;
+        }
+      }
+      
+      if (conversationContents.length > maxConvsToInclude) {
+        prompt += `\n[${conversationContents.length - maxConvsToInclude} more conversations available but not included for brevity]\n`;
+      }
+      
+      // Add specific instructions for conversation analysis
+      prompt += `\nPlease also include in your analysis:
+1. Common patterns in user queries and chatbot responses
+2. Potential areas where the chatbot could improve its responses
+3. Topics that tend to result in higher or lower user satisfaction
+4. Any notable tone, language, or communication style observations
+`;
+    }
 
     prompt += `
 Based on this data, please provide:
@@ -119,7 +160,7 @@ Format your response as a professional report section with clear paragraphs. Kee
         }
       ],
       temperature: 0.7,
-      max_tokens: 1000
+      max_tokens: 1500
     });
 
     // Return the analysis text
