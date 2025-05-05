@@ -9,6 +9,7 @@ import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
+import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 
 const { Pool } = pg;
 
@@ -1482,6 +1483,24 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       statisticsData.includeTextAnalysis = true;
     } else {
       console.log("Text analysis not requested or not available");
+    }
+    
+    // Generate GPT analysis if requested
+    if (req.body.includeGPTAnalysis) {
+      try {
+        console.log("Generating GPT analysis...");
+        const gptAnalysis = await generateGPTAnalysis(statisticsData, timePeriod);
+        
+        if (gptAnalysis) {
+          console.log("GPT analysis generated successfully");
+          statisticsData.gptAnalysis = gptAnalysis;
+        } else {
+          console.log("Failed to generate GPT analysis");
+        }
+      } catch (gptError) {
+        console.error('Error generating GPT analysis:', gptError);
+        // Continue with report generation even if GPT analysis fails
+      }
     }
     
     // Generate the PDF report
