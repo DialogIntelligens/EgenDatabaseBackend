@@ -614,18 +614,40 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
   const requestedUserId = isAdmin && req.query.userId ? parseInt(req.query.userId) : authenticatedUserId;
   
   try {
-    // If admin is accessing another user's data, verify the requested user exists
-    if (isAdmin && requestedUserId !== authenticatedUserId) {
-      const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [requestedUserId]);
-      if (userCheck.rows.length === 0) {
-        return res.status(404).json({ error: 'Requested user not found' });
-      }
+    // Get the user record to extract their associated namespaces
+    const userQuery = isAdmin && requestedUserId !== authenticatedUserId
+      ? 'SELECT id, pinecone_indexes FROM users WHERE id = $1'
+      : 'SELECT id, pinecone_indexes FROM users WHERE id = $1';
+    
+    const userResult = await pool.query(userQuery, [requestedUserId]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Requested user not found' });
     }
     
-    // Get data for either the authenticated user or the requested user (for admins)
+    // Extract namespaces from the user's pinecone_indexes
+    const user = userResult.rows[0];
+    let pineconeIndexes = user.pinecone_indexes;
+    
+    // Parse indexes if it's a string
+    if (typeof pineconeIndexes === 'string') {
+      pineconeIndexes = JSON.parse(pineconeIndexes);
+    }
+    
+    // Extract all namespaces
+    const userNamespaces = Array.isArray(pineconeIndexes) 
+      ? pineconeIndexes.map(index => index.namespace).filter(Boolean)
+      : [];
+    
+    if (userNamespaces.length === 0) {
+      // If no namespaces found, return empty array
+      return res.json([]);
+    }
+    
+    // Query pinecone_data where namespace matches any of the user's namespaces
     const result = await pool.query(
-      'SELECT * FROM pinecone_data WHERE user_id = $1 ORDER BY created_at DESC',
-      [requestedUserId]
+      'SELECT * FROM pinecone_data WHERE namespace = ANY($1) ORDER BY created_at DESC',
+      [userNamespaces]
     );
     
     res.json(
