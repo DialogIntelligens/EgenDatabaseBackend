@@ -484,17 +484,39 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Retrieve existing record - for admins, don't restrict by user_id
+    // Get the user's namespaces from their profile
+    const userResult = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Extract namespaces from the user's pinecone_indexes
+    let pineconeIndexes = userResult.rows[0].pinecone_indexes;
+    
+    // Parse indexes if it's a string
+    if (typeof pineconeIndexes === 'string') {
+      pineconeIndexes = JSON.parse(pineconeIndexes);
+    }
+    
+    // Extract all namespaces the user has access to
+    const userNamespaces = Array.isArray(pineconeIndexes) 
+      ? pineconeIndexes.map(index => index.namespace).filter(Boolean)
+      : [];
+    
+    // Retrieve existing record - for admins or based on namespace access
     const queryText = isAdmin 
       ? 'SELECT * FROM pinecone_data WHERE id = $1'
-      : 'SELECT * FROM pinecone_data WHERE id = $1 AND user_id = $2';
+      : 'SELECT * FROM pinecone_data WHERE id = $1 AND namespace = ANY($2)';
     
-    const queryParams = isAdmin ? [id] : [id, userId];
+    const queryParams = isAdmin ? [id] : [id, userNamespaces];
     
     const dataResult = await pool.query(queryText, queryParams);
     
     if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found or you do not have permission to modify it' });
+      return res.status(404).json({ 
+        error: 'Data not found or you do not have permission to modify it. Ensure you have access to the namespace.' 
+      });
     }
 
     const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId, metadata: existingMetadata } = dataResult.rows[0];
@@ -688,17 +710,37 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
   const isAdmin = req.user.isAdmin === true;
 
   try {
-    // Retrieve the record - for admins, don't restrict by user_id
+    // Get the user's namespaces from their profile
+    const userResult = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Extract namespaces from the user's pinecone_indexes
+    let pineconeIndexes = userResult.rows[0].pinecone_indexes;
+    
+    // Parse indexes if it's a string
+    if (typeof pineconeIndexes === 'string') {
+      pineconeIndexes = JSON.parse(pineconeIndexes);
+    }
+    
+    // Extract all namespaces the user has access to
+    const userNamespaces = Array.isArray(pineconeIndexes) 
+      ? pineconeIndexes.map(index => index.namespace).filter(Boolean)
+      : [];
+
+    // Retrieve the record - for admins or based on namespace access
     const queryText = isAdmin 
       ? 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1'
-      : 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1 AND user_id = $2';
+      : 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1 AND namespace = ANY($2)';
     
-    const queryParams = isAdmin ? [id] : [id, userId];
+    const queryParams = isAdmin ? [id] : [id, userNamespaces];
     
     const dataResult = await pool.query(queryText, queryParams);
     
     if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found or you do not have permission to delete it' });
+      return res.status(404).json({ error: 'Data not found or you do not have permission to delete it. Ensure you have access to the namespace.' });
     }
 
     const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
