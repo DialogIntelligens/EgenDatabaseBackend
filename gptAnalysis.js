@@ -100,7 +100,7 @@ CONVERSION METRICS:
     // Add conversation content if available
     if (conversationContents && conversationContents.length > 0) {
       prompt += `\nCONVERSATION SAMPLES:\n`;
-      prompt += `I am providing ${conversationContents.length} conversation samples for you to analyze deeper patterns and provide insights.\n`;
+      prompt += `I am providing ${conversationContents.length} conversation samples for you to analyze deeper patterns and provide insights. Always answer in danish.\n`;
       
       // Add up to 10 conversations to the prompt
       const maxConvsToInclude = Math.min(10, conversationContents.length);
@@ -134,21 +134,28 @@ CONVERSION METRICS:
 2. Potential areas where the chatbot could improve its responses
 3. Topics that tend to result in higher or lower user satisfaction
 4. Any notable tone, language, or communication style observations
+Do not write anything that is not directly supported by the data or only has low corelation.
 `;
     }
 
     prompt += `
-Based on this data, please provide:
+If this data is relevant and have clear patterns, please provide:
 1. A short executive summary of chatbot performance
 2. Key insights about user engagement and satisfaction
 3. Data-driven recommendations for improvement
 4. Any notable patterns or trends that should be addressed
+Do not write anything that is not directly supported by the data or only has low corelation.
 
-Format your response as a professional report section with clear paragraphs. Keep your analysis concise, insightful, and actionable.`;
+
+Your job is primarely to provide insight on how the buisness itself can be proven.
+In doing this consider that the data you have is from a customer service chatbot that is integrated on the website.
+Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
+I want whatever you tell me to be very concrete and actionable
+Keep your analysis concise, insightful, and actionable.`;
 
     // Call OpenAI API for analysis
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "o4-mini-2025-04-16",
       messages: [
         {
           role: "system",
@@ -159,7 +166,7 @@ Format your response as a professional report section with clear paragraphs. Kee
           content: prompt
         }
       ],
-      temperature: 0.7,
+      temperature: 0.3,
       max_tokens: 1500
     });
 
