@@ -64,6 +64,57 @@ function generateNgrams(text, n) {
   return ngrams;
 }
 
+// Add these helper functions at the top of the file, after imports
+
+/**
+ * Sleep function to pause execution
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise} 
+ */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Process an array in batches with throttling to reduce CPU load
+ * @param {Array} items - Array of items to process
+ * @param {Function} processFn - Function to process each item
+ * @param {number} batchSize - Number of items to process in each batch
+ * @param {number} delayMs - Milliseconds to delay between batches
+ * @returns {Array} Results of processing
+ */
+async function processWithThrottling(items, processFn, batchSize = 100, delayMs = 50) {
+  const results = [];
+  
+  // Process in batches to avoid CPU overload
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    
+    // Process current batch - using serial processing for more gradual CPU usage
+    for (const item of batch) {
+      const result = await processFn(item);
+      if (result !== null && result !== undefined) {
+        results.push(result);
+      }
+      
+      // Small delay even within a batch to prevent CPU spikes
+      if (batch.length > 10) {
+        await sleep(5); // 5ms micro-delay between items in large batches
+      }
+    }
+    
+    // Log progress for long operations
+    if (items.length > 500 && i % 500 === 0) {
+      console.log(`Processed ${i + batch.length}/${items.length} items...`);
+    }
+    
+    // Sleep to allow CPU to handle other tasks
+    if (i + batchSize < items.length) {
+      await sleep(delayMs);
+    }
+  }
+  
+  return results;
+}
+
 // Main analysis function
 export async function analyzeConversations(conversations) {
   console.log(`Starting analysis on ${conversations.length} conversations.`);
@@ -290,7 +341,7 @@ export async function analyzeConversations(conversations) {
   console.log(`TF-IDF model created with ${tfidf.documents.length} documents processed.`);
 
   // --- Calculate Pearson Correlation for each N-gram --- 
-  const ngramCorrelations = [];
+  let ngramCorrelations = [];
   const terms = {}; // Collect all unique terms
 
   tfidf.documents.forEach((docTerms) => {
@@ -329,71 +380,77 @@ export async function analyzeConversations(conversations) {
   
   console.log(`Processing ${termsToProcess.length} out of ${allTerms.length} total terms`);
 
-  // Calculate correlation for each term
-  termsToProcess.forEach(term => {
-    // Track progress for large term sets
-    processedCount++;
-    if (processedCount % 1000 === 0) {
-      console.log(`Processed ${processedCount}/${termsToProcess.length} terms...`);
-    }
+  // Use async/await with the throttling helper
+  const calculateTermCorrelations = async () => {
+    // Process terms in throttled batches
+    return await processWithThrottling(termsToProcess, async (term) => {
+      const termTfidfValues = [];
+      const correspondingScores = [];
 
-    const termTfidfValues = [];
-    const correspondingScores = [];
-
-    // Iterate through our processedDocs to ensure order and score mapping
-    processedDocs.forEach(doc => {
-      const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
-      if (docIndex !== -1) {
-        const tfidfValue = tfidf.tfidf(term, docIndex);
-        termTfidfValues.push(tfidfValue);
-        correspondingScores.push(doc.score);
-      } else {
-        // This might happen if a doc added no terms to tfidf, or ID mismatch
-        // Let's push 0 for TF-IDF and the score to maintain alignment
-        termTfidfValues.push(0);
-        correspondingScores.push(doc.score);
-      }
-    });
-
-    if (termTfidfValues.length > 1) {
-      // Calculate variance in TF-IDF values
-      const uniqueTfidfValues = new Set(termTfidfValues);
-      const hasVariance = uniqueTfidfValues.size > 1;
-      
-      // Try to calculate correlation even with low variance
-      // We'll still log these cases separately
-      if (!hasVariance) {
-        noVarianceCount++;
-        return; // Skip terms with absolutely no variance
-      }
-      
-      // Calculate standard deviation to check for very low variance
-      const mean = termTfidfValues.reduce((sum, val) => sum + val, 0) / termTfidfValues.length;
-      const variance = termTfidfValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / termTfidfValues.length;
-      const stdDev = Math.sqrt(variance);
-      const hasLowVariance = stdDev < 0.01;
-      
-      if (hasLowVariance) {
-        lowVarianceCount++;
-        // Continue with calculation anyway
-      }
-      
-      try {
-        const corr = calculatePearson(termTfidfValues, correspondingScores);
-        if (!isNaN(corr)) {
-          ngramCorrelations.push({ 
-            ngram: term, 
-            correlation: corr,
-            lowVariance: hasLowVariance 
-          });
-          validCorrelationCount++;
+      // Iterate through our processedDocs to ensure order and score mapping
+      processedDocs.forEach(doc => {
+        const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
+        if (docIndex !== -1) {
+          const tfidfValue = tfidf.tfidf(term, docIndex);
+          termTfidfValues.push(tfidfValue);
+          correspondingScores.push(doc.score);
         } else {
-          nanCorrelationCount++;
+          // This might happen if a doc added no terms to tfidf, or ID mismatch
+          // Let's push 0 for TF-IDF and the score to maintain alignment
+          termTfidfValues.push(0);
+          correspondingScores.push(doc.score);
         }
-      } catch (e) { 
-        console.error(`Error calculating correlation for term "${term}":`, e.message);
+      });
+
+      if (termTfidfValues.length > 1) {
+        // Calculate variance in TF-IDF values
+        const uniqueTfidfValues = new Set(termTfidfValues);
+        const hasVariance = uniqueTfidfValues.size > 1;
+        
+        // Try to calculate correlation even with low variance
+        // We'll still log these cases separately
+        if (!hasVariance) {
+          noVarianceCount++;
+          return null; // Skip terms with absolutely no variance
+        }
+        
+        // Calculate standard deviation to check for very low variance
+        const mean = termTfidfValues.reduce((sum, val) => sum + val, 0) / termTfidfValues.length;
+        const variance = termTfidfValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / termTfidfValues.length;
+        const stdDev = Math.sqrt(variance);
+        const hasLowVariance = stdDev < 0.01;
+        
+        if (hasLowVariance) {
+          lowVarianceCount++;
+          // Continue with calculation anyway
+        }
+        
+        try {
+          const corr = calculatePearson(termTfidfValues, correspondingScores);
+          if (!isNaN(corr)) {
+            validCorrelationCount++;
+            return { 
+              ngram: term, 
+              correlation: corr,
+              lowVariance: hasLowVariance 
+            };
+          } else {
+            nanCorrelationCount++;
+          }
+        } catch (e) { 
+          console.error(`Error calculating correlation for term "${term}":`, e.message);
+        }
       }
-    }
+      return null; // Return null for invalid correlations
+    }, 50, 100); // Process 50 terms at a time with 100ms pause between batches
+  };
+
+  // Execute the throttled calculation
+  const correlationResults = await calculateTermCorrelations();
+  
+  // Filter out null results and add to ngramCorrelations
+  correlationResults.filter(result => result !== null).forEach(result => {
+    ngramCorrelations.push(result);
   });
 
   console.log(`Correlation calculation stats:
@@ -415,44 +472,59 @@ export async function analyzeConversations(conversations) {
     noVarianceCount = 0;
     nanCorrelationCount = 0;
     
-    // Try a simpler approach: just check if term is present (1) or not (0)
-    termsToProcess.slice(0, 2000).forEach(term => { // Limit to first 2000 terms for performance
-      const termPresence = [];
-      const correspondingScores = [];
+    // Use async/await with throttling for binary correlation calculation
+    const calculateBinaryCorrelations = async () => {
+      // Process a subset of terms with throttling
+      const termsSubset = termsToProcess.slice(0, 2000); // Limit to first 2000 terms for performance
       
-      processedDocs.forEach(doc => {
-        const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
-        if (docIndex !== -1) {
-          // Check if term exists in document at all (binary: 1=present, 0=absent)
-          const isPresent = (tfidf.documents[docIndex][term] !== undefined) ? 1 : 0;
-          termPresence.push(isPresent);
-          correspondingScores.push(doc.score);
-        } else {
-          termPresence.push(0); // Not present
-          correspondingScores.push(doc.score);
-        }
-      });
-      
-      // Only calculate if we have some variance (term present in some docs, absent in others)
-      if (termPresence.includes(0) && termPresence.includes(1)) {
-        try {
-          const corr = calculatePearson(termPresence, correspondingScores);
-          if (!isNaN(corr)) {
-            binaryCorrelations.push({ 
-              ngram: term, 
-              correlation: corr,
-              binary: true
-            });
-            binaryValidCount++;
+      return await processWithThrottling(termsSubset, async (term) => {
+        const termPresence = [];
+        const correspondingScores = [];
+        
+        // Calculate binary presence for each document
+        processedDocs.forEach(doc => {
+          const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
+          if (docIndex !== -1) {
+            // Check if term exists in document at all (binary: 1=present, 0=absent)
+            const isPresent = (tfidf.documents[docIndex][term] !== undefined) ? 1 : 0;
+            termPresence.push(isPresent);
+            correspondingScores.push(doc.score);
           } else {
-            nanCorrelationCount++;
+            termPresence.push(0); // Not present
+            correspondingScores.push(doc.score);
           }
-        } catch (e) {
-          console.error(`Error in binary correlation for "${term}":`, e.message);
+        });
+        
+        // Only calculate if we have some variance (term present in some docs, absent in others)
+        if (termPresence.includes(0) && termPresence.includes(1)) {
+          try {
+            const corr = calculatePearson(termPresence, correspondingScores);
+            if (!isNaN(corr)) {
+              binaryValidCount++;
+              return { 
+                ngram: term, 
+                correlation: corr,
+                binary: true
+              };
+            } else {
+              nanCorrelationCount++;
+            }
+          } catch (e) {
+            console.error(`Error in binary correlation for "${term}":`, e.message);
+          }
+        } else {
+          noVarianceCount++;
         }
-      } else {
-        noVarianceCount++;
-      }
+        return null; // Skip invalid results
+      }, 50, 100); // Process in batches of 50 with 100ms pauses
+    };
+    
+    // Execute the throttled binary correlation calculation
+    const binaryResults = await calculateBinaryCorrelations();
+    
+    // Filter out null results and add to binaryCorrelations
+    binaryResults.filter(result => result !== null).forEach(result => {
+      binaryCorrelations.push(result);
     });
     
     console.log(`Binary presence correlation results:
