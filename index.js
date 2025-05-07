@@ -1509,6 +1509,7 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       if (result.rows.length >= 10) {
         // We have enough data for analysis
         console.log("Performing text analysis on conversation data...");
+        console.log("Using CPU throttling to prevent server overload. This may take a bit longer but ensures stability.");
         textAnalysisResults = await analyzeConversations(result.rows);
         
         if (textAnalysisResults && !textAnalysisResults.error) {
