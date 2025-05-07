@@ -104,6 +104,16 @@ CONVERSION METRICS:
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
       }
+
+      prompt += `
+      If this data is relevant and have clear patterns please give some insights to the user.
+      Ideas for insights that might be relevant to the user:
+      1. A short executive summary of chatbot performance
+      2. Key insights about user engagement and satisfaction
+      3. Data-driven recommendations for improvement
+      4. Any notable patterns or trends that should be addressed
+      Do not write anything that is not directly supported by the data or only has low corelation.
+      `;
     }
     
     // Add conversation content if available
@@ -139,22 +149,18 @@ CONVERSION METRICS:
       
       // Add specific instructions for conversation analysis
       prompt += `\nPlease also include in your analysis:
-1. Common patterns in user queries and chatbot responses
-2. Potential areas where the chatbot could improve its responses
-3. Topics that tend to result in higher or lower user satisfaction
-4. Any notable tone, language, or communication style observations
-Do not write anything that is not directly supported by the data or only has low corelation.
-`;
+      1. Common patterns in user queries and chatbot responses
+      2. Potential areas where the chatbot could improve its responses
+      3. Topics that tend to result in higher or lower user satisfaction
+      4. Any notable tone, language, or communication style observations
+      Do not write anything that is not directly supported by the data or only has low corelation.
+      `;
     }
-
-    prompt += `
-If this data is relevant and have clear patterns, please provide:
-1. A short executive summary of chatbot performance
-2. Key insights about user engagement and satisfaction
-3. Data-driven recommendations for improvement
-4. Any notable patterns or trends that should be addressed
-Do not write anything that is not directly supported by the data or only has low corelation.
-`;
+    
+      // End of prompt
+      prompt += `\nThe most important is that you do not sugest anything that is not super clear from the data.
+      All insights should be concrete and usefull. Rather write a very short report then a long report that is not useful.
+      `;    
 
     // Call OpenAI API for analysis
     const response = await openai.chat.completions.create({
