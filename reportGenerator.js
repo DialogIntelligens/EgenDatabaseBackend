@@ -32,6 +32,66 @@ function addBase64ImageToPdf(doc, base64String, options = {}) {
 // We can remove the drawBarInPdf and createVisualTable functions
 // since we're not using them anymore for fallback visualizations
 
+// Helper function to parse Markdown-style bold formatting
+function parseFormattedText(doc, text, options = {}) {
+  // Regular expression to find text wrapped in double asterisks (**bold**)
+  const boldRegex = /\*\*(.*?)\*\*/g;
+  
+  if (!text || !boldRegex.test(text)) {
+    // If no bold formatting, just render the text normally
+    doc.text(text, options);
+    return;
+  }
+  
+  // Keep track of our current position
+  let startPosition = 0;
+  let match;
+  const originalX = doc.x;
+  
+  // Reset regex matcher
+  boldRegex.lastIndex = 0;
+  
+  // Go through each match
+  while ((match = boldRegex.exec(text)) !== null) {
+    const fullMatch = match[0]; // The entire matched string including asterisks (**bold**)
+    const boldText = match[1]; // The text inside the asterisks (bold)
+    const matchStartIndex = match.index;
+    
+    // Print the text before the bold part
+    if (matchStartIndex > startPosition) {
+      const normalText = text.substring(startPosition, matchStartIndex);
+      doc.font('Helvetica').text(normalText, {
+        ...options,
+        continued: true,
+        indent: startPosition === 0 ? (options.indent || 0) : 0
+      });
+    }
+    
+    // Print the bold part
+    doc.font('Helvetica-Bold').text(boldText, {
+      ...options,
+      continued: true,
+      indent: 0
+    });
+    
+    // Update the starting position for the next segment
+    startPosition = matchStartIndex + fullMatch.length;
+  }
+  
+  // Print any remaining text after the last bold part
+  if (startPosition < text.length) {
+    const remainingText = text.substring(startPosition);
+    doc.font('Helvetica').text(remainingText, {
+      ...options,
+      continued: false,
+      indent: 0
+    });
+  } else {
+    // End the text block if we ended with bold text
+    doc.text('', { continued: false });
+  }
+}
+
 // Function to generate a PDF report based on statistics data
 export async function generateStatisticsReport(data, timePeriod) {
   return new Promise(async (resolve, reject) => {
@@ -63,13 +123,26 @@ export async function generateStatisticsReport(data, timePeriod) {
         
         doc.moveDown(2);
         
-        // Add the GPT analysis content
-        doc.fontSize(12)
-           .fillColor('#333')
-           .text(data.gptAnalysis, {
-             align: 'left',
-             lineGap: 2
-           });
+        // Add the GPT analysis content with formatting support
+        doc.fontSize(12).fillColor('#333');
+        
+        // Split the analysis text into paragraphs and process each one
+        const paragraphs = data.gptAnalysis.split('\n\n');
+        paragraphs.forEach((paragraph, index) => {
+          // Skip empty paragraphs
+          if (paragraph.trim() === '') return;
+          
+          // Parse the paragraph with bold formatting
+          parseFormattedText(doc, paragraph, {
+            align: 'left',
+            lineGap: 2
+          });
+          
+          // Add space between paragraphs
+          if (index < paragraphs.length - 1) {
+            doc.moveDown();
+          }
+        });
         
         // Add page break before standard report
         doc.addPage();

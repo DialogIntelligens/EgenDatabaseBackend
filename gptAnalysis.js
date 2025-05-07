@@ -55,9 +55,13 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     The reader of the report is a business owner who/employ whos website the chatbot is integrated on (the chatbot was made by Dialog Intelligens an external company).
     In doing this consider that the data you have is from a customer service chatbot that is integrated on the website.
     Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
-    I want whatever you tell me to be very concrete and actionable
-    Keep your analysis concise, insightful, and actionable.
+    I want whatever you tell me to be very concrete and actionable.
     Use examples from the conversation data to support your insights.
+
+    FORMATTING INSTRUCTIONS:
+    - You can use markdown-style bold formatting by enclosing text in double asterisks (e.g., **important text**).
+    - Use bold formatting for headings, key metrics, and important insights to improve readability.
+    - Don't overuse bold - only highlight the most important parts.
 
     Context about the data you are about to see:
     - The User ratings are based on a scale of 1-5, they come from the users of the chatbot who get the option to rate a conversation after a given time of inactivity in the chat.
@@ -173,7 +177,7 @@ CONVERSION METRICS:
       messages: [
         {
           role: "system",
-          content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports."
+          content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Use Markdown-style bold formatting (**text**) to highlight important information, key metrics, and section headings to improve readability. Keep your analysis evidence-based and focused on actionable insights."
         },
         {
           role: "user",
