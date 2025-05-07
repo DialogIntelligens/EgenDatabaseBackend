@@ -51,12 +51,17 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     let prompt = `Please analyze the following chatbot statistics data for ${timeFrame} and provide a concise executive summary with key insights and recommendations in 3-4 paragraphs.
 
     Your job is primarely to provide insight on how the buisness itself can be proven, not how the chatbot can be improved unless there is something obvious realted to the chatbot.
+    Generaly you should lean more towards giving insights rather than giving concrete advice or recommendations, as you do not have suffiecient information about the buisnessto give good advice.
     The reader of the report is a business owner who/employ whos website the chatbot is integrated on (the chatbot was made by Dialog Intelligens an external company).
     In doing this consider that the data you have is from a customer service chatbot that is integrated on the website.
     Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
     I want whatever you tell me to be very concrete and actionable
     Keep your analysis concise, insightful, and actionable.
     Use examples from the conversation data to support your insights.
+
+    Context about the data you are about to see:
+    - The User ratings are based on a scale of 1-5, they come from the users of the chatbot who get the option to rate a conversation after a given time of inactivity in the chat.
+    - The Score is a score from 1-10 gven by an AI model that has been trained to estimate the user satisfaction of each conversation.
 
 STATISTICS SUMMARY:
 - Total Messages: ${totalMessages}
@@ -110,7 +115,7 @@ CONVERSION METRICS:
       Ideas for insights that might be relevant to the user:
       1. A short executive summary of chatbot performance
       2. Key insights about user engagement and satisfaction
-      3. Data-driven recommendations for improvement
+      3. Data-driven insights for improvement
       4. Any notable patterns or trends that should be addressed
       Do not write anything that is not directly supported by the data or only has low corelation.
       `;
