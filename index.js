@@ -295,13 +295,6 @@ app.post('/crm', async (req, res) => {
   }
 
   try {
-    console.log('Received data:', {
-      websiteuserid,
-      usedChatbot,
-      madePurchase,
-      chatbot_id,
-    });
-
     // Convert to 'true'/'false' strings
     const incomingUsedChatbot =
       usedChatbot === 'true' || usedChatbot === true ? 'true' : 'false';
