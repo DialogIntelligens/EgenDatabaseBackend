@@ -10,9 +10,10 @@ const openai = new OpenAI({
  * @param {Object} statisticsData - The statistics data for analysis
  * @param {string} timePeriod - The time period for the report
  * @param {Array} conversationContents - Array of conversation content for deeper analysis
+ * @param {number} maxConversations - Maximum number of conversations to include (10-100)
  * @returns {Promise<string>} - The GPT analysis text
  */
-export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = []) {
+export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10) {
   try {
     // Format time period for prompt
     let timeFrame;
@@ -110,8 +111,8 @@ CONVERSION METRICS:
       prompt += `\nCONVERSATION SAMPLES:\n`;
       prompt += `I am providing ${conversationContents.length} conversation samples for you to analyze deeper patterns and provide insights. Always answer in danish.\n`;
       
-      // Add up to 10 conversations to the prompt
-      const maxConvsToInclude = Math.min(10, conversationContents.length);
+      // Use maxConversations parameter instead of hardcoded 10
+      const maxConvsToInclude = Math.min(maxConversations, conversationContents.length);
       
       for (let i = 0; i < maxConvsToInclude; i++) {
         const conv = conversationContents[i];
