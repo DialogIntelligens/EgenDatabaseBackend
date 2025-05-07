@@ -166,7 +166,7 @@ Keep your analysis concise, insightful, and actionable.`;
           content: prompt
         }
       ],
-      temperature: 0.3,
+      temperature: 1,
       max_completion_tokens: 1500
     });
 
