@@ -92,6 +92,73 @@ function parseFormattedText(doc, text, options = {}) {
   }
 }
 
+// Improved function to render GPT analysis with proper formatting
+function renderGPTAnalysis(doc, analysisText) {
+  if (!analysisText) return;
+  
+  doc.fontSize(12).fillColor('#333');
+  
+  // Clean up newlines to ensure consistent formatting
+  const cleanedText = analysisText
+    .replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with just two
+    .trim();
+  
+  // Split into paragraphs, but preserve single line breaks within paragraph blocks
+  const paragraphs = cleanedText.split('\n\n');
+  
+  // Track if we're inside a section
+  let currentSection = null;
+  
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paragraph = paragraphs[i];
+    if (paragraph.trim() === '') continue;
+    
+    // Check if paragraph starts with a bold header (section title)
+    const headerMatch = paragraph.match(/^\s*\*\*(.*?)\*\*\s*(.*)$/s);
+    
+    if (headerMatch) {
+      // It's a section header
+      const headerText = headerMatch[1];
+      const remainingText = headerMatch[2];
+      
+      // Add some space before new sections (except the first one)
+      if (currentSection !== null) {
+        doc.moveDown(1.5);
+      }
+      
+      // Print the bold header in slightly larger font
+      doc.font('Helvetica-Bold')
+         .fontSize(14)
+         .text(headerText, { continued: false });
+      
+      // Save current section
+      currentSection = headerText;
+      
+      // Process any remaining text on the same line as header, if exists
+      if (remainingText && remainingText.trim()) {
+        doc.moveDown(0.5);
+        doc.fontSize(12);
+        
+        // Process remaining text which may contain additional bold formatting
+        if (remainingText.includes('**')) {
+          parseFormattedText(doc, remainingText, { align: 'left', lineGap: 2 });
+        } else {
+          doc.font('Helvetica').text(remainingText, { align: 'left', lineGap: 2 });
+        }
+      }
+    } else {
+      // Regular paragraph - maintain consistent indentation under sections
+      if (i > 0 && !paragraph.match(/^\s*\*\*/)) {
+        // Only move down a little if we're continuing in the same section
+        doc.moveDown(0.5);
+      }
+      
+      // Process for any bold text within
+      parseFormattedText(doc, paragraph, { align: 'left', lineGap: 2 });
+    }
+  }
+}
+
 // Function to generate a PDF report based on statistics data
 export async function generateStatisticsReport(data, timePeriod) {
   return new Promise(async (resolve, reject) => {
@@ -123,26 +190,8 @@ export async function generateStatisticsReport(data, timePeriod) {
         
         doc.moveDown(2);
         
-        // Add the GPT analysis content with formatting support
-        doc.fontSize(12).fillColor('#333');
-        
-        // Split the analysis text into paragraphs and process each one
-        const paragraphs = data.gptAnalysis.split('\n\n');
-        paragraphs.forEach((paragraph, index) => {
-          // Skip empty paragraphs
-          if (paragraph.trim() === '') return;
-          
-          // Parse the paragraph with bold formatting
-          parseFormattedText(doc, paragraph, {
-            align: 'left',
-            lineGap: 2
-          });
-          
-          // Add space between paragraphs
-          if (index < paragraphs.length - 1) {
-            doc.moveDown();
-          }
-        });
+        // Use the improved rendering function
+        renderGPTAnalysis(doc, data.gptAnalysis);
         
         // Add page break before standard report
         doc.addPage();

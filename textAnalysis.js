@@ -49,6 +49,22 @@ function extractUserMessages(conversationData) {
   return userTexts.join(" ");
 }
 
+// Helper function to extract all conversation text (both user and chatbot)
+function extractConversationText(conversationData) {
+  if (!Array.isArray(conversationData)) {
+    return "";
+  }
+  const allTexts = conversationData
+    .filter(message => message && message.text)
+    .map(message => {
+      // Add a prefix to distinguish user vs chatbot messages
+      const prefix = message.isUser ? "USER:" : "BOT:";
+      return `${prefix} ${String(message.text).trim()}`;
+    })
+    .filter(text => text.length > 0);
+  return allTexts.join(" ");
+}
+
 // Helper to generate n-grams
 function generateNgrams(text, n) {
   const tokenizer = new natural.WordTokenizer();
@@ -116,20 +132,33 @@ async function processWithThrottling(items, processFn, batchSize = 100, delayMs 
 }
 
 // Main analysis function
-export async function analyzeConversations(conversations) {
+export async function analyzeConversations(conversations, progressCallback = null) {
   console.log(`Starting analysis on ${conversations.length} conversations.`);
+  
+  // Report initial progress
+  if (progressCallback) {
+    progressCallback("Starting analysis", 0);
+  }
 
   // Debug topics - show raw values of first few conversations
-  console.log("DEBUGGING TOPIC VALUES:");
-  for (let i = 0; i < Math.min(5, conversations.length); i++) {
-    const conv = conversations[i];
-    console.log(`Conversation ${i+1}:`, {
-      id: conv.id,
-      emne_raw: conv.emne, // Raw value without trimming
-      emne_type: typeof conv.emne, // Check if it's a string, null, or undefined
-      emne_trimmed: conv.emne?.trim(), // Trimmed value if possible
-      emne_length: conv.emne?.length // Length if it's a string
-    });
+  try {
+    for (let i = 0; i < Math.min(conversations.length, 5); i++) {
+      const conv = conversations[i];
+      console.log(`Conversation ${i+1}: {
+        id: ${conv.id},
+        emne_raw: '${conv.emne || ''}',
+        emne_type: '${typeof conv.emne}',
+        emne_trimmed: '${String(conv.emne || '').trim()}',
+        emne_length: ${String(conv.emne || '').length}
+      }`);
+    }
+  } catch (debugError) {
+    console.error("Error in debug logging:", debugError);
+  }
+
+  // Report progress - data inspection complete
+  if (progressCallback) {
+    progressCallback("Data validation", 10);
   }
 
   const topicsFound = conversations.filter(conv => conv.emne?.trim()).length;
@@ -281,12 +310,20 @@ export async function analyzeConversations(conversations) {
       return null;
     }
 
+    // Extract user messages for analysis
     const userText = extractUserMessages(conversationData);
     const score = parseFloat(conv.score);
 
     // Treat score 0 as valid
     if (userText && userText.trim().length > 0 && typeof score === 'number' && !isNaN(score)) {
-      return { id: `doc_${index}`, userText: userText.trim(), score }; // Use index-based ID for TfIdf key
+      return { 
+        id: conv.id, 
+        userText: userText.trim(), 
+        score,
+        text: userText.trim(), // Add text field for consistency
+        rating: conv.customer_rating ? parseFloat(conv.customer_rating) : null,
+        emne: conv.emne || null
+      };
     } else {
       return null;
     }
@@ -321,69 +358,73 @@ export async function analyzeConversations(conversations) {
       negativeCorrelations: []
     };
   }
+  
+  // Report progress - preprocessing complete
+  if (progressCallback) {
+    progressCallback("Preprocessing conversations", 20);
+  }
 
   // --- TF-IDF Vectorization (Monograms, Bigrams, Trigrams) ---
   const TfIdf = natural.TfIdf;
   const tfidf = new TfIdf();
-  const docIdMap = {}; // To map our ID back to TfIdf's internal index
 
-  processedDocs.forEach((doc, index) => {
-    const mono = generateNgrams(doc.userText, 1);
-    const bi = generateNgrams(doc.userText, 2);
-    const tri = generateNgrams(doc.userText, 3);
-    const allNgrams = [...mono, ...bi, ...tri];
-    if (allNgrams.length > 0) {
-        tfidf.addDocument(allNgrams, doc.id); // Use doc.id as the key
-        docIdMap[doc.id] = index; // Store mapping from our ID to original index
+  // Add documents to TF-IDF
+  let processedCount = 0;
+  const totalDocs = processedDocs.length;
+  
+  for (const doc of processedDocs) {
+    tfidf.addDocument(doc.text || doc.userText, { __key: doc.id });
+    
+    processedCount++;
+    if (processedCount % 50 === 0 && progressCallback) {
+      const progressPercent = 20 + Math.floor((processedCount / totalDocs) * 10);
+      progressCallback("Building language model", progressPercent);
     }
-  });
+  }
 
   console.log(`TF-IDF model created with ${tfidf.documents.length} documents processed.`);
+  
+  // Progress update - TF-IDF model complete
+  if (progressCallback) {
+    progressCallback("Language model complete", 30);
+  }
 
   // --- Calculate Pearson Correlation for each N-gram --- 
   let ngramCorrelations = [];
   const terms = {}; // Collect all unique terms
 
-  tfidf.documents.forEach((docTerms) => {
-      Object.keys(docTerms).forEach(term => {
-          if (term !== '__key') { // Ignore internal key
-              terms[term] = true;
-          }
-      });
+  // Get all terms from the TF-IDF model
+  tfidf.documents.forEach((doc, docIndex) => {
+    const documentTerms = Object.keys(doc);
+    documentTerms.forEach(term => {
+      if (term !== '__key') {
+        terms[term] = (terms[term] || 0) + 1;
+      }
+    });
   });
-  const allTerms = Object.keys(terms);
-  console.log(`Found ${allTerms.length} unique n-grams (features).`);
 
-  if (allTerms.length === 0) {
-      console.warn("No terms found for correlation analysis.");
-      return {
-        error: "No terms found for correlation analysis",
-        ratingScoreCorrelation: ratingScoreCorr,
-        avgRatingPerTopic,
-        avgScorePerTopic,
-        positiveCorrelations: [],
-        negativeCorrelations: []
-      };
-  }
-
-  // Track correlation calculation issues
-  let noVarianceCount = 0;
-  let nanCorrelationCount = 0;
-  let validCorrelationCount = 0;
-  let lowVarianceCount = 0;
-  let processedCount = 0;
-
-  // Only process a subset of terms if there are too many (for performance)
-  const termsToProcess = allTerms.length > 5000 ? 
-    allTerms.slice(0, 5000) : // Only first 5000 terms
-    allTerms;
+  // Filter terms to those that appear in at least N% of documents
+  const minDocumentPercentage = 0.05; // 5%
+  const minDocumentCount = Math.max(2, Math.ceil(tfidf.documents.length * minDocumentPercentage));
+  const allTerms = Object.keys(terms).filter(term => terms[term] >= minDocumentCount);
+  
+  // Limit to top N most common terms for correlation analysis
+  const maxTermsToProcess = 5000;
+  let termsToProcess = allTerms
+    .sort((a, b) => terms[b] - terms[a])
+    .slice(0, maxTermsToProcess);
   
   console.log(`Processing ${termsToProcess.length} out of ${allTerms.length} total terms`);
+  
+  // Progress update - beginning correlation calculation
+  if (progressCallback) {
+    progressCallback("Starting correlation analysis", 35);
+  }
 
   // Use async/await with the throttling helper
   const calculateTermCorrelations = async () => {
     // Process terms in throttled batches
-    return await processWithThrottling(termsToProcess, async (term) => {
+    await processWithThrottling(termsToProcess, async (term, index) => {
       const termTfidfValues = [];
       const correspondingScores = [];
 
@@ -394,150 +435,37 @@ export async function analyzeConversations(conversations) {
           const tfidfValue = tfidf.tfidf(term, docIndex);
           termTfidfValues.push(tfidfValue);
           correspondingScores.push(doc.score);
-        } else {
-          // This might happen if a doc added no terms to tfidf, or ID mismatch
-          // Let's push 0 for TF-IDF and the score to maintain alignment
-          termTfidfValues.push(0);
-          correspondingScores.push(doc.score);
         }
       });
 
-      if (termTfidfValues.length > 1) {
-        // Calculate variance in TF-IDF values
-        const uniqueTfidfValues = new Set(termTfidfValues);
-        const hasVariance = uniqueTfidfValues.size > 1;
+      if (termTfidfValues.length > 2) {
+        // Calculate Pearson correlation
+        const correlation = calculatePearson(termTfidfValues, correspondingScores);
         
-        // Try to calculate correlation even with low variance
-        // We'll still log these cases separately
-        if (!hasVariance) {
-          noVarianceCount++;
-          return null; // Skip terms with absolutely no variance
-        }
-        
-        // Calculate standard deviation to check for very low variance
-        const mean = termTfidfValues.reduce((sum, val) => sum + val, 0) / termTfidfValues.length;
-        const variance = termTfidfValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / termTfidfValues.length;
-        const stdDev = Math.sqrt(variance);
-        const hasLowVariance = stdDev < 0.01;
-        
-        if (hasLowVariance) {
-          lowVarianceCount++;
-          // Continue with calculation anyway
-        }
-        
-        try {
-          const corr = calculatePearson(termTfidfValues, correspondingScores);
-          if (!isNaN(corr)) {
-            validCorrelationCount++;
-            return { 
-              ngram: term, 
-              correlation: corr,
-              lowVariance: hasLowVariance 
-            };
-          } else {
-            nanCorrelationCount++;
-          }
-        } catch (e) { 
-          console.error(`Error calculating correlation for term "${term}":`, e.message);
+        if (!isNaN(correlation) && correlation !== 0) {
+          ngramCorrelations.push({
+            ngram: term,
+            correlation: correlation,
+            documentCount: terms[term] // How many documents contain this term
+          });
         }
       }
-      return null; // Return null for invalid correlations
-    }, 50, 100); // Process 50 terms at a time with 100ms pause between batches
-  };
-
-  // Execute the throttled calculation
-  const correlationResults = await calculateTermCorrelations();
-  
-  // Filter out null results and add to ngramCorrelations
-  correlationResults.filter(result => result !== null).forEach(result => {
-    ngramCorrelations.push(result);
-  });
-
-  console.log(`Correlation calculation stats:
-  - Valid correlations: ${validCorrelationCount}
-  - No variance in TF-IDF values: ${noVarianceCount} terms
-  - Low variance in TF-IDF values: ${lowVarianceCount} terms
-  - NaN correlation results: ${nanCorrelationCount} terms`);
-
-  console.log(`Calculated correlations for ${ngramCorrelations.length} n-grams.`);
-
-  // If we have too few correlations, try a fallback approach with binary presence
-  if (ngramCorrelations.length < 10 && processedDocs.length > 2) {
-    console.log("Few correlations found with TF-IDF values. Trying binary presence approach...");
-    
-    const binaryCorrelations = [];
-    let binaryValidCount = 0;
-    
-    // Reset counters
-    noVarianceCount = 0;
-    nanCorrelationCount = 0;
-    
-    // Use async/await with throttling for binary correlation calculation
-    const calculateBinaryCorrelations = async () => {
-      // Process a subset of terms with throttling
-      const termsSubset = termsToProcess.slice(0, 2000); // Limit to first 2000 terms for performance
       
-      return await processWithThrottling(termsSubset, async (term) => {
-        const termPresence = [];
-        const correspondingScores = [];
-        
-        // Calculate binary presence for each document
-        processedDocs.forEach(doc => {
-          const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
-          if (docIndex !== -1) {
-            // Check if term exists in document at all (binary: 1=present, 0=absent)
-            const isPresent = (tfidf.documents[docIndex][term] !== undefined) ? 1 : 0;
-            termPresence.push(isPresent);
-            correspondingScores.push(doc.score);
-          } else {
-            termPresence.push(0); // Not present
-            correspondingScores.push(doc.score);
-          }
-        });
-        
-        // Only calculate if we have some variance (term present in some docs, absent in others)
-        if (termPresence.includes(0) && termPresence.includes(1)) {
-          try {
-            const corr = calculatePearson(termPresence, correspondingScores);
-            if (!isNaN(corr)) {
-              binaryValidCount++;
-              return { 
-                ngram: term, 
-                correlation: corr,
-                binary: true
-              };
-            } else {
-              nanCorrelationCount++;
-            }
-          } catch (e) {
-            console.error(`Error in binary correlation for "${term}":`, e.message);
-          }
-        } else {
-          noVarianceCount++;
-        }
-        return null; // Skip invalid results
-      }, 50, 100); // Process in batches of 50 with 100ms pauses
-    };
+      // Report progress during correlation calculation
+      if (progressCallback && index % 50 === 0) {
+        const progressPercent = 35 + Math.floor((index / termsToProcess.length) * 35);
+        progressCallback("Calculating correlations", progressPercent);
+      }
+    }, 50, 5); // Process 50 terms at a time with 5ms delay between batches
     
-    // Execute the throttled binary correlation calculation
-    const binaryResults = await calculateBinaryCorrelations();
-    
-    // Filter out null results and add to binaryCorrelations
-    binaryResults.filter(result => result !== null).forEach(result => {
-      binaryCorrelations.push(result);
-    });
-    
-    console.log(`Binary presence correlation results:
-    - Valid correlations: ${binaryValidCount}
-    - No variance in presence: ${noVarianceCount} terms
-    - NaN correlation results: ${nanCorrelationCount} terms`);
-    
-    // If we found more correlations with binary approach, use those instead
-    if (binaryCorrelations.length > ngramCorrelations.length) {
-      console.log(`Using ${binaryCorrelations.length} binary correlations instead of ${ngramCorrelations.length} TF-IDF correlations`);
-      ngramCorrelations = binaryCorrelations;
-      validCorrelationCount = binaryValidCount;
-    }
+    return ngramCorrelations;
+  };
+  
+  ngramCorrelations = await calculateTermCorrelations();
+  
+  // Progress update - correlation calculation complete
+  if (progressCallback) {
+    progressCallback("Correlation analysis complete", 70);
   }
 
   // --- Sort and select top correlations ---
