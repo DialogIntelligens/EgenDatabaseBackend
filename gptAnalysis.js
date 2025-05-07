@@ -49,6 +49,14 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     // Construct prompt with all available data
     let prompt = `Please analyze the following chatbot statistics data for ${timeFrame} and provide a concise executive summary with key insights and recommendations in 3-4 paragraphs.
 
+    Your job is primarely to provide insight on how the buisness itself can be proven, not how the chatbot can be improved unless there is something obvious realted to the chatbot.
+    The reader of the report is a business owner who/employ whos website the chatbot is integrated on (the chatbot was made by Dialog Intelligens an external company).
+    In doing this consider that the data you have is from a customer service chatbot that is integrated on the website.
+    Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
+    I want whatever you tell me to be very concrete and actionable
+    Keep your analysis concise, insightful, and actionable.
+    Use examples from the conversation data to support your insights.
+
 STATISTICS SUMMARY:
 - Total Messages: ${totalMessages}
 - Average Messages Per Day: ${averageMessagesPerDay}
@@ -145,13 +153,7 @@ If this data is relevant and have clear patterns, please provide:
 3. Data-driven recommendations for improvement
 4. Any notable patterns or trends that should be addressed
 Do not write anything that is not directly supported by the data or only has low corelation.
-
-
-Your job is primarely to provide insight on how the buisness itself can be proven.
-In doing this consider that the data you have is from a customer service chatbot that is integrated on the website.
-Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
-I want whatever you tell me to be very concrete and actionable
-Keep your analysis concise, insightful, and actionable.`;
+`;
 
     // Call OpenAI API for analysis
     const response = await openai.chat.completions.create({
