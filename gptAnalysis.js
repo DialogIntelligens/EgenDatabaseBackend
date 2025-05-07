@@ -11,10 +11,16 @@ const openai = new OpenAI({
  * @param {string} timePeriod - The time period for the report
  * @param {Array} conversationContents - Array of conversation content for deeper analysis
  * @param {number} maxConversations - Maximum number of conversations to include (10-100)
+ * @param {Function} progressCallback - Optional callback for reporting progress
  * @returns {Promise<string>} - The GPT analysis text
  */
-export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10) {
+export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10, progressCallback = null) {
   try {
+    // Report initial progress
+    if (progressCallback) {
+      progressCallback("Starting GPT analysis", 0);
+    }
+
     // Format time period for prompt
     let timeFrame;
     if (timePeriod === 'all') {
@@ -29,6 +35,11 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
       timeFrame = `the period from ${new Date(timePeriod.startDate).toLocaleDateString()} to ${new Date(timePeriod.endDate).toLocaleDateString()}`;
     } else {
       timeFrame = 'the specified time period';
+    }
+
+    // Progress update - prompt preparation
+    if (progressCallback) {
+      progressCallback("Preparing data for analysis", 20);
     }
 
     // Extract relevant metrics for the prompt
@@ -171,13 +182,18 @@ CONVERSION METRICS:
       All insights should be concrete and usefull. Rather write a very short report then a long report that is not useful.
       `;    
 
+    // Progress update - sending to API
+    if (progressCallback) {
+      progressCallback("Sending to OpenAI for analysis", 50);
+    }
+
     // Call OpenAI API for analysis
     const response = await openai.chat.completions.create({
       model: "o4-mini-2025-04-16",
       messages: [
         {
           role: "system",
-          content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Use Markdown-style bold formatting (**text**) to highlight important information, key metrics, and section headings to improve readability. Keep your analysis evidence-based and focused on actionable insights."
+          content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report with the following formatting guidelines:\n\n1. Use **Bold Headings** as section titles, each on its own line with no text on the same line\n2. After each section header, add a detailed paragraph with analysis for that section\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. Put one empty line between sections\n5. Keep your analysis evidence-based and focused on actionable insights\n6. Use a maximum of 3-4 distinct sections in your report (Executive Summary, User Engagement, etc.)"
         },
         {
           role: "user",
@@ -188,10 +204,21 @@ CONVERSION METRICS:
       max_completion_tokens: 1500
     });
 
+    // Progress update - processing complete
+    if (progressCallback) {
+      progressCallback("Analysis complete", 100);
+    }
+
     // Return the analysis text
     return response.choices[0].message.content;
   } catch (error) {
     console.error('Error generating GPT analysis:', error);
+    
+    // Report error in progress
+    if (progressCallback) {
+      progressCallback("Error in GPT analysis", 100);
+    }
+    
     return "GPT analysis could not be generated due to an error. Please check the statistics data for more information.";
   }
 } 
