@@ -32,19 +32,7 @@ const openai = new OpenAI({
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-
-// Replace simple cors() with more explicit configuration:
-app.use(cors({
-  origin: '*', // Or specify your exact domains for better security
-  methods: ['GET', 'POST', 'OPTIONS'], // Explicitly list all methods you use
-  allowedHeaders: ['Content-Type', 'Origin', 'Accept'],
-  credentials: false, // Set to true if using cookies/authentication
-  preflightContinue: false,
-  optionsSuccessStatus: 204
-}));
-
-// Make sure OPTIONS requests are handled properly
-app.options('*', cors()); // Enable pre-flight for all routes
+app.use(cors());
 
 // PostgreSQL pool
 const pool = new Pool({
