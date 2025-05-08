@@ -309,8 +309,7 @@ app.post('/crm', async (req, res) => {
     // Convert to 'true'/'false' strings
     const incomingUsedChatbot =
       usedChatbot === 'true' || usedChatbot === true ? 'true' : 'false';
-    const incomingMadePurchase =
-      madePurchase === 'true' || madePurchase === true ? 'true' : 'false';
+    const incomingMadePurchase = parseInt(madePurchase) || 0; // Default to 0 if not a number
 
     // Upsert logic with CASE WHEN to preserve 'true'
     const query = `
