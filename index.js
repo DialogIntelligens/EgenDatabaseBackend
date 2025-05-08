@@ -32,7 +32,18 @@ const openai = new OpenAI({
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-app.use(cors());
+// Replace your current CORS configuration with this
+app.use(cors({
+  origin: '*', // Or ideally specify only allowed domains like 'https://dashboard.dialogintelligens.dk'
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // Include all methods you use
+  allowedHeaders: ['Content-Type', 'Origin', 'Accept', 'Authorization'], // Add Authorization
+  credentials: false, // Set to true if using cookies
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+// Keep this line as well
+app.options('*', cors());
+
 
 // PostgreSQL pool
 const pool = new Pool({
