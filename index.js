@@ -323,7 +323,7 @@ app.post('/crm', async (req, res) => {
           ELSE EXCLUDED.usedchatbot
         END,
         madePurchase = CASE
-          WHEN crm.madepurchase = 'true' THEN 'true'
+          WHEN crm.madepurchase != 0  THEN crm.madepurchase
           ELSE EXCLUDED.madepurchase
         END,
         chatbot_id = EXCLUDED.chatbot_id
