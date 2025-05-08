@@ -282,6 +282,90 @@ app.post('/api/proxy/order', async (req, res) => {
 });
 
 /* ================================
+   BevCo Order API Proxy
+================================ */
+app.post('/api/proxy/bevco-order', async (req, res) => {
+  try {
+    // Log the request for debugging
+    console.log("BevCo API request:", JSON.stringify(req.body, null, 2));
+    
+    // Forward the request to BevCo API
+    const response = await fetch("https://api.bevco.dk/store-api/dialog-intelligens/order/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "sw-api-key": "9533ee33bf82412f94dd8936ce59b908",
+        "sw-access-key": "SWSCX1MTFXXC4BHA0UDNEHYBFQ"
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    // First get response as text for debugging
+    const responseText = await response.text();
+    console.log("BevCo API raw response:", responseText);
+    
+    // Check if the response is ok
+    if (!response.ok) {
+      console.error("BevCo API error response:", responseText);
+      return res.status(response.status).json({
+        status: "error",
+        message: `Failed to fetch order details. ${response.status} ${response.statusText}`,
+        details: responseText
+      });
+    }
+    
+    try {
+      // Try to parse the JSON
+      const data = responseText ? JSON.parse(responseText) : {};
+      
+      // Ensure we have a standardized response format
+      const standardizedResponse = {
+        status: "success",
+        orders: []
+      };
+      
+      // If we have order data, format it appropriately
+      if (data) {
+        if (Array.isArray(data)) {
+          standardizedResponse.orders = data;
+        } else if (data.orders && Array.isArray(data.orders)) {
+          standardizedResponse.orders = data.orders;
+        } else if (Object.keys(data).length > 0) {
+          // Treat as a single order
+          standardizedResponse.orders = [data];
+        }
+      }
+      
+      return res.json(standardizedResponse);
+    } catch (jsonError) {
+      console.error("Error parsing BevCo JSON response:", jsonError);
+      console.log("Failed to parse JSON:", responseText);
+      
+      // Return a default response for invalid JSON
+      return res.json({
+        status: "success",
+        orders: [{
+          order_number: req.body.order_number || "Unknown",
+          order_status: "Error",
+          attention: "Der kunne ikke hentes ordredetaljer. Formatet af svaret var uventet."
+        }]
+      });
+    }
+  } catch (error) {
+    console.error("Error proxying request to BevCo:", error);
+    return res.status(500).json({
+      status: "success", // Still return success to avoid frontend errors
+      message: "Could not retrieve order information. The system might be temporarily unavailable.",
+      orders: [{
+        order_number: req.body.order_number || "Unknown",
+        order_status: "Error",
+        attention: "Der opstod en teknisk fejl. Prøv igen senere eller kontakt kundeservice."
+      }]
+    });
+  }
+});
+
+/* ================================
    CRM Endpoints
 ================================ */
 app.post('/crm', async (req, res) => {
@@ -1357,7 +1441,7 @@ cron.schedule('0 * * * *', async () => {
         
         const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
         const index = pineconeClient.index(namespace);
-        await index.deleteOne(pinecone_vector_id, { namespace });
+        await index.deleteOne(pinecone_vector_id, { namespace: namespace });
 
         await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
         console.log(`Expired chunk with ID ${id} removed from Pinecone and DB`);
