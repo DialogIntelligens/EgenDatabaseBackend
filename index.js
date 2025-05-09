@@ -2079,6 +2079,50 @@ app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Add this endpoint to reset a user's password (admin only)
+app.post('/reset-password/:id', authenticateToken, async (req, res) => {
+  // Only admins can reset passwords
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const { id } = req.params;
+  const { newPassword } = req.body;
+  
+  // Validate input
+  if (!newPassword || newPassword.trim() === '') {
+    return res.status(400).json({ error: 'New password is required' });
+  }
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    // Update the user's password
+    const result = await pool.query(
+      'UPDATE users SET password = $1 WHERE id = $2 RETURNING id, username',
+      [hashedPassword, id]
+    );
+    
+    res.status(200).json({ 
+      message: 'Password reset successfully',
+      user: {
+        id: result.rows[0].id,
+        username: result.rows[0].username
+      } 
+    });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
