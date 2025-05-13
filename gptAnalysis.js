@@ -56,6 +56,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
       chatbotConversionRate,
       nonChatbotConversionRate,
       showPurchase,
+      companyInfo,
       textAnalysis
     } = statisticsData;
 
@@ -70,6 +71,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     I want whatever you tell me to be very concrete and actionable.
     Use examples from the conversation data to support your insights.
 
+    ${companyInfo ? `COMPANY CONTEXT:\n${companyInfo}\n\n` : ''}
     FORMATTING INSTRUCTIONS:
     - You can use markdown-style bold formatting by enclosing text in double asterisks (e.g., **important text**).
     - Use bold formatting for headings, key metrics, and important insights to improve readability.
