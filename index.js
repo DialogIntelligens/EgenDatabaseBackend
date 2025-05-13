@@ -839,7 +839,7 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
       // Delete from Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
       const index = pineconeClient.index(namespace);
-      await index.deleteOne(pinecone_vector_id, { namespace });
+      await index.deleteOne(pinecone_vector_id, { namespace: namespace });
 
       // Delete from DB
       await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
@@ -959,7 +959,8 @@ app.post('/login', async (req, res) => {
       show_purchase: user.show_purchase,
       chatbot_filepath: user.chatbot_filepath || [],
       is_admin: user.is_admin,
-      thumbs_rating: user.thumbs_rating || false  // Add this line
+      thumbs_rating: user.thumbs_rating || false,
+      company_info: user.company_info || ''
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -1476,12 +1477,25 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Statistics data is required' });
     }
     
+    // Get user data including chatbot IDs and company info
+    const userResult = await pool.query('SELECT chatbot_ids, company_info FROM users WHERE id = $1', [req.user.userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: 'User not found' });
+    }
+    
+    // Get company info to pass to GPT analysis
+    const companyInfo = userResult.rows[0].company_info;
+    
+    // Add company info to statistics data
+    if (companyInfo) {
+      statisticsData.companyInfo = companyInfo;
+    }
+    
     // Get chatbot_id from the request or use user's chatbot IDs
     let chatbotIds;
     if (!chatbot_id || chatbot_id === 'ALL') {
-      // Get all chatbot IDs from the user
-      const userResult = await pool.query('SELECT chatbot_ids FROM users WHERE id = $1', [req.user.userId]);
-      if (userResult.rows.length === 0 || !userResult.rows[0].chatbot_ids) {
+      // Get chatbot IDs from previously fetched user data
+      if (!userResult.rows[0].chatbot_ids) {
         return res.status(400).json({ error: 'No chatbot IDs found for user' });
       }
       chatbotIds = userResult.rows[0].chatbot_ids;
@@ -2120,6 +2134,81 @@ app.post('/reset-password/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error resetting password:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Add this before the app.listen section, near other user-related endpoints
+
+// Add endpoint to update company information
+app.put('/update-company-info', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { company_info } = req.body;
+
+  if (company_info === undefined) {
+    return res.status(400).json({ error: 'company_info field is required' });
+  }
+
+  try {
+    // Update company_info in the users table
+    const result = await pool.query(
+      'UPDATE users SET company_info = $1 WHERE id = $2 RETURNING id, username, company_info',
+      [company_info, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json({
+      message: 'Company information updated successfully',
+      user: {
+        id: result.rows[0].id,
+        username: result.rows[0].username,
+        company_info: result.rows[0].company_info
+      }
+    });
+  } catch (error) {
+    console.error('Error updating company information:', error);
+    return res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Allow admins to update company info for any user
+app.put('/admin/update-company-info/:userId', authenticateToken, async (req, res) => {
+  // Check if user is admin
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const targetUserId = req.params.userId;
+  const { company_info } = req.body;
+
+  if (company_info === undefined) {
+    return res.status(400).json({ error: 'company_info field is required' });
+  }
+
+  try {
+    // Update company_info in the users table
+    const result = await pool.query(
+      'UPDATE users SET company_info = $1 WHERE id = $2 RETURNING id, username, company_info',
+      [company_info, targetUserId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json({
+      message: 'Company information updated successfully',
+      user: {
+        id: result.rows[0].id,
+        username: result.rows[0].username,
+        company_info: result.rows[0].company_info
+      }
+    });
+  } catch (error) {
+    console.error('Error updating company information:', error);
+    return res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
 
