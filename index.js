@@ -2212,6 +2212,30 @@ app.put('/admin/update-company-info/:userId', authenticateToken, async (req, res
   }
 });
 
+// Add this endpoint after the other company info endpoints
+app.get('/company-info', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    // Get user's company info
+    const result = await pool.query(
+      'SELECT company_info FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json({
+      company_info: result.rows[0].company_info || '' 
+    });
+  } catch (error) {
+    console.error('Error fetching company information:', error);
+    return res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
