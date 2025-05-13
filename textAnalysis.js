@@ -143,7 +143,7 @@ export async function analyzeConversations(conversations, progressCallback = nul
   // Debug topics - show raw values of first few conversations
   try {
     for (let i = 0; i < Math.min(conversations.length, 5); i++) {
-      const conv = conversations[i];
+    const conv = conversations[i];
       console.log(`Conversation ${i+1}: {
         id: ${conv.id},
         emne_raw: '${conv.emne || ''}',
@@ -399,15 +399,15 @@ export async function analyzeConversations(conversations, progressCallback = nul
     documentTerms.forEach(term => {
       if (term !== '__key') {
         terms[term] = (terms[term] || 0) + 1;
-      }
-    });
+          }
+      });
   });
 
   // Filter terms to those that appear in at least N% of documents
   const minDocumentPercentage = 0.05; // 5%
   const minDocumentCount = Math.max(2, Math.ceil(tfidf.documents.length * minDocumentPercentage));
   const allTerms = Object.keys(terms).filter(term => terms[term] >= minDocumentCount);
-  
+
   // Limit to top N most common terms for correlation analysis
   const maxTermsToProcess = 5000;
   let termsToProcess = allTerms
@@ -415,7 +415,7 @@ export async function analyzeConversations(conversations, progressCallback = nul
     .slice(0, maxTermsToProcess);
   
   console.log(`Processing ${termsToProcess.length} out of ${allTerms.length} total terms`);
-  
+
   // Progress update - beginning correlation calculation
   if (progressCallback) {
     progressCallback("Starting correlation analysis", 35);
@@ -425,31 +425,31 @@ export async function analyzeConversations(conversations, progressCallback = nul
   const calculateTermCorrelations = async () => {
     // Process terms in throttled batches
     await processWithThrottling(termsToProcess, async (term, index) => {
-      const termTfidfValues = [];
-      const correspondingScores = [];
+    const termTfidfValues = [];
+    const correspondingScores = [];
 
-      // Iterate through our processedDocs to ensure order and score mapping
-      processedDocs.forEach(doc => {
-        const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
-        if (docIndex !== -1) {
-          const tfidfValue = tfidf.tfidf(term, docIndex);
-          termTfidfValues.push(tfidfValue);
-          correspondingScores.push(doc.score);
-        }
-      });
+    // Iterate through our processedDocs to ensure order and score mapping
+    processedDocs.forEach(doc => {
+      const docIndex = tfidf.documents.findIndex(d => d.__key === doc.id);
+      if (docIndex !== -1) {
+        const tfidfValue = tfidf.tfidf(term, docIndex);
+        termTfidfValues.push(tfidfValue);
+        correspondingScores.push(doc.score);
+      }
+    });
 
       if (termTfidfValues.length > 2) {
         // Calculate Pearson correlation
         const correlation = calculatePearson(termTfidfValues, correspondingScores);
         
         if (!isNaN(correlation) && correlation !== 0) {
-          ngramCorrelations.push({
-            ngram: term,
+          ngramCorrelations.push({ 
+            ngram: term, 
             correlation: correlation,
             documentCount: terms[term] // How many documents contain this term
           });
-        }
       }
+    }
       
       // Report progress during correlation calculation
       if (progressCallback && index % 50 === 0) {

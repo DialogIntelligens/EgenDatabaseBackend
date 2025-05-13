@@ -49,6 +49,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
       totalConversations, 
       totalCustomerRatings,
       averageCustomerRating,
+      csatScore,
       thumbsRating,
       totalVisitors,
       overallConversionRate,
@@ -84,6 +85,7 @@ STATISTICS SUMMARY:
 - Total Conversations: ${totalConversations}
 - Total User Ratings: ${totalCustomerRatings}
 - ${thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating'}: ${averageCustomerRating}
+${csatScore ? `- Customer Satisfaction (CSAT): ${csatScore}` : ''}
 `;
 
     // Add conversion statistics if applicable
@@ -209,8 +211,23 @@ CONVERSION METRICS:
       progressCallback("Analysis complete", 100);
     }
 
-    // Return the analysis text
-    return response.choices[0].message.content;
+    // Safely extract the analysis text (handle potential response shape variations)
+    let analysisText = "";
+    if (response && response.choices && response.choices.length > 0) {
+      const choice = response.choices[0];
+      analysisText =
+        (choice.message && choice.message.content) || // Standard Chat completion response
+        choice.text || // Legacy completion response
+        (choice.delta && choice.delta.content) || // Streaming delta (if no final message provided)
+        "";
+    }
+
+    // If we still have no content, throw an error so the caller can handle it
+    if (!analysisText || analysisText.trim() === "") {
+      throw new Error("Empty analysis content returned from OpenAI");
+    }
+
+    return analysisText.trim();
   } catch (error) {
     console.error('Error generating GPT analysis:', error);
     
