@@ -224,6 +224,7 @@ export async function generateStatisticsReport(data, timePeriod) {
         totalConversations, 
         totalCustomerRatings, 
         averageCustomerRating,
+        csatScore,
         thumbsRating,
         totalVisitors,
         overallConversionRate,
@@ -240,6 +241,9 @@ export async function generateStatisticsReport(data, timePeriod) {
       doc.text(`Total Conversations: ${totalConversations}`);
       doc.text(`Total User Ratings: ${totalCustomerRatings}`);
       doc.text(`${thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating'}: ${averageCustomerRating}`);
+      if (csatScore) {
+        doc.text(`Customer Satisfaction (CSAT): ${csatScore}`);
+      }
 
       // Add conversion statistics if applicable
       if (showPurchase) {
