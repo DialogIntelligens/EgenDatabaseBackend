@@ -301,7 +301,7 @@ Do not write anything that is not directly supported by the data or only has low
         }
         
         response = await openai.chat.completions.create({
-          model: "o4-mini-2025-04-16",
+          model: "o4-mini",
           messages: [
             {
               role: "system",
@@ -313,7 +313,7 @@ Do not write anything that is not directly supported by the data or only has low
             }
           ],
           temperature: 1,
-          max_completion_tokens: maxCompletionTokens
+          max_tokens: maxCompletionTokens
         });
         
         // If we got a response, break out of retry loop
