@@ -70,17 +70,17 @@ function generateNgrams(text, n) {
   if (!text || typeof text !== 'string') return [];
   
   try {
-    // Simple whitespace tokenization might be more robust for messy text
-    const tokens = text.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!tokens || tokens.length < n) {
-      return [];
-    }
+  // Simple whitespace tokenization might be more robust for messy text
+  const tokens = text.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens || tokens.length < n) {
+    return [];
+  }
     
-    const ngrams = [];
-    for (let i = 0; i <= tokens.length - n; i++) {
-      ngrams.push(tokens.slice(i, i + n).join(' '));
-    }
-    return ngrams;
+  const ngrams = [];
+  for (let i = 0; i <= tokens.length - n; i++) {
+    ngrams.push(tokens.slice(i, i + n).join(' '));
+  }
+  return ngrams;
   } catch (error) {
     console.error(`Error generating ${n}-grams:`, error);
     return [];
@@ -199,7 +199,7 @@ async function createTfIdfModel(docs, progressCallback = null) {
 // Main analysis function
 export async function analyzeConversations(conversations, progressCallback = null) {
   try {
-    console.log(`Starting analysis on ${conversations.length} conversations.`);
+  console.log(`Starting analysis on ${conversations.length} conversations.`);
     console.log("Using CPU throttling to prevent server overload. This may take a bit longer but ensures stability.");
     
     // Report initial progress
@@ -207,10 +207,10 @@ export async function analyzeConversations(conversations, progressCallback = nul
       progressCallback("Starting analysis", 0);
     }
 
-    // Debug topics - show raw values of first few conversations
+  // Debug topics - show raw values of first few conversations
     try {
       for (let i = 0; i < Math.min(conversations.length, 5); i++) {
-        const conv = conversations[i];
+    const conv = conversations[i];
         console.log(`Conversation ${i+1}: {
           id: ${conv.id},
           emne_raw: '${conv.emne || ''}',
@@ -226,146 +226,146 @@ export async function analyzeConversations(conversations, progressCallback = nul
     // Report progress - data inspection complete
     if (progressCallback) {
       progressCallback("Data validation", 10);
+  }
+
+  const topicsFound = conversations.filter(conv => conv.emne?.trim()).length;
+  console.log(`Found ${topicsFound} conversations with topic (emne) field`);
+  
+  // Print sample conversation structure for debugging
+  if (conversations.length > 0) {
+    const sampleConv = conversations[0];
+    console.log("Sample conversation fields:", {
+      id: sampleConv.id,
+      chatbot_id: sampleConv.chatbot_id,
+      emne: sampleConv.emne,
+      score: sampleConv.score,
+      customer_rating: sampleConv.customer_rating,
+      hasConversationData: Boolean(sampleConv.conversation_data)
+    });
+  }
+  
+  // Debug ratings
+  const ratingsFound = conversations.filter(conv => !isNaN(parseFloat(conv.customer_rating))).length;
+  console.log(`Found ${ratingsFound} conversations with customer ratings`);
+  
+  // Debug scores
+  const scoresFound = conversations.filter(conv => {
+    const score = parseFloat(conv.score);
+    return typeof score === 'number' && !isNaN(score);
+  }).length;
+  console.log(`Found ${scoresFound} conversations with valid scores`);
+
+  // --- 1A) Correlation: customer_rating vs score ---
+  let ratingScoreCorr = { value: null, pValue: null, count: 0 };
+  const ratings = [];
+  const scoresForRatingCorr = [];
+  conversations.forEach(conv => {
+    const rating = parseFloat(conv.customer_rating);
+    const score = parseFloat(conv.score);
+    // Treat score 0 as valid if it exists
+    if (!isNaN(rating) && typeof score === 'number' && !isNaN(score)) {
+      ratings.push(rating);
+      scoresForRatingCorr.push(score);
     }
+  });
 
-    const topicsFound = conversations.filter(conv => conv.emne?.trim()).length;
-    console.log(`Found ${topicsFound} conversations with topic (emne) field`);
-    
-    // Print sample conversation structure for debugging
-    if (conversations.length > 0) {
-      const sampleConv = conversations[0];
-      console.log("Sample conversation fields:", {
-        id: sampleConv.id,
-        chatbot_id: sampleConv.chatbot_id,
-        emne: sampleConv.emne,
-        score: sampleConv.score,
-        customer_rating: sampleConv.customer_rating,
-        hasConversationData: Boolean(sampleConv.conversation_data)
-      });
+  if (ratings.length > 1) {
+    try {
+      const corr = calculatePearson(ratings, scoresForRatingCorr);
+      ratingScoreCorr = { value: corr, pValue: null, count: ratings.length }; // p-value not readily available
+      console.log(`Customer Rating vs Score Correlation: r = ${corr?.toFixed(4)}, N = ${ratings.length}`);
+    } catch (e) {
+      console.error("Error calculating rating-score correlation:", e.message);
     }
-    
-    // Debug ratings
-    const ratingsFound = conversations.filter(conv => !isNaN(parseFloat(conv.customer_rating))).length;
-    console.log(`Found ${ratingsFound} conversations with customer ratings`);
-    
-    // Debug scores
-    const scoresFound = conversations.filter(conv => {
-      const score = parseFloat(conv.score);
-      return typeof score === 'number' && !isNaN(score);
-    }).length;
-    console.log(`Found ${scoresFound} conversations with valid scores`);
+  } else {
+    console.log("Not enough data for rating-score correlation.");
+  }
 
-    // --- 1A) Correlation: customer_rating vs score ---
-    let ratingScoreCorr = { value: null, pValue: null, count: 0 };
-    const ratings = [];
-    const scoresForRatingCorr = [];
-    conversations.forEach(conv => {
-      const rating = parseFloat(conv.customer_rating);
-      const score = parseFloat(conv.score);
-      // Treat score 0 as valid if it exists
-      if (!isNaN(rating) && typeof score === 'number' && !isNaN(score)) {
-        ratings.push(rating);
-        scoresForRatingCorr.push(score);
-      }
-    });
-
-    if (ratings.length > 1) {
-      try {
-        const corr = calculatePearson(ratings, scoresForRatingCorr);
-        ratingScoreCorr = { value: corr, pValue: null, count: ratings.length }; // p-value not readily available
-        console.log(`Customer Rating vs Score Correlation: r = ${corr?.toFixed(4)}, N = ${ratings.length}`);
-      } catch (e) {
-        console.error("Error calculating rating-score correlation:", e.message);
-      }
-    } else {
-      console.log("Not enough data for rating-score correlation.");
+  // --- First gather all topics regardless of rating/score ---
+  const allTopics = new Set();
+  conversations.forEach(conv => {
+    const topic = conv.emne?.trim();
+    if (topic) {
+      allTopics.add(topic);
     }
+  });
+  console.log(`Found ${allTopics.size} unique topics across all conversations`);
 
-    // --- First gather all topics regardless of rating/score ---
-    const allTopics = new Set();
-    conversations.forEach(conv => {
-      const topic = conv.emne?.trim();
-      if (topic) {
-        allTopics.add(topic);
-      }
-    });
-    console.log(`Found ${allTopics.size} unique topics across all conversations`);
-
-    // --- Create a map of all topics and their counts ---
-    const topicCounts = {};
-    conversations.forEach(conv => {
-      const topic = conv.emne?.trim();
-      if (topic) {
-        if (!topicCounts[topic]) topicCounts[topic] = 0;
-        topicCounts[topic]++;
-      }
-    });
-
-    // --- 1B) Average customer_rating per topic ('emne') ---
-    const topicRatingStats = {};
-    // Initialize stats for all topics
-    allTopics.forEach(topic => {
-      topicRatingStats[topic] = { total: 0, count: 0 };
-    });
-    
-    // Now add ratings where available
-    conversations.forEach(conv => {
-      const rating = parseFloat(conv.customer_rating);
-      const topic = conv.emne?.trim();
-      if (!isNaN(rating) && topic) {
-        topicRatingStats[topic].total += rating;
-        topicRatingStats[topic].count += 1;
-      }
-    });
-    
-    // Include ALL topics, even those without ratings
-    const avgRatingPerTopic = Object.entries(topicRatingStats)
-      .map(([topic, data]) => ({
-        topic,
-        averageRating: data.count > 0 ? data.total / data.count : null,
-        count: data.count,
-        totalConversations: topicCounts[topic] || 0
-      }))
-      .sort((a, b) => (b.totalConversations || 0) - (a.totalConversations || 0)); // Sort by total conversations
-    
-    console.log(`Calculated average customer rating for ${avgRatingPerTopic.filter(t => t.count > 0).length} topics with ratings (out of ${avgRatingPerTopic.length} total topics).`);
-    
-    // Log first 3 topics if any exist
-    if (avgRatingPerTopic.length > 0) {
-      console.log("Sample topics with ratings:", avgRatingPerTopic.slice(0, 3));
+  // --- Create a map of all topics and their counts ---
+  const topicCounts = {};
+  conversations.forEach(conv => {
+    const topic = conv.emne?.trim();
+    if (topic) {
+      if (!topicCounts[topic]) topicCounts[topic] = 0;
+      topicCounts[topic]++;
     }
+  });
 
-    // --- 1C) Average score per topic ('emne') ---
-    const topicScoreStats = {};
-    // Initialize stats for all topics
-    allTopics.forEach(topic => {
-      topicScoreStats[topic] = { total: 0, count: 0 };
-    });
-    
-    // Now add scores where available
-    conversations.forEach(conv => {
-      const score = parseFloat(conv.score);
-      const topic = conv.emne?.trim();
-      // Treat score 0 as valid
-      if (typeof score === 'number' && !isNaN(score) && topic) {
-        topicScoreStats[topic].total += score;
-        topicScoreStats[topic].count += 1;
-      }
-    });
-    
-    // Include ALL topics, even those without scores
-    const avgScorePerTopic = Object.entries(topicScoreStats)
-      .map(([topic, data]) => ({
-        topic,
-        averageScore: data.count > 0 ? data.total / data.count : null,
-        count: data.count,
-        totalConversations: topicCounts[topic] || 0
-      }))
-      .sort((a, b) => (b.totalConversations || 0) - (a.totalConversations || 0)); // Sort by total conversations
-    
-    console.log(`Calculated average score for ${avgScorePerTopic.filter(t => t.count > 0).length} topics with scores (out of ${avgScorePerTopic.length} total topics).`);
+  // --- 1B) Average customer_rating per topic ('emne') ---
+  const topicRatingStats = {};
+  // Initialize stats for all topics
+  allTopics.forEach(topic => {
+    topicRatingStats[topic] = { total: 0, count: 0 };
+  });
+  
+  // Now add ratings where available
+  conversations.forEach(conv => {
+    const rating = parseFloat(conv.customer_rating);
+    const topic = conv.emne?.trim();
+    if (!isNaN(rating) && topic) {
+      topicRatingStats[topic].total += rating;
+      topicRatingStats[topic].count += 1;
+    }
+  });
+  
+  // Include ALL topics, even those without ratings
+  const avgRatingPerTopic = Object.entries(topicRatingStats)
+    .map(([topic, data]) => ({
+      topic,
+      averageRating: data.count > 0 ? data.total / data.count : null,
+      count: data.count,
+      totalConversations: topicCounts[topic] || 0
+    }))
+    .sort((a, b) => (b.totalConversations || 0) - (a.totalConversations || 0)); // Sort by total conversations
+  
+  console.log(`Calculated average customer rating for ${avgRatingPerTopic.filter(t => t.count > 0).length} topics with ratings (out of ${avgRatingPerTopic.length} total topics).`);
+  
+  // Log first 3 topics if any exist
+  if (avgRatingPerTopic.length > 0) {
+    console.log("Sample topics with ratings:", avgRatingPerTopic.slice(0, 3));
+  }
 
-    // --- Preprocessing for TF-IDF ---
+  // --- 1C) Average score per topic ('emne') ---
+  const topicScoreStats = {};
+  // Initialize stats for all topics
+  allTopics.forEach(topic => {
+    topicScoreStats[topic] = { total: 0, count: 0 };
+  });
+  
+  // Now add scores where available
+  conversations.forEach(conv => {
+    const score = parseFloat(conv.score);
+    const topic = conv.emne?.trim();
+    // Treat score 0 as valid
+    if (typeof score === 'number' && !isNaN(score) && topic) {
+      topicScoreStats[topic].total += score;
+      topicScoreStats[topic].count += 1;
+    }
+  });
+  
+  // Include ALL topics, even those without scores
+  const avgScorePerTopic = Object.entries(topicScoreStats)
+    .map(([topic, data]) => ({
+      topic,
+      averageScore: data.count > 0 ? data.total / data.count : null,
+      count: data.count,
+      totalConversations: topicCounts[topic] || 0
+    }))
+    .sort((a, b) => (b.totalConversations || 0) - (a.totalConversations || 0)); // Sort by total conversations
+  
+  console.log(`Calculated average score for ${avgScorePerTopic.filter(t => t.count > 0).length} topics with scores (out of ${avgScorePerTopic.length} total topics).`);
+
+  // --- Preprocessing for TF-IDF ---
     // Process documents in smaller batches to avoid memory issues
     let processedDocs = [];
     const convoBatchSize = 100;
@@ -373,18 +373,18 @@ export async function analyzeConversations(conversations, progressCallback = nul
     for (let i = 0; i < conversations.length; i += convoBatchSize) {
       const batch = conversations.slice(i, i + convoBatchSize);
       const batchDocs = await processWithThrottling(batch, async (conv) => {
-        let conversationData;
-        try {
-          conversationData = (typeof conv.conversation_data === 'string')
-            ? JSON.parse(conv.conversation_data)
-            : conv.conversation_data;
-        } catch (e) {
-          return null;
-        }
+    let conversationData;
+    try {
+      conversationData = (typeof conv.conversation_data === 'string')
+        ? JSON.parse(conv.conversation_data)
+        : conv.conversation_data;
+    } catch (e) {
+      return null;
+    }
 
         // Extract user messages for analysis
-        const userText = extractUserMessages(conversationData);
-        const score = parseFloat(conv.score);
+    const userText = extractUserMessages(conversationData);
+    const score = parseFloat(conv.score);
 
         // Check for valid data
         if (!userText || userText.trim().length === 0) return null;
@@ -410,36 +410,36 @@ export async function analyzeConversations(conversations, progressCallback = nul
       }
     }
 
-    console.log(`Processed ${processedDocs.length} conversations with valid user text and scores.`);
+  console.log(`Processed ${processedDocs.length} conversations with valid user text and scores.`);
 
-    if (processedDocs.length < 2) {
-      console.warn("Insufficient valid documents for TF-IDF analysis.");
-      return {
-        error: "Insufficient data for text analysis",
-        ratingScoreCorrelation: ratingScoreCorr,
-        avgRatingPerTopic,
-        avgScorePerTopic,
-        positiveCorrelations: [],
-        negativeCorrelations: []
-      };
-    }
+  if (processedDocs.length < 2) {
+    console.warn("Insufficient valid documents for TF-IDF analysis.");
+    return {
+      error: "Insufficient data for text analysis",
+      ratingScoreCorrelation: ratingScoreCorr,
+      avgRatingPerTopic,
+      avgScorePerTopic,
+      positiveCorrelations: [],
+      negativeCorrelations: []
+    };
+  }
 
-    // Check score variance
-    const allScores = processedDocs.map(doc => doc.score);
-    const uniqueScores = new Set(allScores);
-    console.log(`Score variance check: ${uniqueScores.size} unique score values out of ${allScores.length} documents`);
-    if (uniqueScores.size <= 1) {
-      console.warn("No variance in scores - all documents have the same score. Cannot calculate correlations.");
-      return {
-        error: "Insufficient variance in scores for correlation analysis",
-        ratingScoreCorrelation: ratingScoreCorr,
-        avgRatingPerTopic,
-        avgScorePerTopic,
-        positiveCorrelations: [],
-        negativeCorrelations: []
-      };
-    }
-    
+  // Check score variance
+  const allScores = processedDocs.map(doc => doc.score);
+  const uniqueScores = new Set(allScores);
+  console.log(`Score variance check: ${uniqueScores.size} unique score values out of ${allScores.length} documents`);
+  if (uniqueScores.size <= 1) {
+    console.warn("No variance in scores - all documents have the same score. Cannot calculate correlations.");
+    return {
+      error: "Insufficient variance in scores for correlation analysis",
+      ratingScoreCorrelation: ratingScoreCorr,
+      avgRatingPerTopic,
+      avgScorePerTopic,
+      positiveCorrelations: [],
+      negativeCorrelations: []
+    };
+  }
+
     // Report progress - preprocessing complete
     if (progressCallback) {
       progressCallback("Preprocessing conversations", 20);
@@ -447,8 +447,8 @@ export async function analyzeConversations(conversations, progressCallback = nul
 
     // Create TF-IDF model with memory-efficient batching
     const { tfidf, docMapping } = await createTfIdfModel(processedDocs, progressCallback);
-    console.log(`TF-IDF model created with ${tfidf.documents.length} documents processed.`);
-    
+  console.log(`TF-IDF model created with ${tfidf.documents.length} documents processed.`);
+
     // Progress update - TF-IDF model complete
     if (progressCallback) {
       progressCallback("Language model complete", 30);
@@ -514,10 +514,10 @@ export async function analyzeConversations(conversations, progressCallback = nul
       const batchResults = await processWithThrottling(termBatch, async (term) => {
         try {
           const termTfidfValues = [];
-          const correspondingScores = [];
-
+      const correspondingScores = [];
+      
           // Use docMapping to match documents with their scores
-          processedDocs.forEach(doc => {
+      processedDocs.forEach(doc => {
             if (docMapping.has(doc.id)) {
               const docIndex = docMapping.get(doc.id);
               const tfidfValue = tfidf.tfidf(term, docIndex);
@@ -525,7 +525,7 @@ export async function analyzeConversations(conversations, progressCallback = nul
               // Only include if we have a valid TF-IDF value
               if (!isNaN(tfidfValue)) {
                 termTfidfValues.push(tfidfValue);
-                correspondingScores.push(doc.score);
+          correspondingScores.push(doc.score);
               }
             }
           });
@@ -537,7 +537,7 @@ export async function analyzeConversations(conversations, progressCallback = nul
             
             if (!isNaN(correlation) && Math.abs(correlation) > 0.1) { // Ignore very weak correlations
               return { 
-                ngram: term, 
+              ngram: term, 
                 correlation: correlation,
                 documentCount: terms.get(term) || 0 // How many documents contain this term
               };
@@ -564,10 +564,10 @@ export async function analyzeConversations(conversations, progressCallback = nul
     // Progress update - correlation calculation complete
     if (progressCallback) {
       progressCallback("Correlation analysis complete", 70);
-    }
+  }
 
-    // --- Sort and select top correlations ---
-    ngramCorrelations.sort((a, b) => b.correlation - a.correlation); // Sort desc
+  // --- Sort and select top correlations ---
+  ngramCorrelations.sort((a, b) => b.correlation - a.correlation); // Sort desc
 
     // Get meaningful number of correlations (at least 5 but not more than 15)
     const minCorrelations = 5;
@@ -588,17 +588,17 @@ export async function analyzeConversations(conversations, progressCallback = nul
       .sort((a, b) => a.correlation - b.correlation) // Sort ascending for negatives
       .slice(0, topNegativeCount);
 
-    console.log("Analysis complete.");
-    
-    return {
-      ratingScoreCorrelation: ratingScoreCorr,
-      avgRatingPerTopic,
-      avgScorePerTopic,
-      positiveCorrelations: topPositive,
-      negativeCorrelations: topNegative,
-      analyzedDocumentsCount: processedDocs.length,
-      totalNgramsFound: allTerms.length
-    };
+  console.log("Analysis complete.");
+
+  return {
+    ratingScoreCorrelation: ratingScoreCorr,
+    avgRatingPerTopic,
+    avgScorePerTopic,
+    positiveCorrelations: topPositive,
+    negativeCorrelations: topNegative,
+    analyzedDocumentsCount: processedDocs.length,
+    totalNgramsFound: allTerms.length
+  };
   } catch (error) {
     console.error("Fatal error in text analysis:", error);
     return {
