@@ -6,6 +6,49 @@ const openai = new OpenAI({
 });
 
 /**
+ * Simple delay function for throttling
+ * @param {number} ms - Milliseconds to delay
+ * @returns {Promise} - Resolves after delay
+ */
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Process items in batches with throttling
+ * @param {Array} items - Array of items to process
+ * @param {Function} processFn - Function to process each batch
+ * @param {number} batchSize - Size of each batch
+ * @param {number} delayMs - Delay between batches in milliseconds
+ * @returns {Promise<Array>} - Results from all batches
+ */
+async function processWithThrottling(items, processFn, batchSize = 5, delayMs = 100) {
+  const results = [];
+  
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await processFn(batch);
+    results.push(...batchResults);
+    
+    // Add a small delay to prevent CPU spikes
+    if (i + batchSize < items.length) {
+      await delay(delayMs);
+    }
+  }
+  
+  return results;
+}
+
+/**
+ * Trim a message to a maximum length while preserving meaning
+ * @param {string} text - Text to trim
+ * @param {number} maxLength - Maximum length
+ * @returns {string} - Trimmed text
+ */
+function trimMessage(text, maxLength = 150) {
+  if (!text || text.length <= maxLength) return text || '';
+  return text.substring(0, maxLength) + '...';
+}
+
+/**
  * Generate GPT analysis for statistics report
  * @param {Object} statisticsData - The statistics data for analysis
  * @param {string} timePeriod - The time period for the report
@@ -105,26 +148,26 @@ CONVERSION METRICS:
     if (textAnalysis) {
       prompt += `\nTEXT ANALYSIS:\n`;
       
-      // Add topic data if available
+      // Add topic data if available - limit to top 3 for brevity
       if (textAnalysis.avgRatingPerTopic && textAnalysis.avgRatingPerTopic.length > 0) {
-        prompt += "Top Topics by Customer Rating:\n";
-        textAnalysis.avgRatingPerTopic.slice(0, 5).forEach(topic => {
+        prompt += "Top Topics by Customer Rating (top 3):\n";
+        textAnalysis.avgRatingPerTopic.slice(0, 3).forEach(topic => {
           prompt += `- ${topic.topic}: ${topic.averageRating ? topic.averageRating.toFixed(2) : 'N/A'} (${topic.count} ratings)\n`;
         });
       }
       
-      // Add positive correlations
+      // Add positive correlations - limit to top 3
       if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.length > 0) {
-        prompt += "\nTop Positively Correlated N-grams (terms associated with higher scores):\n";
-        textAnalysis.positiveCorrelations.slice(0, 5).forEach((item, idx) => {
+        prompt += "\nTop Positively Correlated N-grams (terms associated with higher scores, top 3):\n";
+        textAnalysis.positiveCorrelations.slice(0, 3).forEach((item, idx) => {
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
       }
       
-      // Add negative correlations
+      // Add negative correlations - limit to top 3
       if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.length > 0) {
-        prompt += "\nTop Negatively Correlated N-grams (terms associated with lower scores):\n";
-        textAnalysis.negativeCorrelations.slice(0, 5).forEach((item, idx) => {
+        prompt += "\nTop Negatively Correlated N-grams (terms associated with lower scores, top 3):\n";
+        textAnalysis.negativeCorrelations.slice(0, 3).forEach((item, idx) => {
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
       }
@@ -140,32 +183,78 @@ CONVERSION METRICS:
       `;
     }
     
-    // Add conversation content if available
+    // Add conversation content if available with optimized sampling
     if (conversationContents && conversationContents.length > 0) {
-      prompt += `\nCONVERSATION SAMPLES:\n`;
-      prompt += `I am providing ${conversationContents.length} conversation samples for you to analyze deeper patterns and provide insights. Always answer in danish.\n`;
-      
-      // Use maxConversations parameter instead of hardcoded 10
-      const maxConvsToInclude = Math.min(maxConversations, conversationContents.length);
-      
-      for (let i = 0; i < maxConvsToInclude; i++) {
-        const conv = conversationContents[i];
-        prompt += `\nConversation #${i+1} (Topic: ${conv.topic}, Score: ${conv.score}, Rating: ${conv.rating}):\n`;
-        
-        if (conv.messages && conv.messages.length > 0) {
-          // Include at most 10 messages per conversation to keep the prompt size reasonable
-          const messages = conv.messages.slice(0, 10);
-          messages.forEach(msg => {
-            prompt += `${msg.isUser ? 'User: ' : 'Chatbot: '}${msg.text}\n`;
-          });
-          
-          if (conv.messages.length > 10) {
-            prompt += `[${conv.messages.length - 10} more messages...]\n`;
-          }
-        } else {
-          prompt += `[No messages available]\n`;
-        }
+      // Progress update - conversation processing
+      if (progressCallback) {
+        progressCallback(`Processing ${Math.min(maxConversations, conversationContents.length)} conversations for analysis`, 30);
       }
+
+      // Calculate how many conversations to include based on total size
+      let maxConvsToInclude = Math.min(maxConversations, conversationContents.length);
+      
+      // For larger datasets, use a more aggressive sampling strategy
+      if (conversationContents.length > 50) {
+        // For very large datasets, reduce max conversations
+        maxConvsToInclude = Math.min(maxConvsToInclude, 15);
+      }
+      
+      prompt += `\nCONVERSATION SAMPLES:\n`;
+      prompt += `I am providing ${maxConvsToInclude} conversation samples out of ${conversationContents.length} total conversations for you to analyze deeper patterns and provide insights. Always answer in danish.\n`;
+      
+      // Process conversations with throttling to prevent CPU spikes
+      const processedConversations = await processWithThrottling(
+        conversationContents.slice(0, maxConvsToInclude),
+        async (convoBatch) => {
+          return convoBatch.map(conv => {
+            // For each conversation, create a summarized version
+            const convSummary = `\nConversation #${conversationContents.indexOf(conv) + 1} (Topic: ${conv.topic}, Score: ${conv.score}, Rating: ${conv.rating || 'None'}):\n`;
+            
+            let messagesSummary = '';
+            if (conv.messages && conv.messages.length > 0) {
+              // For large conversations, sample messages more aggressively
+              const maxMessages = conv.messages.length > 20 ? 5 : 8;
+              
+              // Always include first 2 messages plus a sample of the rest
+              const firstMessages = conv.messages.slice(0, 2);
+              let remainingMessages = [];
+              
+              if (conv.messages.length > 2) {
+                // If more than 2 messages, select a sample of the remaining ones
+                const rest = conv.messages.slice(2);
+                const step = Math.max(1, Math.floor(rest.length / (maxMessages - 2)));
+                
+                for (let i = 0; i < rest.length && remainingMessages.length < maxMessages - 2; i += step) {
+                  remainingMessages.push(rest[i]);
+                }
+              }
+              
+              // Combine first messages with sampled messages
+              const sampled = [...firstMessages, ...remainingMessages];
+              
+              // Process each message with length limiting
+              sampled.forEach(msg => {
+                messagesSummary += `${msg.isUser ? 'User: ' : 'Chatbot: '}${trimMessage(msg.text, 150)}\n`;
+              });
+              
+              if (conv.messages.length > sampled.length) {
+                messagesSummary += `[${conv.messages.length - sampled.length} more messages not shown...]\n`;
+              }
+            } else {
+              messagesSummary = `[No messages available]\n`;
+            }
+            
+            return convSummary + messagesSummary;
+          });
+        },
+        5, // Process 5 conversations at a time
+        100 // Delay 100ms between batches
+      );
+      
+      // Add processed conversations to prompt
+      processedConversations.forEach(convoText => {
+        prompt += convoText;
+      });
       
       if (conversationContents.length > maxConvsToInclude) {
         prompt += `\n[${conversationContents.length - maxConvsToInclude} more conversations available but not included for brevity]\n`;
@@ -173,14 +262,14 @@ CONVERSION METRICS:
       
       // Add specific instructions for conversation analysis
       prompt += `\nPlease also include in your analysis:
-      1. Common patterns in user queries and chatbot responses
-      2. Potential areas where the chatbot could improve its responses
-      3. Topics that tend to result in higher or lower user satisfaction
-      4. Any notable tone, language, or communication style observations
-      Do not write anything that is not directly supported by the data or only has low corelation.
-      `;
+1. Common patterns in user queries and chatbot responses
+2. Potential areas where the chatbot could improve its responses
+3. Topics that tend to result in higher or lower user satisfaction
+4. Any notable tone, language, or communication style observations
+Do not write anything that is not directly supported by the data or only has low corelation.
+`;
     }
-    
+
       // End of prompt
       prompt += `\nThe most important is that you do not sugest anything that is not super clear from the data.
       All insights should be concrete and usefull. Rather write a very short report then a long report that is not useful.
@@ -191,22 +280,58 @@ CONVERSION METRICS:
       progressCallback("Sending to OpenAI for analysis", 50);
     }
 
-    // Call OpenAI API for analysis
-    const response = await openai.chat.completions.create({
-      model: "o4-mini-2025-04-16",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report with the following formatting guidelines:\n\n1. Use **Bold Headings** as section titles, each on its own line with no text on the same line\n2. After each section header, add a detailed paragraph with analysis for that section\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. Put one empty line between sections\n5. Keep your analysis evidence-based and focused on actionable insights\n6. Use a maximum of 3-4 distinct sections in your report (Executive Summary, User Engagement, etc.)"
-        },
-        {
-          role: "user",
-          content: prompt
+    // Calculate a safe token limit based on data size
+    // Start with a base value and reduce based on how much data we're analyzing
+    let maxCompletionTokens = 1500;
+    if (conversationContents.length > 50) {
+      // For large datasets, reduce token count to leave more room for input
+      maxCompletionTokens = 1200;
+    }
+
+    // Call OpenAI API for analysis with error handling and retries
+    let attempt = 0;
+    const maxAttempts = 3;
+    let response = null;
+    
+    while (attempt < maxAttempts) {
+      try {
+        // Add progress update for retry attempts
+        if (attempt > 0 && progressCallback) {
+          progressCallback(`Retry attempt ${attempt}/${maxAttempts} for OpenAI analysis`, 60);
         }
-      ],
-      temperature: 1,
-      max_completion_tokens: 1500
-    });
+        
+        response = await openai.chat.completions.create({
+          model: "o4-mini-2025-04-16",
+          messages: [
+            {
+              role: "system",
+              content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report with the following formatting guidelines:\n\n1. Use **Bold Headings** as section titles, each on its own line with no text on the same line\n2. After each section header, add a detailed paragraph with analysis for that section\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. Put one empty line between sections\n5. Keep your analysis evidence-based and focused on actionable insights\n6. Use a maximum of 3-4 distinct sections in your report (Executive Summary, User Engagement, etc.)"
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          temperature: 1,
+          max_completion_tokens: maxCompletionTokens
+        });
+        
+        // If we got a response, break out of retry loop
+        break;
+      } catch (error) {
+        attempt++;
+        console.error(`OpenAI API error (attempt ${attempt}/${maxAttempts}):`, error.message);
+        
+        // If we've reached max attempts, throw the error
+        if (attempt >= maxAttempts) {
+          throw error;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        const backoffDelay = 1000 * Math.pow(2, attempt);
+        await delay(backoffDelay);
+      }
+    }
 
     // Progress update - processing complete
     if (progressCallback) {
