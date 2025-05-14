@@ -1740,13 +1740,33 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
           }
         }
         
-        const gptAnalysis = await generateGPTAnalysis(statisticsData, timePeriod, conversationContents);
+        // Create a progress tracking function for GPT analysis
+        const gptProgressTracker = (status, percent) => {
+          console.log(`GPT Analysis progress: ${status} (${percent}%)`);
+        };
         
-        if (gptAnalysis) {
-          console.log("GPT analysis generated successfully");
-          statisticsData.gptAnalysis = gptAnalysis;
-        } else {
-          console.log("Failed to generate GPT analysis");
+        try {
+          // Pass progress tracker and maxConversations to GPT analysis
+          const gptAnalysis = await generateGPTAnalysis(
+            statisticsData, 
+            timePeriod, 
+            conversationContents, 
+            maxConversations,
+            gptProgressTracker
+          );
+          
+          if (gptAnalysis) {
+            console.log("GPT analysis generated successfully");
+            statisticsData.gptAnalysis = gptAnalysis;
+          } else {
+            console.log("Failed to generate GPT analysis");
+          }
+        } catch (gptError) {
+          console.error('Error generating GPT analysis:', gptError);
+          // Add fallback content for the PDF if GPT analysis fails
+          statisticsData.gptAnalysis = "GPT analysis could not be generated due to technical limitations. " +
+            "Please try again with a smaller dataset or fewer conversations.";
+          // Continue with report generation even if GPT analysis fails
         }
       } catch (gptError) {
         console.error('Error generating GPT analysis:', gptError);
