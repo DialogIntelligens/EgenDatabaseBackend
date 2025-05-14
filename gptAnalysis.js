@@ -200,7 +200,7 @@ CONVERSION METRICS:
       }
       
       prompt += `\nCONVERSATION SAMPLES:\n`;
-      prompt += `I am providing ${maxConvsToInclude} conversation samples out of ${conversationContents.length} total conversations for you to analyze deeper patterns and provide insights. Always answer in danish.\n`;
+      prompt += `I am providing ${maxConvsToInclude} conversation samples out of ${conversationContents.length} total conversations for you to analyze deeper patterns and provide insights. Refer to these conversations by giving direct quotes, because the user doesn't know what conersation number it is and hasn't read the conversations. Always answer in danish.\n`;
       
       // Process conversations with throttling to prevent CPU spikes
       const processedConversations = await processWithThrottling(
