@@ -313,7 +313,7 @@ Do not write anything that is not directly supported by the data or only has low
             }
           ],
           temperature: 1,
-          max_tokens: maxCompletionTokens
+          max_completion_tokens: maxCompletionTokens
         });
         
         // If we got a response, break out of retry loop
