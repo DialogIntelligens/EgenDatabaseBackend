@@ -17,6 +17,105 @@ const { Pool } = pg;
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
 
+// Rate limiting setup (in-memory store)
+const rateLimiter = {
+  // Store message timestamps by fingerprint
+  messagesByFingerprint: {},
+  // Store blocked status by fingerprint
+  blockedFingerprints: new Set(),
+  
+  // Check if a fingerprint is currently blocked
+  isBlocked: function(fingerprint) {
+    return this.blockedFingerprints.has(fingerprint);
+  },
+  
+  // Record a new message from a fingerprint
+  recordMessage: function(fingerprint) {
+    const now = Date.now();
+    const windowMs = 60000; // 1 minute window
+    const maxMessages = 30; // Maximum messages per window
+    const minGap = 500; // Minimum 500ms between messages
+    
+    // If no record exists for this fingerprint, create one
+    if (!this.messagesByFingerprint[fingerprint]) {
+      this.messagesByFingerprint[fingerprint] = [];
+    }
+    
+    // Get existing messages for this fingerprint within the window
+    const messages = this.messagesByFingerprint[fingerprint];
+    
+    // Cleanup: remove messages older than the window
+    const recentMessages = messages.filter(time => now - time < windowMs);
+    this.messagesByFingerprint[fingerprint] = recentMessages;
+    
+    // Check time gap between messages (if any exist)
+    if (recentMessages.length > 0) {
+      const lastMessageTime = recentMessages[recentMessages.length - 1];
+      const timeSinceLastMessage = now - lastMessageTime;
+      
+      // If sending too quickly
+      if (timeSinceLastMessage < minGap) {
+        // Rapid-fire protection
+        console.log(`Rate limiting: messages too frequent from fingerprint ${fingerprint}`);
+        
+        // If this is a repeated pattern of fast messages, block the fingerprint
+        if (recentMessages.length > 5) {
+          this.blockFingerprint(fingerprint);
+          return false;
+        }
+        
+        return false;
+      }
+    }
+    
+    // Check against max messages per window
+    if (recentMessages.length >= maxMessages) {
+      console.log(`Rate limiting: too many messages from fingerprint ${fingerprint}`);
+      this.blockFingerprint(fingerprint);
+      return false;
+    }
+    
+    // Record this message
+    recentMessages.push(now);
+    return true;
+  },
+  
+  // Block a fingerprint for 2 minutes
+  blockFingerprint: function(fingerprint) {
+    console.log(`Blocking fingerprint ${fingerprint} for spam prevention`);
+    this.blockedFingerprints.add(fingerprint);
+    
+    // Log to database
+    markFingerprintBlocked(fingerprint);
+    
+    // Unblock after 2 minutes
+    setTimeout(() => {
+      this.blockedFingerprints.delete(fingerprint);
+      console.log(`Unblocked fingerprint ${fingerprint}`);
+    }, 120000); // 2 minutes
+  }
+};
+
+// Cleanup old rate limiting data periodically
+cron.schedule('*/5 * * * *', () => {
+  console.log('Cleaning up rate limiting data...');
+  const now = Date.now();
+  const windowMs = 60000; // 1 minute window
+  
+  for (const fingerprint in rateLimiter.messagesByFingerprint) {
+    // Remove old message timestamps
+    const messages = rateLimiter.messagesByFingerprint[fingerprint];
+    const recentMessages = messages.filter(time => now - time < windowMs);
+    
+    if (recentMessages.length === 0) {
+      // No recent messages, remove the entry to save memory
+      delete rateLimiter.messagesByFingerprint[fingerprint];
+    } else {
+      rateLimiter.messagesByFingerprint[fingerprint] = recentMessages;
+    }
+  }
+});
+
 // Check for required environment variables
 if (!process.env.OPENAI_API_KEY) {
   console.error('ERROR: OPENAI_API_KEY environment variable is required');
@@ -1098,7 +1197,8 @@ app.post('/conversations', async (req, res) => {
     emne,
     score,
     customer_rating,
-    lacking_info
+    lacking_info,
+    fingerprint // Add fingerprint parameter
     // Note: form_data might also be in req.body depending on your frontend, add if needed
   } = req.body;
 
@@ -1122,6 +1222,30 @@ app.post('/conversations', async (req, res) => {
   }
   if (!chatbot_id) {
     return res.status(400).json({ error: 'Missing chatbot_id' });
+  }
+
+  // Log the fingerprint if provided
+  if (fingerprint) {
+    // Log to the database
+    await logFingerprint(fingerprint, user_id, chatbot_id);
+    
+    // Check if fingerprint is blocked
+    if (rateLimiter.isBlocked(fingerprint)) {
+      console.log(`Rejected message from blocked fingerprint: ${fingerprint}`);
+      return res.status(429).json({ 
+        error: 'Too many requests',
+        details: 'You are sending messages too quickly. Please wait before trying again.'
+      });
+    }
+    
+    // Check rate limits
+    if (!rateLimiter.recordMessage(fingerprint)) {
+      console.log(`Rate limited message from fingerprint: ${fingerprint}`);
+      return res.status(429).json({ 
+        error: 'Too many requests',
+        details: 'You are sending messages too quickly. Please wait before trying again.'
+      });
+    }
   }
 
   try {
@@ -2253,6 +2377,225 @@ app.get('/company-info', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching company information:', error);
     return res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Create a table for tracking fingerprints if it doesn't exist
+pool.query(`
+  CREATE TABLE IF NOT EXISTS fingerprint_tracking (
+    id SERIAL PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    user_id TEXT,
+    chatbot_id TEXT,
+    message_count INTEGER DEFAULT 1,
+    first_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    is_blocked BOOLEAN DEFAULT FALSE,
+    block_count INTEGER DEFAULT 0,
+    notes TEXT,
+    is_whitelisted BOOLEAN DEFAULT FALSE
+  )
+`).then(() => {
+  console.log('Fingerprint tracking table created or already exists');
+}).catch(err => {
+  console.error('Error creating fingerprint tracking table:', err);
+});
+
+// Create an index on the fingerprint column for faster lookups
+pool.query(`
+  CREATE INDEX IF NOT EXISTS idx_fingerprint ON fingerprint_tracking(fingerprint)
+`).catch(err => {
+  console.error('Error creating fingerprint index:', err);
+});
+
+// Function to log a fingerprint
+async function logFingerprint(fingerprint, userId, chatbotId) {
+  if (!fingerprint) return;
+  
+  try {
+    // Check if this fingerprint already exists
+    const checkResult = await pool.query(
+      'SELECT id, message_count FROM fingerprint_tracking WHERE fingerprint = $1',
+      [fingerprint]
+    );
+    
+    if (checkResult.rows.length > 0) {
+      // Update existing fingerprint record
+      await pool.query(
+        `UPDATE fingerprint_tracking 
+         SET message_count = message_count + 1, 
+             last_seen = NOW(),
+             user_id = COALESCE($2, user_id),
+             chatbot_id = COALESCE($3, chatbot_id)
+         WHERE fingerprint = $1`,
+        [fingerprint, userId, chatbotId]
+      );
+    } else {
+      // Insert new fingerprint record
+      await pool.query(
+        `INSERT INTO fingerprint_tracking 
+         (fingerprint, user_id, chatbot_id)
+         VALUES ($1, $2, $3)`,
+        [fingerprint, userId, chatbotId]
+      );
+    }
+  } catch (error) {
+    console.error('Error logging fingerprint:', error);
+  }
+}
+
+// Function to mark a fingerprint as blocked
+async function markFingerprintBlocked(fingerprint) {
+  if (!fingerprint) return;
+  
+  try {
+    // Update fingerprint record
+    await pool.query(
+      `UPDATE fingerprint_tracking 
+       SET is_blocked = TRUE, 
+           block_count = block_count + 1
+       WHERE fingerprint = $1`,
+      [fingerprint]
+    );
+  } catch (error) {
+    console.error('Error marking fingerprint as blocked:', error);
+  }
+}
+
+// Add an admin API endpoint to view and manage fingerprints
+app.get('/admin/fingerprints', authenticateToken, async (req, res) => {
+  // Only admins can view this data
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+  
+  try {
+    // Get query parameters
+    const { limit = 100, offset = 0, sort_by = 'message_count', sort_order = 'desc', filter } = req.query;
+    
+    // Build query
+    let queryText = `
+      SELECT * FROM fingerprint_tracking
+    `;
+    
+    const queryParams = [];
+    let paramIndex = 1;
+    
+    // Add filter if provided
+    if (filter) {
+      if (filter === 'blocked') {
+        queryText += ` WHERE is_blocked = TRUE`;
+      } else if (filter === 'whitelisted') {
+        queryText += ` WHERE is_whitelisted = TRUE`;
+      } else if (filter === 'suspicious') {
+        queryText += ` WHERE message_count > 50 OR block_count > 0`;
+      }
+    }
+    
+    // Add sorting
+    queryText += ` ORDER BY ${sort_by} ${sort_order === 'asc' ? 'ASC' : 'DESC'}`;
+    
+    // Add pagination
+    queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    queryParams.push(limit, offset);
+    
+    // Execute query
+    const result = await pool.query(queryText, queryParams);
+    
+    // Get total count
+    const countResult = await pool.query('SELECT COUNT(*) FROM fingerprint_tracking');
+    const totalCount = parseInt(countResult.rows[0].count);
+    
+    res.json({
+      fingerprints: result.rows,
+      total: totalCount,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Error retrieving fingerprints:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Add endpoint to block/unblock fingerprints
+app.post('/admin/fingerprints/:fingerprint/block', authenticateToken, async (req, res) => {
+  // Only admins can block fingerprints
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+  
+  const { fingerprint } = req.params;
+  const { block = true, notes } = req.body;
+  
+  try {
+    // Update fingerprint record
+    await pool.query(
+      `UPDATE fingerprint_tracking 
+       SET is_blocked = $1, 
+           notes = COALESCE($2, notes),
+           block_count = CASE WHEN $1 = TRUE THEN block_count + 1 ELSE block_count END
+       WHERE fingerprint = $3
+       RETURNING *`,
+      [block, notes, fingerprint]
+    );
+    
+    if (block) {
+      // Also add to in-memory blocklist
+      rateLimiter.blockedFingerprints.add(fingerprint);
+    } else {
+      // Remove from in-memory blocklist
+      rateLimiter.blockedFingerprints.delete(fingerprint);
+    }
+    
+    res.json({ 
+      message: block ? 'Fingerprint blocked successfully' : 'Fingerprint unblocked successfully',
+      fingerprint
+    });
+  } catch (error) {
+    console.error('Error blocking fingerprint:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Add endpoint to whitelist fingerprints
+app.post('/admin/fingerprints/:fingerprint/whitelist', authenticateToken, async (req, res) => {
+  // Only admins can whitelist fingerprints
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+  
+  const { fingerprint } = req.params;
+  const { whitelist = true, notes } = req.body;
+  
+  try {
+    // Update fingerprint record
+    const result = await pool.query(
+      `UPDATE fingerprint_tracking 
+       SET is_whitelisted = $1, 
+           notes = COALESCE($2, notes),
+           is_blocked = CASE WHEN $1 = TRUE THEN FALSE ELSE is_blocked END
+       WHERE fingerprint = $3
+       RETURNING *`,
+      [whitelist, notes, fingerprint]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Fingerprint not found' });
+    }
+    
+    if (whitelist) {
+      // Remove from in-memory blocklist
+      rateLimiter.blockedFingerprints.delete(fingerprint);
+    }
+    
+    res.json({ 
+      message: whitelist ? 'Fingerprint whitelisted successfully' : 'Fingerprint removed from whitelist',
+      fingerprint
+    });
+  } catch (error) {
+    console.error('Error whitelisting fingerprint:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
 
