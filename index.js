@@ -23,6 +23,9 @@ const rateLimiter = {
   messagesByFingerprint: {},
   // Store blocked status by fingerprint
   blockedFingerprints: new Set(),
+  // IP rate-limit store
+  messagesByIp: {},
+  blockedIps: new Set(),
   
   // Check if a fingerprint is currently blocked
   isBlocked: function(fingerprint) {
@@ -93,7 +96,40 @@ const rateLimiter = {
       this.blockedFingerprints.delete(fingerprint);
       console.log(`Unblocked fingerprint ${fingerprint}`);
     }, 120000); // 2 minutes
-  }
+  },
+  
+  // Check if an IP is currently blocked
+  isIpBlocked: function(ip) {
+    return this.blockedIps.has(ip);
+  },
+  
+  // Record a new message from an IP (mirrors fingerprint logic)
+  recordIpMessage: function(ip) {
+    const now = Date.now();
+    const windowMs = 60000; // 1 min
+    const maxMessages = 30;
+    const minGap = 500;
+    if (!this.messagesByIp[ip]) this.messagesByIp[ip] = [];
+    const msgs = this.messagesByIp[ip].filter(t=> now - t < windowMs);
+    this.messagesByIp[ip] = msgs;
+    if (msgs.length>0 && now - msgs[msgs.length-1] < minGap) {
+      if (msgs.length>5) this.blockIp(ip);
+      return false;
+    }
+    if (msgs.length>=maxMessages) {
+      this.blockIp(ip);
+      return false;
+    }
+    msgs.push(now);
+    return true;
+  },
+  
+  // Block an IP for 2 minutes
+  blockIp: function(ip){
+    console.log(`Blocking IP ${ip} for spam prevention`);
+    this.blockedIps.add(ip);
+    setTimeout(()=>{this.blockedIps.delete(ip);console.log(`Unblocked IP ${ip}`);},120000);
+  },
 };
 
 // Cleanup old rate limiting data periodically
@@ -143,6 +179,8 @@ app.use(cors({
 // Keep this line as well
 app.options('*', cors());
 
+// Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
+app.set('trust proxy', true);
 
 // PostgreSQL pool
 const pool = new Pool({
@@ -1222,6 +1260,27 @@ app.post('/conversations', async (req, res) => {
   }
   if (!chatbot_id) {
     return res.status(400).json({ error: 'Missing chatbot_id' });
+  }
+
+  // Get client IP (trust proxy already set below)
+  const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection.remoteAddress;
+
+  // Check if IP is blocked
+  if (rateLimiter.isIpBlocked(ipAddress)) {
+    console.log(`Rejected message from blocked IP: ${ipAddress}`);
+    return res.status(429).json({
+      error: 'Too many requests',
+      details: 'You are sending messages too quickly. Please wait before trying again.'
+    });
+  }
+
+  // Rate-limit by IP as well
+  if (!rateLimiter.recordIpMessage(ipAddress)) {
+    console.log(`Rate limited message from IP: ${ipAddress}`);
+    return res.status(429).json({
+      error: 'Too many requests',
+      details: 'You are sending messages too quickly. Please wait before trying again.'
+    });
   }
 
   // Log the fingerprint if provided
