@@ -2599,6 +2599,34 @@ app.post('/admin/fingerprints/:fingerprint/whitelist', authenticateToken, async 
   }
 });
 
+// Quick fingerprint status check endpoint
+app.post('/check-fingerprint', async (req, res) => {
+  const { fingerprint } = req.body;
+  if (!fingerprint) {
+    return res.status(400).json({ error: 'Missing fingerprint' });
+  }
+
+  try {
+    // Check in-memory block list first
+    if (rateLimiter.isBlocked(fingerprint)) {
+      return res.json({ blocked: true });
+    }
+
+    // Check database flag
+    const result = await pool.query('SELECT is_blocked, is_whitelisted FROM fingerprint_tracking WHERE fingerprint = $1', [fingerprint]);
+    if (result.rows.length > 0) {
+      const row = result.rows[0];
+      return res.json({ blocked: row.is_blocked && !row.is_whitelisted });
+    }
+
+    // Default – not blocked
+    return res.json({ blocked: false });
+  } catch (err) {
+    console.error('Error checking fingerprint status:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
