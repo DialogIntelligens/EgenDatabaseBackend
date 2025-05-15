@@ -1286,7 +1286,7 @@ app.post('/conversations', async (req, res) => {
   // Log the fingerprint if provided
   if (fingerprint) {
     // Log to the database
-    await logFingerprint(fingerprint, user_id, chatbot_id);
+    await logFingerprint(fingerprint, user_id, chatbot_id, ipAddress);
     
     // Check if fingerprint is blocked
     if (rateLimiter.isBlocked(fingerprint)) {
@@ -2468,7 +2468,7 @@ pool.query(`
 });
 
 // Function to log a fingerprint
-async function logFingerprint(fingerprint, userId, chatbotId) {
+async function logFingerprint(fingerprint, userId, chatbotId, ipAddr = null) {
   if (!fingerprint) return;
   
   try {
@@ -2485,17 +2485,18 @@ async function logFingerprint(fingerprint, userId, chatbotId) {
          SET message_count = message_count + 1, 
              last_seen = NOW(),
              user_id = COALESCE($2, user_id),
-             chatbot_id = COALESCE($3, chatbot_id)
+             chatbot_id = COALESCE($3, chatbot_id),
+             ip_address = COALESCE($4, ip_address)
          WHERE fingerprint = $1`,
-        [fingerprint, userId, chatbotId]
+        [fingerprint, userId, chatbotId, ipAddr]
       );
     } else {
       // Insert new fingerprint record
       await pool.query(
         `INSERT INTO fingerprint_tracking 
-         (fingerprint, user_id, chatbot_id)
-         VALUES ($1, $2, $3)`,
-        [fingerprint, userId, chatbotId]
+         (fingerprint, user_id, chatbot_id, ip_address)
+         VALUES ($1, $2, $3, $4)`,
+        [fingerprint, userId, chatbotId, ipAddr]
       );
     }
   } catch (error) {
@@ -2599,12 +2600,22 @@ app.post('/admin/fingerprints/:fingerprint/block', authenticateToken, async (req
       [block, notes, fingerprint]
     );
     
+    // Fetch associated IP
+    let ipRow;
+    try {
+      const ipRes = await pool.query('SELECT ip_address FROM fingerprint_tracking WHERE fingerprint = $1', [fingerprint]);
+      ipRow = ipRes.rows[0];
+    } catch(err) { console.error('IP fetch error', err); }
+
+    const ip = ipRow?.ip_address;
+
     if (block) {
-      // Also add to in-memory blocklist
+      // Block fingerprint and maybe IP
       rateLimiter.blockedFingerprints.add(fingerprint);
+      if (ip) rateLimiter.blockIp(ip);
     } else {
-      // Remove from in-memory blocklist
       rateLimiter.blockedFingerprints.delete(fingerprint);
+      if (ip) rateLimiter.blockedIps.delete(ip);
     }
     
     res.json({ 
@@ -2678,6 +2689,12 @@ app.post('/check-fingerprint', async (req, res) => {
       return res.json({ blocked: row.is_blocked && !row.is_whitelisted });
     }
 
+    // Also examine IP from request
+    const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection.remoteAddress;
+    if (rateLimiter.isIpBlocked(ipAddress)) {
+      return res.json({ blocked: true });
+    }
+
     // Default – not blocked
     return res.json({ blocked: false });
   } catch (err) {
@@ -2690,3 +2707,8 @@ app.post('/check-fingerprint', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+// After table creation query for fingerprint_tracking
+ pool.query(`
+   ALTER TABLE fingerprint_tracking ADD COLUMN IF NOT EXISTS ip_address TEXT;
+ `).catch(err=>console.error('Error ensuring ip_address column:',err));
