@@ -1058,7 +1058,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7 
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
           // removed source_chunks ($8) from query and parameters
