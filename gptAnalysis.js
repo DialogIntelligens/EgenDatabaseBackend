@@ -280,7 +280,7 @@ Do not write anything that is not directly supported by the data or only has low
 
     // Calculate a safe token limit based on data size
     // Start with a base value and reduce based on how much data we're analyzing
-    let maxCompletionTokens = 1500;
+    let maxCompletionTokens = 150000;
     if (conversationContents.length > 50) {
       // For large datasets, reduce token count to leave more room for input
       maxCompletionTokens = 1200;
