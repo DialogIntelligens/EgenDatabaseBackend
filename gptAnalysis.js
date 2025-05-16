@@ -43,7 +43,7 @@ async function processWithThrottling(items, processFn, batchSize = 5, delayMs = 
  * @param {number} maxLength - Maximum length
  * @returns {string} - Trimmed text
  */
-function trimMessage(text, maxLength = 15000) {
+function trimMessage(text, maxLength) {
   if (!text || text.length <= maxLength) return text || '';
   return text.substring(0, maxLength) + '...';
 }
@@ -235,7 +235,7 @@ CONVERSION METRICS:
               
               // Process each message with length limiting
               sampled.forEach(msg => {
-                messagesSummary += `${msg.isUser ? 'User: ' : 'Chatbot: '}${trimMessage(msg.text, 150)}\n`;
+                messagesSummary += `${msg.isUser ? 'User: ' : 'Chatbot: '}${trimMessage(msg.text, 1500)}\n`;
               });
               
               if (conv.messages.length > sampled.length) {
