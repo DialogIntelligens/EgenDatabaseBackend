@@ -37,6 +37,62 @@ function parseFormattedText(doc, text, options = {}) {
   // Regular expression to find text wrapped in double asterisks (**bold**)
   const boldRegex = /\*\*(.*?)\*\*/g;
   
+  // Special cases for lists with bold text at the beginning
+  // Match numbered patterns like "1. **text**", "1.  **text**", etc.
+  const numberedListWithBoldRegex = /^((?:\d+|[a-zA-Z])\.[ \t]*)\*\*(.*?)\*\*/;
+  // Match bullet patterns like "• **text**", "- **text**", "* **text**"
+  const bulletListWithBoldRegex = /^([•\-\*][ \t]+)\*\*(.*?)\*\*/;
+  
+  // Check for numbered lists first
+  const numberedMatch = text.match(numberedListWithBoldRegex);
+  // Then check for bullet lists
+  const bulletMatch = !numberedMatch ? text.match(bulletListWithBoldRegex) : null;
+  
+  // Handle any matched list format
+  if (numberedMatch || bulletMatch) {
+    const match = numberedMatch || bulletMatch;
+    const prefix = match[1];         // The list marker and spacing
+    const boldText = match[2];       // The bold text content
+    const restOfText = text.substring(match[0].length);
+    
+    // Output the list prefix with regular font
+    doc.font('Helvetica').text(prefix, {
+      ...options,
+      continued: true,
+      width: 500
+    });
+    
+    // Output the bold text
+    doc.font('Helvetica-Bold').text(boldText, {
+      ...options,
+      continued: restOfText.length > 0,
+      width: 500
+    });
+    
+    // Output any remaining text after the bold part
+    if (restOfText.length > 0) {
+      // Check if the rest of text has more bold formatting
+      if (restOfText.includes('**')) {
+        // Need to reset cursor position to continue on same line
+        const currentY = doc.y;
+        parseFormattedText(doc, restOfText, {
+          ...options,
+          continued: false,
+          width: 500
+        });
+      } else {
+        // Simple text, just output it
+        doc.font('Helvetica').text(restOfText, {
+          ...options,
+          continued: false,
+          width: 500
+        });
+      }
+    }
+    
+    return;
+  }
+  
   if (!text || !boldRegex.test(text)) {
     // If no bold formatting, just render the text normally with width constraint
     doc.text(text, { ...options, width: 500 });
@@ -498,7 +554,7 @@ async function addTextAnalysisSection(doc, textAnalysis) {
       if (sortedTopics.length === 0) {
         doc.fillColor('#666').fontSize(11).text('No topics with ratings or scores found.');
       } else {
-        sortedTopics.slice(0, 15).forEach(item => { // Limit rows displayed
+        sortedTopics.forEach(item => { // Display all topics
           const rowY = doc.y;
           
           // Display topic with total count in parentheses

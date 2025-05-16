@@ -595,24 +595,11 @@ export async function analyzeConversations(conversations, progressCallback = nul
   // --- Sort and select top correlations ---
   ngramCorrelations.sort((a, b) => b.correlation - a.correlation); // Sort desc
 
-    // Get meaningful number of correlations (at least 5 but not more than 15)
-    const minCorrelations = 5;
-    const maxCorrelations = 15;
-    
-    const positiveCount = ngramCorrelations.filter(c => c.correlation > 0).length;
-    const negativeCount = ngramCorrelations.filter(c => c.correlation < 0).length;
-    
-    const topPositiveCount = Math.min(maxCorrelations, Math.max(minCorrelations, positiveCount));
-    const topNegativeCount = Math.min(maxCorrelations, Math.max(minCorrelations, negativeCount));
-    
-    const topPositive = ngramCorrelations
-      .filter(c => c.correlation > 0)
-      .slice(0, topPositiveCount);
-      
-    const topNegative = ngramCorrelations
-      .filter(c => c.correlation < 0)
-      .sort((a, b) => a.correlation - b.correlation) // Sort ascending for negatives
-      .slice(0, topNegativeCount);
+  // Keep all meaningful correlations (threshold is already applied during processing)
+  const positiveCorrelations = ngramCorrelations.filter(c => c.correlation > 0);
+  const negativeCorrelations = ngramCorrelations
+    .filter(c => c.correlation < 0)
+    .sort((a, b) => a.correlation - b.correlation); // Sort ascending for negatives
 
   console.log("Analysis complete.");
 
@@ -620,8 +607,8 @@ export async function analyzeConversations(conversations, progressCallback = nul
     ratingScoreCorrelation: ratingScoreCorr,
     avgRatingPerTopic,
     avgScorePerTopic,
-    positiveCorrelations: topPositive,
-    negativeCorrelations: topNegative,
+    positiveCorrelations: positiveCorrelations,
+    negativeCorrelations: negativeCorrelations,
     analyzedDocumentsCount: processedDocs.length,
     totalNgramsFound: allTerms.length,
     ngramInfo: {
