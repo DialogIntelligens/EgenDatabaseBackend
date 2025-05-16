@@ -470,8 +470,8 @@ export async function analyzeConversations(conversations, progressCallback = nul
         Object.keys(doc).forEach(term => {
           if (term !== '__key') {
             terms.set(term, (terms.get(term) || 0) + 1);
-          }
-        });
+      }
+    });
       }
       
       // Small delay between batches
@@ -497,7 +497,7 @@ export async function analyzeConversations(conversations, progressCallback = nul
       .sort((a, b) => b[1] - a[1]) // Sort by frequency
       .slice(0, maxTermsToProcess)
       .map(([term]) => term);
-    
+
     console.log(`Processing ${termsToProcess.length} out of ${allTerms.length} total terms`);
 
     // Progress update - beginning correlation calculation
@@ -526,10 +526,10 @@ export async function analyzeConversations(conversations, progressCallback = nul
               if (!isNaN(tfidfValue)) {
                 termTfidfValues.push(tfidfValue);
           correspondingScores.push(doc.score);
-              }
+        }
             }
-          });
-
+      });
+      
           // Need at least 3 data points for meaningful correlation
           if (termTfidfValues.length > 2) {
             // Calculate Pearson correlation
@@ -547,12 +547,12 @@ export async function analyzeConversations(conversations, progressCallback = nul
         } catch (error) {
           console.error(`Error processing term "${term}":`, error);
           return null;
-        }
+      }
       }, 10, 20); // Process 10 terms at a time with 20ms delay
       
       // Add valid correlations
       ngramCorrelations = [...ngramCorrelations, ...batchResults.filter(r => r !== null)];
-      
+    
       // Report progress
       if (progressCallback) {
         const progressPercent = 35 + Math.floor((i + termBatchSize) / termsToProcess.length * 35);
