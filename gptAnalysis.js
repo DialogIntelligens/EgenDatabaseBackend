@@ -148,6 +148,11 @@ CONVERSION METRICS:
     if (textAnalysis) {
       prompt += `\nTEXT ANALYSIS:\n`;
       
+      // Add n-gram info if available
+      if (textAnalysis.ngramInfo) {
+        prompt += `N-gram analysis includes: ${textAnalysis.ngramInfo.description}\n`;
+      }
+      
       // Add topic data if available - limit to top 3 for brevity
       if (textAnalysis.avgRatingPerTopic && textAnalysis.avgRatingPerTopic.length > 0) {
         prompt += "Top Topics by Customer Rating (top 3):\n";
