@@ -38,8 +38,8 @@ function parseFormattedText(doc, text, options = {}) {
   const boldRegex = /\*\*(.*?)\*\*/g;
   
   if (!text || !boldRegex.test(text)) {
-    // If no bold formatting, just render the text normally
-    doc.text(text, options);
+    // If no bold formatting, just render the text normally with width constraint
+    doc.text(text, { ...options, width: 500 });
     return;
   }
   
@@ -63,6 +63,7 @@ function parseFormattedText(doc, text, options = {}) {
       doc.font('Helvetica').text(normalText, {
         ...options,
         continued: true,
+        width: 500,
         indent: startPosition === 0 ? (options.indent || 0) : 0
       });
     }
@@ -71,6 +72,7 @@ function parseFormattedText(doc, text, options = {}) {
     doc.font('Helvetica-Bold').text(boldText, {
       ...options,
       continued: true,
+      width: 500,
       indent: 0
     });
     
@@ -84,6 +86,7 @@ function parseFormattedText(doc, text, options = {}) {
     doc.font('Helvetica').text(remainingText, {
       ...options,
       continued: false,
+      width: 500,
       indent: 0
     });
   } else {
@@ -96,22 +99,25 @@ function parseFormattedText(doc, text, options = {}) {
 function renderGPTAnalysis(doc, analysisText) {
   if (!analysisText) return;
   
-  doc.fontSize(12).fillColor('#333');
+  // Set initial text properties
+  doc.fontSize(12)
+     .fillColor('#333')
+     .font('Helvetica');
   
   // Clean up newlines to ensure consistent formatting
   const cleanedText = analysisText
     .replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with just two
     .trim();
   
-  // Split into paragraphs, but preserve single line breaks within paragraph blocks
+  // Split into paragraphs, preserving single line breaks within paragraph blocks
   const paragraphs = cleanedText.split('\n\n');
   
   // Track if we're inside a section
   let currentSection = null;
   
   for (let i = 0; i < paragraphs.length; i++) {
-    const paragraph = paragraphs[i];
-    if (paragraph.trim() === '') continue;
+    const paragraph = paragraphs[i].trim();
+    if (paragraph === '') continue;
     
     // Check if paragraph starts with a bold header (section title)
     const headerMatch = paragraph.match(/^\s*\*\*(.*?)\*\*\s*(.*)$/s);
@@ -129,7 +135,12 @@ function renderGPTAnalysis(doc, analysisText) {
       // Print the bold header in slightly larger font
       doc.font('Helvetica-Bold')
          .fontSize(14)
-         .text(headerText, { continued: false });
+         .text(headerText, {
+           continued: false,
+           width: 500,
+           align: 'left',
+           lineGap: 4
+         });
       
       // Save current section
       currentSection = headerText;
@@ -141,22 +152,36 @@ function renderGPTAnalysis(doc, analysisText) {
         
         // Process remaining text which may contain additional bold formatting
         if (remainingText.includes('**')) {
-          parseFormattedText(doc, remainingText, { align: 'left', lineGap: 2 });
+          parseFormattedText(doc, remainingText, {
+            align: 'left',
+            lineGap: 4,
+            width: 500
+          });
         } else {
-          doc.font('Helvetica').text(remainingText, { align: 'left', lineGap: 2 });
+          doc.font('Helvetica').text(remainingText, {
+            align: 'left',
+            lineGap: 4,
+            width: 500
+          });
         }
       }
     } else {
       // Regular paragraph - maintain consistent indentation under sections
       if (i > 0 && !paragraph.match(/^\s*\*\*/)) {
-        // Only move down a little if we're continuing in the same section
-        doc.moveDown(0.5);
+        doc.moveDown(0.75);
       }
       
       // Process for any bold text within
-      parseFormattedText(doc, paragraph, { align: 'left', lineGap: 2 });
+      parseFormattedText(doc, paragraph, {
+        align: 'left',
+        lineGap: 4,
+        width: 500
+      });
     }
   }
+  
+  // Add extra space at the end of the analysis
+  doc.moveDown(2);
 }
 
 // Function to generate a PDF report based on statistics data
@@ -499,7 +524,7 @@ async function addTextAnalysisSection(doc, textAnalysis) {
     doc.fillColor('#333').fontSize(14).text('N-Gram Score Correlation (Pearson r)', { underline: true });
     doc.moveDown(0.5);
     doc.fillColor('#666').fontSize(11).text(
-        `Based on TF-IDF values from ${textAnalysis.analyzedDocumentsCount} conversations. Top ${textAnalysis.positiveCorrelations?.length} positive and ${textAnalysis.negativeCorrelations?.length} negative shown.`
+        `Based on TF-IDF values from ${textAnalysis.analyzedDocumentsCount} conversations. ${textAnalysis.ngramInfo?.description || 'Analyzing word patterns'} with top ${textAnalysis.positiveCorrelations?.length} positive and ${textAnalysis.negativeCorrelations?.length} negative correlations shown.`
     );
     doc.moveDown();
 

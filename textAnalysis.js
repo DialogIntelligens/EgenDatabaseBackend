@@ -87,6 +87,27 @@ function generateNgrams(text, n) {
   }
 }
 
+// Helper to generate n-grams for multiple n values
+function generateMultipleNgrams(text, maxN = 3) {
+  if (!text || typeof text !== 'string') return [];
+  
+  let allNgrams = [];
+  
+  // Generate n-grams for n=1 to maxN
+  for (let n = 1; n <= maxN; n++) {
+    const ngrams = generateNgrams(text, n);
+    
+    // For n > 1, add a prefix to distinguish different n-gram lengths
+    if (n > 1) {
+      allNgrams = [...allNgrams, ...ngrams.map(gram => `${n}gram:${gram}`)];
+    } else {
+      allNgrams = [...allNgrams, ...ngrams]; // No prefix for unigrams
+    }
+  }
+  
+  return allNgrams;
+}
+
 /**
  * Sleep function to pause execution
  * @param {number} ms - Milliseconds to sleep
@@ -172,7 +193,12 @@ async function createTfIdfModel(docs, progressCallback = null) {
       const docIndex = tfidf.documents.length;
       
       try {
-        tfidf.addDocument(doc.text || doc.userText || "", { __key: doc.id });
+        // Generate n-grams (1 to 3) from document text
+        const text = doc.text || doc.userText || "";
+        const ngrams = generateMultipleNgrams(text, 3);
+        
+        // Add document with n-grams instead of raw text
+        tfidf.addDocument(ngrams, { __key: doc.id });
         docMapping.set(doc.id, docIndex);
       } catch (error) {
         console.error(`Error adding document ${doc.id} to TF-IDF:`, error);
@@ -597,7 +623,11 @@ export async function analyzeConversations(conversations, progressCallback = nul
     positiveCorrelations: topPositive,
     negativeCorrelations: topNegative,
     analyzedDocumentsCount: processedDocs.length,
-    totalNgramsFound: allTerms.length
+    totalNgramsFound: allTerms.length,
+    ngramInfo: {
+      maxSize: 3, // Maximum n-gram size
+      description: "Includes unigrams, bigrams, and trigrams (n-grams with n=1, n=2, and n=3)"
+    }
   };
   } catch (error) {
     console.error("Fatal error in text analysis:", error);
@@ -607,7 +637,11 @@ export async function analyzeConversations(conversations, progressCallback = nul
       avgRatingPerTopic: [],
       avgScorePerTopic: [],
       positiveCorrelations: [],
-      negativeCorrelations: []
+      negativeCorrelations: [],
+      ngramInfo: {
+        maxSize: 3, // Maximum n-gram size
+        description: "Includes unigrams, bigrams, and trigrams (n-grams with n=1, n=2, and n=3)"
+      }
     };
   }
 } 
