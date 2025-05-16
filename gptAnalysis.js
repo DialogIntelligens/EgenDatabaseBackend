@@ -163,7 +163,7 @@ CONVERSION METRICS:
       
       // Add positive correlations - include all available
       if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.length > 0) {
-        prompt += "\nPositively Correlated N-grams (terms associated with higher scores):\n";
+        prompt += "\nPositively Correlated N-grams (terms associated with higher scores, max 15 strongest):\n";
         textAnalysis.positiveCorrelations.forEach((item, idx) => {
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
@@ -171,7 +171,7 @@ CONVERSION METRICS:
       
       // Add negative correlations - include all available
       if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.length > 0) {
-        prompt += "\nNegatively Correlated N-grams (terms associated with lower scores):\n";
+        prompt += "\nNegatively Correlated N-grams (terms associated with lower scores, max 15 strongest):\n";
         textAnalysis.negativeCorrelations.forEach((item, idx) => {
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
