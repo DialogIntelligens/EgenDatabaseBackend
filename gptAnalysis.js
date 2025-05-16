@@ -153,26 +153,26 @@ CONVERSION METRICS:
         prompt += `N-gram analysis includes: ${textAnalysis.ngramInfo.description}\n`;
       }
       
-      // Add topic data if available - limit to top 3 for brevity
+      // Add topic data if available - include all available topics
       if (textAnalysis.avgRatingPerTopic && textAnalysis.avgRatingPerTopic.length > 0) {
-        prompt += "Top Topics by Customer Rating (top 3):\n";
-        textAnalysis.avgRatingPerTopic.slice(0, 3).forEach(topic => {
+        prompt += "Topics by Customer Rating:\n";
+        textAnalysis.avgRatingPerTopic.forEach(topic => {
           prompt += `- ${topic.topic}: ${topic.averageRating ? topic.averageRating.toFixed(2) : 'N/A'} (${topic.count} ratings)\n`;
         });
       }
       
-      // Add positive correlations - limit to top 3
+      // Add positive correlations - include all available
       if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.length > 0) {
-        prompt += "\nTop Positively Correlated N-grams (terms associated with higher scores, top 3):\n";
-        textAnalysis.positiveCorrelations.slice(0, 3).forEach((item, idx) => {
+        prompt += "\nPositively Correlated N-grams (terms associated with higher scores):\n";
+        textAnalysis.positiveCorrelations.forEach((item, idx) => {
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
       }
       
-      // Add negative correlations - limit to top 3
+      // Add negative correlations - include all available
       if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.length > 0) {
-        prompt += "\nTop Negatively Correlated N-grams (terms associated with lower scores, top 3):\n";
-        textAnalysis.negativeCorrelations.slice(0, 3).forEach((item, idx) => {
+        prompt += "\nNegatively Correlated N-grams (terms associated with lower scores):\n";
+        textAnalysis.negativeCorrelations.forEach((item, idx) => {
           prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
         });
       }
@@ -268,6 +268,7 @@ CONVERSION METRICS:
 3. Topics that tend to result in higher or lower user satisfaction
 4. Any notable tone, language, or communication style observations
 Do not write anything that is not directly supported by the data or only has low corelation.
+Do not refer to the conversations by their # number, but by giving direct quotes (the user doesn't know what conersation number it is and hasn't read the conversations).
 `;
     }
 
@@ -302,7 +303,7 @@ Do not write anything that is not directly supported by the data or only has low
           messages: [
             {
               role: "system",
-              content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report with the following formatting guidelines:\n\n1. Use **Bold Headings** as section titles, each on its own line with no text on the same line\n2. After each section header, add a detailed paragraph with analysis for that section\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. Put one empty line between sections\n5. Keep your analysis evidence-based and focused on actionable insights\n6. Use a maximum of 3-4 distinct sections in your report (Executive Summary, User Engagement, etc.)"
+              content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report with the following formatting guidelines:\n\n1. Use **Bold Headings** as section titles, each on its own line with no text on the same line\n2. After each section header, add a detailed paragraph with analysis for that section\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. When creating numbered lists and using bold, always add a space between the number and the bold marker, like this: '1. **Bold text**' (not '1.**Bold text**')\n5. Put one empty line between sections\n6. Keep your analysis evidence-based and focused on actionable insights\n7. Use a maximum of 3-4 distinct sections in your report (Executive Summary, User Engagement, etc.)"
             },
             {
               role: "user",
