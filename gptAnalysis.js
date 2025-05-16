@@ -185,6 +185,8 @@ CONVERSION METRICS:
       3. Data-driven insights for improvement
       4. Any notable patterns or trends that should be addressed
       Do not write anything that is not directly supported by the data or only has low corelation.
+      
+      Be aware that the text analysis has only been based on user messages, not the chatbot messages.
       `;
     }
     
