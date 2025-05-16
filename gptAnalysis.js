@@ -53,7 +53,7 @@ function trimMessage(text, maxLength = 150) {
  * @param {Object} statisticsData - The statistics data for analysis
  * @param {string} timePeriod - The time period for the report
  * @param {Array} conversationContents - Array of conversation content for deeper analysis
- * @param {number} maxConversations - Maximum number of conversations to include (0-20, 0 means skip conversation analysis)
+ * @param {number} maxConversations - Maximum number of conversations to include (10-100)
  * @param {Function} progressCallback - Optional callback for reporting progress
  * @returns {Promise<string>} - The GPT analysis text
  */
@@ -184,8 +184,7 @@ CONVERSION METRICS:
     }
     
     // Add conversation content if available with optimized sampling
-    // Only proceed if maxConversations > 0 and we have conversations
-    if (maxConversations > 0 && conversationContents && conversationContents.length > 0) {
+    if (conversationContents && conversationContents.length > 0) {
       // Progress update - conversation processing
       if (progressCallback) {
         progressCallback(`Processing ${Math.min(maxConversations, conversationContents.length)} conversations for analysis`, 30);
@@ -194,8 +193,11 @@ CONVERSION METRICS:
       // Calculate how many conversations to include based on total size
       let maxConvsToInclude = Math.min(maxConversations, conversationContents.length);
       
-      // Ensure we stay within our context size limit (max 20 conversations)
-      maxConvsToInclude = Math.min(maxConvsToInclude, 20);
+      // For larger datasets, use a more aggressive sampling strategy
+      if (conversationContents.length > 50) {
+        // For very large datasets, reduce max conversations
+        maxConvsToInclude = Math.min(maxConvsToInclude, 15);
+      }
       
       prompt += `\nCONVERSATION SAMPLES:\n`;
       prompt += `I am providing ${maxConvsToInclude} conversation samples out of ${conversationContents.length} total conversations for you to analyze deeper patterns and provide insights. Refer to these conversations by giving direct quotes, because the user doesn't know what conersation number it is and hasn't read the conversations. Always answer in danish.\n`;
@@ -280,7 +282,7 @@ Do not write anything that is not directly supported by the data or only has low
 
     // Calculate a safe token limit based on data size
     // Start with a base value and reduce based on how much data we're analyzing
-    let maxCompletionTokens = 150000;
+    let maxCompletionTokens = 1500;
     if (conversationContents.length > 50) {
       // For large datasets, reduce token count to leave more room for input
       maxCompletionTokens = 1200;
