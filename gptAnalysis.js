@@ -43,7 +43,7 @@ async function processWithThrottling(items, processFn, batchSize = 5, delayMs = 
  * @param {number} maxLength - Maximum length
  * @returns {string} - Trimmed text
  */
-function trimMessage(text, maxLength = 1500) {
+function trimMessage(text, maxLength = 15000) {
   if (!text || text.length <= maxLength) return text || '';
   return text.substring(0, maxLength) + '...';
 }
@@ -197,12 +197,6 @@ CONVERSION METRICS:
 
       // Calculate how many conversations to include based on total size
       let maxConvsToInclude = Math.min(maxConversations, conversationContents.length);
-      
-      // For larger datasets, use a more aggressive sampling strategy
-      if (conversationContents.length > 50) {
-        // For very large datasets, reduce max conversations
-        maxConvsToInclude = Math.min(maxConvsToInclude, 15);
-      }
       
       prompt += `\nCONVERSATION SAMPLES:\n`;
       prompt += `I am providing ${maxConvsToInclude} conversation samples out of ${conversationContents.length} total conversations for you to analyze deeper patterns and provide insights. Refer to these conversations by giving direct quotes, because the user doesn't know what conersation number it is and hasn't read the conversations. Always answer in danish.\n`;
