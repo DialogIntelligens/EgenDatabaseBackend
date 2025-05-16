@@ -109,7 +109,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     let prompt = `Please analyze the following chatbot statistics data for ${timeFrame} and provide a concise executive summary with key insights and recommendations in 3-4 paragraphs.
 
     Your job is primarely to provide insight on how the buisness itself can be proven, not how the chatbot can be improved unless there is something obvious realted to the chatbot.
-    Generaly you should lean more towards giving insights rather than giving concrete advice or recommendations, as you do not have suffiecient information about the buisnessto give good advice.
+    Generaly you should lean more towards giving insights rather than giving concrete advice or recommendations, as you do not have suffiecient information about the buisness to give good advice.
     The reader of the report is a business owner who/employ whos website the chatbot is integrated on (the chatbot was made by Dialog Intelligens an external company).
     In doing this consider that the data you have is from a customer service chatbot that is integrated on the website.
     Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
@@ -121,6 +121,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     - You can use markdown-style bold formatting by enclosing text in double asterisks (e.g., **important text**).
     - Use bold formatting for headings, key metrics, and important insights to improve readability.
     - Don't overuse bold - only highlight the most important parts.
+    - Do not use bold in your lists.
 
     Context about the data you are about to see:
     - The User ratings are based on a scale of 1-5, they come from the users of the chatbot who get the option to rate a conversation after a given time of inactivity in the chat.
@@ -133,6 +134,8 @@ STATISTICS SUMMARY:
 - Total User Ratings: ${totalCustomerRatings}
 - ${thumbsRating ? 'Thumbs Up Percentage' : 'Average Rating'}: ${averageCustomerRating}
 ${csatScore ? `- Customer Satisfaction (CSAT): ${csatScore}` : ''}
+
+Do not mention the amount of people that have rated the chatbot unless very relevant, only mention the average rating.
 `;
 
     // Add conversion statistics if applicable
@@ -164,6 +167,10 @@ CONVERSION METRICS:
         const percentage = ((count / totalCount) * 100).toFixed(1);
         prompt += `- ${topic}: ${percentage}% (${count} conversations)\n`;
       });
+
+      prompt += `
+      Give the most attention to the topics that are the most frequent.
+      `;
     }
 
     // Add text analysis data if available
