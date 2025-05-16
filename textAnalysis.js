@@ -595,11 +595,17 @@ export async function analyzeConversations(conversations, progressCallback = nul
   // --- Sort and select top correlations ---
   ngramCorrelations.sort((a, b) => b.correlation - a.correlation); // Sort desc
 
-  // Keep all meaningful correlations (threshold is already applied during processing)
-  const positiveCorrelations = ngramCorrelations.filter(c => c.correlation > 0);
+  // Limit to maximum 15 n-grams per category while keeping the strongest correlations
+  const maxCorrelationsPerCategory = 15;
+  
+  const positiveCorrelations = ngramCorrelations
+    .filter(c => c.correlation > 0)
+    .slice(0, maxCorrelationsPerCategory);
+    
   const negativeCorrelations = ngramCorrelations
     .filter(c => c.correlation < 0)
-    .sort((a, b) => a.correlation - b.correlation); // Sort ascending for negatives
+    .sort((a, b) => a.correlation - b.correlation) // Sort ascending for negatives
+    .slice(0, maxCorrelationsPerCategory);
 
   console.log("Analysis complete.");
 
