@@ -100,7 +100,9 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
       nonChatbotConversionRate,
       showPurchase,
       companyInfo,
-      textAnalysis
+      textAnalysis,
+      emneData,
+      topicDistribution
     } = statisticsData;
 
     // Construct prompt with all available data
@@ -142,6 +144,26 @@ CONVERSION METRICS:
 - Chatbot Conversion Rate: ${chatbotConversionRate}%
 - Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%
 `;
+    }
+
+    // Add topic distribution data if available
+    if (emneData && emneData.labels && emneData.labels.length > 0) {
+      prompt += `\nTOPIC DISTRIBUTION:\n`;
+      // emneData contains processed chart data with percentages
+      for (let i = 0; i < emneData.labels.length; i++) {
+        const label = emneData.labels[i];
+        const percentage = emneData.datasets[0].data[i];
+        prompt += `- ${label}: ${percentage}%\n`;
+      }
+    } else if (topicDistribution && topicDistribution.length > 0) {
+      // Fallback to raw topic count data if chart data isn't available
+      prompt += `\nTOPIC DISTRIBUTION:\n`;
+      
+      const totalCount = topicDistribution.reduce((sum, [_, count]) => sum + count, 0);
+      topicDistribution.forEach(([topic, count]) => {
+        const percentage = ((count / totalCount) * 100).toFixed(1);
+        prompt += `- ${topic}: ${percentage}% (${count} conversations)\n`;
+      });
     }
 
     // Add text analysis data if available

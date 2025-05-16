@@ -37,47 +37,18 @@ function parseFormattedText(doc, text, options = {}) {
   // Regular expression to find text wrapped in double asterisks (**bold**)
   const boldRegex = /\*\*(.*?)\*\*/g;
   
-  // Special case for numbered lists with bold text at the beginning
-  // Match patterns like "1. **text**", "1.  **text**", etc.
+  // Special cases for lists with bold text at the beginning
+  // Match numbered patterns like "1. **text**", "1.  **text**", etc.
   const numberedListWithBoldRegex = /^((?:\d+|[a-zA-Z])\.[ \t]*)\*\*(.*?)\*\*/;
-  const numberedMatch = text.match(numberedListWithBoldRegex);
-  
-  // Special case for bullet lists with bold text at the beginning
-  // Match patterns like "• **text**", "- **text**", "* **text**"
+  // Match bullet patterns like "• **text**", "- **text**", "* **text**"
   const bulletListWithBoldRegex = /^([•\-\*][ \t]+)\*\*(.*?)\*\*/;
+  
+  // Check for numbered lists first
+  const numberedMatch = text.match(numberedListWithBoldRegex);
+  // Then check for bullet lists
   const bulletMatch = !numberedMatch ? text.match(bulletListWithBoldRegex) : null;
   
-  // Special case for bold text immediately followed by a numbered list or bullet list
-  // Match patterns like "**text** 1. list item" or "**text** - bullet item"
-  const boldFollowedByListRegex = /^\*\*(.*?)\*\*\s*((?:\d+\.|[•\-\*]).*)/;
-  const boldFollowedByListMatch = text.match(boldFollowedByListRegex);
-  
-  // Handle the special case of bold text followed by a list (numbered or bullet)
-  if (boldFollowedByListMatch) {
-    const boldText = boldFollowedByListMatch[1];
-    const listText = boldFollowedByListMatch[2];
-    
-    // Output the bold text
-    doc.font('Helvetica-Bold').text(boldText, {
-      ...options,
-      continued: false,
-      width: 500
-    });
-    
-    // Add some spacing before the list
-    doc.moveDown(0.5);
-    
-    // Output the list with normal font
-    doc.font('Helvetica').text(listText, {
-      ...options,
-      continued: false,
-      width: 500
-    });
-    
-    return;
-  }
-  
-  // Handle any matched list format with bold text
+  // Handle any matched list format
   if (numberedMatch || bulletMatch) {
     const match = numberedMatch || bulletMatch;
     const prefix = match[1];         // The list marker and spacing
@@ -167,7 +138,16 @@ function parseFormattedText(doc, text, options = {}) {
   
   // Print any remaining text after the last bold part
   if (startPosition < text.length) {
-    const remainingText = text.substring(startPosition);
+    let remainingText = text.substring(startPosition);
+    
+    // Detect if remaining text starts with a list marker (numbered or bullet)
+    const listAfterBoldRegex = /^[ \t]*(?:\d+\.|[a-zA-Z]\.|[•\-\*])[ \t]+/;
+    if (listAfterBoldRegex.test(remainingText)) {
+      // End the current bold segment and move to a new line for the list
+      doc.text('', { continued: false });
+      remainingText = remainingText.trimStart();
+    }
+    
     doc.font('Helvetica').text(remainingText, {
       ...options,
       continued: false,
