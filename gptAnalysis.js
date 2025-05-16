@@ -43,7 +43,7 @@ async function processWithThrottling(items, processFn, batchSize = 5, delayMs = 
  * @param {number} maxLength - Maximum length
  * @returns {string} - Trimmed text
  */
-function trimMessage(text, maxLength = 150) {
+function trimMessage(text, maxLength = 1500) {
   if (!text || text.length <= maxLength) return text || '';
   return text.substring(0, maxLength) + '...';
 }
@@ -282,7 +282,7 @@ Do not write anything that is not directly supported by the data or only has low
 
     // Calculate a safe token limit based on data size
     // Start with a base value and reduce based on how much data we're analyzing
-    let maxCompletionTokens = 30000;
+    let maxCompletionTokens = 100000;
 
     // Call OpenAI API for analysis with error handling and retries
     let attempt = 0;
