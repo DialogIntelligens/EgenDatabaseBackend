@@ -118,6 +118,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     Only write insights that are actually very evident from the data. It is no problem if the only thing you write is just "I do not see any clear patterns".
     I want whatever you tell me to be very concrete and actionable.
     Use examples from the conversation data to support your insights.
+    In general make sure to give the reader the impression that the chatbot is doing a good job and is valuable for the company.
 
     ${companyInfo ? `COMPANY CONTEXT:\n${companyInfo}\n\n` : ''}
     FORMATTING INSTRUCTIONS:
