@@ -1,12 +1,9 @@
 import OpenAI from 'openai';
-import MarkdownIt from 'markdown-it';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-
-const md = new MarkdownIt({ html: false, linkify: true, typographer: true });
 
 /**
  * Simple delay function for throttling
@@ -396,79 +393,4 @@ Do not refer to the conversations by their # number, but by giving direct quotes
     
     return "GPT analysis could not be generated due to an error. Please check the statistics data for more information.";
   }
-}
-
-function renderMarkdown(doc, markdown, baseFontSize = 12) {
-  const tokens = md.parse(markdown, {});
-  const stack = [];                               // heading level stack for list indent
-
-  tokens.forEach(tok => {
-    switch (tok.type) {
-      case 'heading_open': {
-        const level = parseInt(tok.tag.replace('h', ''), 10);
-        doc.moveDown(level === 1 ? 1.5 : 1);
-        doc.font('Helvetica-Bold').fontSize(14 + (6 - level));
-        stack.push(level);
-        break;
-      }
-      case 'heading_close':
-        doc.moveDown(0.5);
-        doc.font('Helvetica').fontSize(baseFontSize);
-        stack.pop();
-        break;
-
-      case 'paragraph_open':
-        doc.moveDown(0.5);
-        break;
-      case 'paragraph_close':
-        doc.moveDown(0.5);
-        break;
-
-      case 'inline':
-        tok.children.forEach(inl => {
-          if (inl.type === 'text') {
-            doc.text(inl.content, { continued: true, width: 500 });
-          } else if (inl.type === 'strong_open') {
-            doc.font('Helvetica-Bold');
-          } else if (inl.type === 'strong_close') {
-            doc.font('Helvetica');
-          } else if (inl.type === 'softbreak') {
-            doc.text('\n', { continued: true });
-          }
-        });
-        doc.text('', { continued: false });
-        break;
-
-      /* Ordered- / bullet list */
-      case 'bullet_list_open':
-        stack.push('ul');
-        break;
-      case 'bullet_list_close':
-        stack.pop();
-        break;
-      case 'ordered_list_open':
-        stack.push({ type: 'ol', order: tok.attrs?.[0]?.[1] || 1 });
-        break;
-      case 'ordered_list_close':
-        stack.pop();
-        break;
-      case 'list_item_open': {
-        const indent = 15 * stack.filter(x => x).length;
-        doc.moveDown(0.2).text('', { continued: false });
-        doc.x += indent;
-
-        const parent = stack[stack.length - 1];
-        if (parent === 'ul') doc.text('• ', { continued: true });
-        else if (typeof parent === 'object' && parent.type === 'ol') {
-          doc.text(`${parent.order}. `, { continued: true });
-          parent.order += 1;
-        }
-        break;
-      }
-      case 'list_item_close':
-        doc.x = 50;                // reset left margin
-        break;
-    }
-  });
-  doc.moveDown();                  // final spacing
 } 
