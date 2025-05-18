@@ -391,7 +391,7 @@ export async function generateStatisticsReport(data, timePeriod) {
         doc.moveDown(2);
         
         // Use the improved rendering function
-        renderGPTAnalysis(doc, data.gptAnalysis);
+        renderMarkdownToPdf(doc, data.gptAnalysis);
         
         // Add page break before standard report
         doc.addPage();
