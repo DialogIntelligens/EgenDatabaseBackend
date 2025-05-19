@@ -1004,7 +1004,10 @@ app.post('/register', async (req, res) => {
     pinecone_indexes,
     show_purchase,
     chatbot_filepath,
-   is_admin
+    is_admin,
+    is_limited_admin,
+    accessible_chatbot_ids,
+    accessible_user_ids
   } = req.body;
 
   // Basic validation: Ensure chatbot_filepath is an array if provided
@@ -1028,9 +1031,12 @@ app.post('/register', async (req, res) => {
          pinecone_indexes,
          show_purchase,
          chatbot_filepath,
-        is_admin
+         is_admin,
+         is_limited_admin,
+         accessible_chatbot_ids,
+         accessible_user_ids
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
 
       [
@@ -1041,7 +1047,10 @@ app.post('/register', async (req, res) => {
         pineconeIndexesJSON,
         show_purchase,
         chatbot_filepath || [],
-        is_admin
+        is_admin,
+        is_limited_admin,
+        accessible_chatbot_ids || [],
+        accessible_user_ids || []
       ]
     );
 
@@ -1067,10 +1076,17 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
 
-    // Sign the JWT, including isAdmin
-    const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, SECRET_KEY, { expiresIn: '4h' });
+    // Sign the JWT, including limited admin details
+    const tokenPayload = {
+      userId: user.id,
+      isAdmin: user.is_admin,
+      isLimitedAdmin: user.is_limited_admin,
+      accessibleChatbotIds: user.accessible_chatbot_ids || [],
+      accessibleUserIds: user.accessible_user_ids || []
+    };
+    const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '4h' });
 
-    // Start with the current user's chatbot_ids
+    // Determine chatbot access list based on role
     let chatbotIds = user.chatbot_ids || [];
     if (typeof chatbotIds === 'string') {
       chatbotIds = JSON.parse(chatbotIds);
@@ -1088,6 +1104,9 @@ app.post('/login', async (req, res) => {
       }
       const uniqueIds = [...new Set(mergedIds)];
       chatbotIds = uniqueIds;
+    } else if (user.is_limited_admin) {
+      // Limited admin: use the accessible_chatbot_ids list
+      chatbotIds = user.accessible_chatbot_ids || [];
     }
 
     return res.json({
@@ -1096,6 +1115,9 @@ app.post('/login', async (req, res) => {
       show_purchase: user.show_purchase,
       chatbot_filepath: user.chatbot_filepath || [],
       is_admin: user.is_admin,
+      is_limited_admin: user.is_limited_admin,
+      accessible_chatbot_ids: user.accessible_chatbot_ids || [],
+      accessible_user_ids: user.accessible_user_ids || [],
       thumbs_rating: user.thumbs_rating || false,
       company_info: user.company_info || ''
     });
@@ -1108,7 +1130,7 @@ app.post('/login', async (req, res) => {
 
 app.delete('/conversations/:id', authenticateToken, async (req, res) => {
   // Only admins can delete single conversations
-  if (!req.user.isAdmin) {
+  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
@@ -2047,7 +2069,7 @@ app.use((err, req, res, next) => {
 // Add this endpoint to delete a user
 app.delete('/users/:id', authenticateToken, async (req, res) => {
   // Only admins can delete users
-  if (!req.user.isAdmin) {
+  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
@@ -2106,20 +2128,31 @@ app.delete('/users/:id', authenticateToken, async (req, res) => {
 });
 
 app.get('/users', authenticateToken, async (req, res) => {
-  // Only admins can list all users
-  if (!req.user.isAdmin) {
+  // Require full or limited admin
+  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
   try {
-    // Return all needed fields, including the chatbot_filepath array
-    const result = await pool.query(`
-      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
+    // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
+    let queryText = `
+      SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
              pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
-      FROM users
-      ORDER BY id DESC
-    `);
-    // Ensure chatbot_filepath is always an array in the response
+      FROM users`;
+    let queryParams = [];
+
+    if (req.user.isLimitedAdmin) {
+      const ids = req.user.accessibleUserIds || [];
+      if (ids.length === 0) {
+        return res.json([]);
+      }
+      queryText += ' WHERE id = ANY($1)';
+      queryParams.push(ids);
+    }
+
+    queryText += ' ORDER BY id DESC';
+
+    const result = await pool.query(queryText, queryParams);
     const users = result.rows.map(user => ({
       ...user,
       chatbot_filepath: user.chatbot_filepath || []
@@ -2132,13 +2165,13 @@ app.get('/users', authenticateToken, async (req, res) => {
 });
 
 app.get('/user/:id', authenticateToken, async (req, res) => {
-  // Only admins can access user details
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  const userId = req.params.id;
+
+  // Access control
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(parseInt(userId))))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have access to this user' });
   }
 
-  const userId = req.params.id;
-  
   try {
     // Get full user details except password, including chatbot_filepath array
     const result = await pool.query(`
@@ -2177,12 +2210,11 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
 
 // Add this endpoint to update a user's chatbot IDs and filepaths
 app.patch('/users/:id', authenticateToken, async (req, res) => {
-  // Only admins can update users
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user' });
   }
 
-  const { id } = req.params;
   const { chatbot_ids, chatbot_filepath } = req.body;
   
   // Validate input
@@ -2195,7 +2227,7 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
   
   try {
     // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -2218,7 +2250,7 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
     }
     
     // Add the ID as the last parameter
-    queryParams.push(id);
+    queryParams.push(targetId);
     
     // Execute the update
     const updateQuery = `
@@ -2298,12 +2330,11 @@ app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
 
 // Add this endpoint to reset a user's password (admin only)
 app.post('/reset-password/:id', authenticateToken, async (req, res) => {
-  // Only admins can reset passwords
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to reset this user\'s password' });
   }
 
-  const { id } = req.params;
   const { newPassword } = req.body;
   
   // Validate input
@@ -2313,7 +2344,7 @@ app.post('/reset-password/:id', authenticateToken, async (req, res) => {
   
   try {
     // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -2324,7 +2355,7 @@ app.post('/reset-password/:id', authenticateToken, async (req, res) => {
     // Update the user's password
     const result = await pool.query(
       'UPDATE users SET password = $1 WHERE id = $2 RETURNING id, username',
-      [hashedPassword, id]
+      [hashedPassword, targetId]
     );
     
     res.status(200).json({ 
