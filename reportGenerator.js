@@ -17,8 +17,21 @@ const mdParser = new MarkdownIt({
 function renderMarkdownToPdf(doc, markdownText) {
   if (!markdownText) return;
 
-  const tokens = mdParser.parse(markdownText, {});
+  // Preprocess text to convert legacy format to proper markdown
+  // Convert **Heading** at the beginning of lines to # Heading
+  let preprocessedText = markdownText.replace(/^\s*\*\*(.*?)\*\*\s*$/mg, '# $1');
+  
+  // Convert numbered lists like "1. **Something**" to proper markdown format
+  preprocessedText = preprocessedText.replace(/^\s*(\d+)\.\s+\*\*(.*?)\*\*(.*)$/mg, '$1. $2$3');
+  
+  // Ensure blank lines before and after headings and lists
+  preprocessedText = preprocessedText.replace(/^#/mg, '\n#');
+  preprocessedText = preprocessedText.replace(/^(\d+)\.(\s)/mg, '\n$1.$2');
+  
+  // Parse the preprocessed text with markdown-it
+  const tokens = mdParser.parse(preprocessedText, {});
   const listStack = [];// Track ordered/bullet lists
+  let lastTokenType = null; // Track the last token type
 
   // Helper to get current list prefix
   const getListPrefix = () => {
@@ -35,7 +48,12 @@ function renderMarkdownToPdf(doc, markdownText) {
       case 'heading_open': {
         const level = Number(tok.tag.replace('h', ''));
         const sizeMap = { 1: 18, 2: 16, 3: 14, 4: 13, 5: 12, 6: 12 };
-        doc.moveDown( level === 1 ? 1 : 0.8 );
+        
+        // Add extra space before headings (except first heading)
+        if (lastTokenType !== null) {
+          doc.moveDown(1.5);
+        }
+        
         doc.font('Helvetica-Bold').fontSize(sizeMap[level] || 14);
         break;
       }
@@ -44,7 +62,9 @@ function renderMarkdownToPdf(doc, markdownText) {
         break;
       }
       case 'paragraph_open': {
-        doc.moveDown(0.5);
+        if (lastTokenType !== 'list_item_close') {
+          doc.moveDown(0.5);
+        }
         doc.font('Helvetica').fontSize(12);
         break;
       }
@@ -53,59 +73,88 @@ function renderMarkdownToPdf(doc, markdownText) {
         break;
       }
       case 'bullet_list_open': {
+        doc.moveDown(0.5);
         listStack.push({ type: 'bullet' });
         break;
       }
       case 'bullet_list_close': {
         listStack.pop();
-        doc.moveDown(0.3);
+        doc.moveDown(0.5);
         break;
       }
       case 'ordered_list_open': {
+        doc.moveDown(0.5);
         const start = parseInt(tok.attrGet('start') || '1', 10);
         listStack.push({ type: 'ordered', index: start });
         break;
       }
       case 'ordered_list_close': {
         listStack.pop();
-        doc.moveDown(0.3);
+        doc.moveDown(0.5);
         break;
       }
       case 'list_item_open': {
-        doc.moveDown(0.2);
-        doc.text(getListPrefix(), { continued: true });
+        doc.font('Helvetica').fontSize(12);
+        const prefix = getListPrefix();
+        // First create the bullet/number with consistent width
+        doc.text(prefix, { continued: true, width: 20, indent: 20 });
         break;
       }
       case 'list_item_close': {
-        doc.text(''); // finish the line
+        // doc.text(''); // finish the line
         break;
       }
       case 'inline': {
         // Render inline children – manage bold
         let bold = false;
+        let textContents = '';
+        let segments = [];
+        
+        // First gather all text segments with their formatting
         tok.children.forEach(child => {
           if (child.type === 'strong_open') {
+            if (textContents) {
+              segments.push({ text: textContents, bold: bold });
+              textContents = '';
+            }
             bold = true;
-            doc.font('Helvetica-Bold');
           } else if (child.type === 'strong_close') {
+            if (textContents) {
+              segments.push({ text: textContents, bold: bold });
+              textContents = '';
+            }
             bold = false;
-            doc.font('Helvetica');
-          } else if (child.type === 'softbreak' || child.type === 'hardbreak') {
-            doc.text('\n');
           } else if (child.type === 'text') {
-            doc.text(child.content, { continued: true });
+            textContents += child.content;
           }
         });
-        doc.text(''); // end line
-        // Reset to normal font if we ended bolded
-        if (bold) {
-          doc.font('Helvetica');
+        
+        // Add any remaining text
+        if (textContents) {
+          segments.push({ text: textContents, bold: bold });
         }
+        
+        // Now render all segments
+        segments.forEach((segment, index) => {
+          doc.font(segment.bold ? 'Helvetica-Bold' : 'Helvetica');
+          doc.text(segment.text, { 
+            continued: index < segments.length - 1,
+            width: 480,
+            lineGap: 4
+          });
+        });
+        
+        // Complete the line if no segments were rendered
+        if (segments.length === 0) {
+          doc.text('');
+        }
+        
         break;
       }
       default:
         break;
     }
+    lastTokenType = tok.type;
   });
 
   doc.moveDown(1);
