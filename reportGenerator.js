@@ -455,9 +455,80 @@ export async function generateStatisticsReport(data, timePeriod) {
         
         doc.fillColor('#333').fontSize(12);
         doc.text(`Total Visitors: ${totalVisitors}`);
+        doc.text(`Overall Conversion Rate: ${overallConversionRate}%`);
         doc.text(`Chatbot Conversion Rate: ${chatbotConversionRate}%`);
         doc.text(`Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%`);
       }
+      
+      // Add daily/weekly messages chart (only if image is available)
+      doc.addPage();
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Message Volume Over Time', { align: 'center' });
+      doc.moveDown();
+      
+      if (chartImages?.dailyChart) {
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart);
+        if (!imageAdded) {
+          doc.fillColor('#666')
+             .fontSize(12)
+             .text('Chart image could not be generated. Please try again.', { align: 'center' });
+        }
+      } else {
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('Chart image not available for this time period.', { align: 'center' });
+      }
+
+      // Add hourly distribution chart (only if image is available)
+      doc.addPage();
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Message Distribution by Time of Day', { align: 'center' });
+      doc.moveDown();
+      
+      if (chartImages?.hourlyChart) {
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart);
+        if (!imageAdded) {
+          doc.fillColor('#666')
+             .fontSize(12)
+             .text('Chart image could not be generated. Please try again.', { align: 'center' });
+        }
+      } else {
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('Chart image not available for this time period.', { align: 'center' });
+      }
+
+      // Add topic distribution chart (only if image is available)
+      doc.addPage();
+      doc.fillColor('#333')
+         .fontSize(16)
+         .text('Conversation Topics Distribution', { align: 'center' });
+      doc.moveDown();
+      
+      if (chartImages?.topicChart) {
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart);
+        if (!imageAdded) {
+          doc.fillColor('#666')
+             .fontSize(12)
+             .text('Chart image could not be generated. Please try again.', { align: 'center' });
+        }
+      } else {
+        doc.fillColor('#666')
+           .fontSize(12)
+           .text('Chart image not available for this time period.', { align: 'center' });
+      }
+      
+      // Add footer
+      doc.moveDown(2);
+      const date = new Date();
+      doc.fontSize(10)
+         .fillColor('#999')
+         .text(`Report generated on ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}`, { align: 'center' });
+      
+      // Finalize the PDF
+      doc.end();
     } catch (error) {
       reject(error);
     }
@@ -466,5 +537,21 @@ export async function generateStatisticsReport(data, timePeriod) {
 
 // Helper function to format time period
 function formatTimePeriod(timePeriod) {
-  // Implementation of formatTimePeriod function
+  if (!timePeriod) return 'All Time';
+  
+  if (timePeriod === 'all') {
+    return 'All Time';
+  } else if (timePeriod === '7') {
+    return 'Last 7 Days';
+  } else if (timePeriod === '30') {
+    return 'Last 30 Days';
+  } else if (timePeriod === 'yesterday') {
+    return 'Yesterday';
+  } else if (timePeriod.custom && timePeriod.startDate && timePeriod.endDate) {
+    const start = new Date(timePeriod.startDate);
+    const end = new Date(timePeriod.endDate);
+    return `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
+  }
+  
+  return 'Custom Range';
 }
