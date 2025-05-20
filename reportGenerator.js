@@ -18,20 +18,33 @@ function renderMarkdownToPdf(doc, markdownText) {
   if (!markdownText) return;
 
   // Preprocess text to convert legacy format to proper markdown
-  // Convert **Heading** at the beginning of lines to # Heading
-  let preprocessedText = markdownText.replace(/^\s*\*\*(.*?)\*\*\s*$/mg, '# $1');
+  // Handle the raw OpenAI output which might not be perfect markdown
   
-  // Convert numbered lists like "1. **Something**" to proper markdown format
-  preprocessedText = preprocessedText.replace(/^\s*(\d+)\.\s+\*\*(.*?)\*\*(.*)$/mg, '$1. $2$3');
+  // First normalize line endings and ensure consistent spacing
+  let preprocessedText = markdownText
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   
-  // Ensure blank lines before and after headings and lists
-  preprocessedText = preprocessedText.replace(/^#/mg, '\n#');
-  preprocessedText = preprocessedText.replace(/^(\d+)\.(\s)/mg, '\n$1.$2');
+  // Convert ** headings ** to # Heading format
+  preprocessedText = preprocessedText.replace(/^\s*\*\*(.*?)\*\*\s*$/mg, '# $1');
+  
+  // Handle numbered list items with bold text at the start: "1. **Text**" format
+  // This is a common pattern in the GPT output
+  preprocessedText = preprocessedText.replace(/^(\d+)\.\s+\*\*(.*?)\*\*(.*)$/mg, '$1. **$2**$3');
+  
+  // Fix the common pattern where a list item number is separated from its content
+  preprocessedText = preprocessedText.replace(/^(\d+)\.\s*\n\s*/mg, '$1. ');
+  
+  // Ensure blank lines before headers for proper markdown parsing
+  preprocessedText = preprocessedText.replace(/^(#)/mg, '\n$1');
   
   // Parse the preprocessed text with markdown-it
   const tokens = mdParser.parse(preprocessedText, {});
   const listStack = [];// Track ordered/bullet lists
   let lastTokenType = null; // Track the last token type
+  let inListItem = false; // Track if we're inside a list item
+  let listItemContent = ''; // Collect list item content
 
   // Helper to get current list prefix
   const getListPrefix = () => {
@@ -40,6 +53,60 @@ function renderMarkdownToPdf(doc, markdownText) {
     if (top.type === 'bullet') return '• ';
     // Ordered list
     return `${top.index++}. `;
+  };
+  
+  // Render a list item with proper formatting
+  const renderListItem = (content) => {
+    if (!content || content.trim() === '') return;
+    
+    // Get the appropriate list prefix (bullet or number)
+    const prefix = getListPrefix();
+    
+    // Create proper list item indentation
+    const listIndent = 20; // consistent indent for all list levels
+    
+    // Check if content contains bold markers
+    if (content.includes('**')) {
+      // If there are bold markers, we need to handle them specially
+      // Render the prefix (number or bullet)
+      doc.text(prefix, { 
+        continued: true,
+        indent: listIndent
+      });
+      
+      // Split by bold markers
+      let parts = content.split('**');
+      let isBold = false; // Start with normal text
+      
+      parts.forEach((part, index) => {
+        if (part !== '') {
+          doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica');
+          doc.text(part, {
+            continued: index < parts.length - 1,
+            width: 450,
+            align: 'left'
+          });
+        }
+        isBold = !isBold; // Toggle bold state
+      });
+      
+      // Ensure we end the line
+      if (parts.length % 2 === 0) {
+        doc.text('');
+      }
+    } else {
+      // Simple case - just render the content
+      doc.text(prefix, { 
+        continued: true,
+        indent: listIndent
+      });
+      
+      doc.text(content, {
+        continued: false,
+        align: 'left',
+        width: 450
+      });
+    }
   };
 
   // Iterate through tokens
@@ -95,58 +162,99 @@ function renderMarkdownToPdf(doc, markdownText) {
       }
       case 'list_item_open': {
         doc.font('Helvetica').fontSize(12);
-        const prefix = getListPrefix();
-        // First create the bullet/number with consistent width
-        doc.text(prefix, { continued: true, width: 20, indent: 20 });
+        // Store that we're in a list item, will be used by inline handler
+        listItemContent = '';
+        inListItem = true;
         break;
       }
       case 'list_item_close': {
-        // doc.text(''); // finish the line
+        // Render the collected list item content
+        if (inListItem && listItemContent) {
+          renderListItem(listItemContent);
+          listItemContent = '';
+        }
+        inListItem = false;
         break;
       }
       case 'inline': {
-        // Render inline children – manage bold
-        let bold = false;
-        let textContents = '';
-        let segments = [];
+        // Are we inside a list item?
+        const insideListItem = inListItem || 
+                            (lastTokenType === 'list_item_open' || 
+                             (tokens[tokens.indexOf(tok) - 1] && 
+                              tokens[tokens.indexOf(tok) - 1].type === 'list_item_open'));
         
-        // First gather all text segments with their formatting
+        // Gather all text content for this inline segment
+        let inlineContent = '';
+        let segments = [];
+        let currentText = '';
+        let currentBold = false;
+        
+        // Process all inline children
         tok.children.forEach(child => {
           if (child.type === 'strong_open') {
-            if (textContents) {
-              segments.push({ text: textContents, bold: bold });
-              textContents = '';
+            if (currentText) {
+              segments.push({ text: currentText, bold: currentBold });
+              currentText = '';
             }
-            bold = true;
+            currentBold = true;
           } else if (child.type === 'strong_close') {
-            if (textContents) {
-              segments.push({ text: textContents, bold: bold });
-              textContents = '';
+            if (currentText) {
+              segments.push({ text: currentText, bold: currentBold });
+              currentText = '';
             }
-            bold = false;
+            currentBold = false;
           } else if (child.type === 'text') {
-            textContents += child.content;
+            currentText += child.content;
+          } else if (child.type === 'softbreak' || child.type === 'hardbreak') {
+            // For list items, convert breaks to spaces
+            if (insideListItem) {
+              currentText += ' ';
+            } else {
+              // For regular paragraphs, preserve breaks
+              if (currentText) {
+                segments.push({ text: currentText, bold: currentBold });
+                currentText = '';
+              }
+              segments.push({ text: '\n', bold: false, isBreak: true });
+            }
           }
         });
         
         // Add any remaining text
-        if (textContents) {
-          segments.push({ text: textContents, bold: bold });
+        if (currentText) {
+          segments.push({ text: currentText, bold: currentBold });
         }
         
-        // Now render all segments
-        segments.forEach((segment, index) => {
-          doc.font(segment.bold ? 'Helvetica-Bold' : 'Helvetica');
-          doc.text(segment.text, { 
-            continued: index < segments.length - 1,
-            width: 480,
-            lineGap: 4
+        // For list items, collect the content to be rendered later
+        if (insideListItem) {
+          // Combine all segments into a single string
+          segments.forEach(segment => {
+            // If we need to maintain bold formatting, we'll need to handle this specially
+            if (segment.bold) {
+              listItemContent += `**${segment.text}**`;
+            } else {
+              listItemContent += segment.text;
+            }
           });
-        });
-        
-        // Complete the line if no segments were rendered
-        if (segments.length === 0) {
-          doc.text('');
+        } else {
+          // For normal paragraphs, render directly
+          segments.forEach((segment, index) => {
+            if (segment.isBreak) {
+              doc.text(''); // End the current line
+            } else {
+              doc.font(segment.bold ? 'Helvetica-Bold' : 'Helvetica');
+              doc.text(segment.text, { 
+                continued: index < segments.length - 1 && !segments[index + 1].isBreak,
+                width: 480,
+                lineGap: 4
+              });
+            }
+          });
+          
+          // Ensure we end the text if needed
+          if (segments.length === 0 || !segments[segments.length - 1].isBreak) {
+            doc.text('');
+          }
         }
         
         break;
