@@ -1084,7 +1084,7 @@ app.post('/login', async (req, res) => {
       accessibleChatbotIds: user.accessible_chatbot_ids || [],
       accessibleUserIds: user.accessible_user_ids || []
     };
-    const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '4h' });
+    const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '24h' });
 
     // Determine chatbot access list based on role
     let chatbotIds = user.chatbot_ids || [];
