@@ -17,12 +17,6 @@ const { Pool } = pg;
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
 
-// =============================================
-// TEMPORARY: Disable rate-limiting / spam protection
-// Set the env var DISABLE_SPAM_PROTECTION=true in production to keep disabled.
-// =============================================
-const SPAM_PROTECTION_DISABLED = process.env.DISABLE_SPAM_PROTECTION === 'true' || true; // <- set true for now
-
 // Rate limiting setup (in-memory store)
 const rateLimiter = {
   // Store message timestamps by fingerprint
@@ -35,13 +29,11 @@ const rateLimiter = {
   
   // Check if a fingerprint is currently blocked
   isBlocked: function(fingerprint) {
-    if (SPAM_PROTECTION_DISABLED) return false;
     return this.blockedFingerprints.has(fingerprint);
   },
   
   // Record a new message from a fingerprint
   recordMessage: function(fingerprint) {
-    if (SPAM_PROTECTION_DISABLED) return true;
     const now = Date.now();
     const windowMs = 60000; // 1 minute window
     const maxMessages = 30; // Maximum messages per window
@@ -108,13 +100,11 @@ const rateLimiter = {
   
   // Check if an IP is currently blocked
   isIpBlocked: function(ip) {
-    if (SPAM_PROTECTION_DISABLED) return false;
     return this.blockedIps.has(ip);
   },
   
   // Record a new message from an IP (mirrors fingerprint logic)
   recordIpMessage: function(ip) {
-    if (SPAM_PROTECTION_DISABLED) return true;
     const now = Date.now();
     const windowMs = 60000; // 1 min
     const maxMessages = 30;
