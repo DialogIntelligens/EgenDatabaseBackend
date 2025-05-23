@@ -271,28 +271,18 @@ function renderMarkdownToPdf(doc, markdownText) {
 // Helper function to add a base64 image to the PDF
 function addBase64ImageToPdf(doc, base64String, options = {}) {
   if (!base64String) {
-    console.error('Base64 image data is missing');
+    console.log('Base64 image data is missing');
     return false;
   }
   
   try {
-    // Remove the data URL prefix if present and verify the data
+    // Remove the data URL prefix if present
     const imageData = base64String.includes('base64,') 
       ? base64String.split('base64,')[1] 
       : base64String;
 
-    if (!imageData || imageData.length < 100) {
-      console.error('Invalid or empty image data');
-      return false;
-    }
-
-    // Debug: Log image data details
-    console.log('Processing image:', {
-      totalLength: imageData.length,
-      startsWithSlash: imageData.startsWith('/'),
-      startsWithiVBOR: imageData.startsWith('iVBOR'),
-      containsValidChars: /^[A-Za-z0-9+/=]+$/.test(imageData)
-    });
+    // Debug: Log image data length and a sample
+    console.log('Adding image to PDF. Data length:', imageData.length, 'Sample:', imageData.slice(0, 100));
 
     // Set default size and position if not provided
     const x = options.x || 50;
@@ -300,41 +290,24 @@ function addBase64ImageToPdf(doc, base64String, options = {}) {
     const width = options.width || 500;
     const height = options.height || 300;
 
-    try {
-      // Try to decode a small sample to verify it's valid base64
-      Buffer.from(imageData.slice(0, 100), 'base64');
-    } catch (e) {
-      console.error('Invalid base64 data:', e);
-      return false;
-    }
+    // Draw a border rectangle for debugging
+    doc.save();
+    doc.rect(x, y, width, height).stroke('#cccccc');
+    doc.restore();
 
-    // Create buffer from base64
-    const imageBuffer = Buffer.from(imageData, 'base64');
-    
-    if (imageBuffer.length === 0) {
-      console.error('Image buffer is empty');
-      return false;
-    }
+    // Add image to the PDF
+    doc.image(Buffer.from(imageData, 'base64'), x, y, {
+      fit: [width, height],
+      align: 'center',
+      valign: 'center'
+    });
 
-    // Add image to the PDF with error handling
-    try {
-      doc.image(imageBuffer, x, y, {
-        fit: [width, height],
-        align: 'center',
-        valign: 'center'
-      });
-      
-      // Move the cursor below the image
-      doc.y = y + height + 10;
-      
-      console.log('Image added successfully');
-      return true;
-    } catch (imageError) {
-      console.error('Error adding image to PDF:', imageError);
-      return false;
-    }
+    // Move the cursor below the image
+    doc.y = y + height + 10;
+
+    return true;
   } catch (error) {
-    console.error('Error processing base64 image:', error);
+    console.error('Error adding base64 image to PDF:', error);
     return false;
   }
 }
