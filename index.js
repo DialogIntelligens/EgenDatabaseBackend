@@ -2395,7 +2395,7 @@ app.get('/livechat-conversation', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, conversation_data, last_viewed_by_agent FROM conversations
+      `SELECT id, conversation_data FROM conversations
        WHERE user_id = $1 AND chatbot_id = $2 AND bug_status = 'livechat'
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
@@ -2414,41 +2414,28 @@ app.get('/livechat-conversation', async (req, res) => {
       }
     }
 
+    // Check if agent has joined by looking for staff messages
+    // Agent messages are non-user messages that come after the initial livechat activation message
+    let agentJoined = false;
+    if (Array.isArray(data)) {
+      const livechatStartIndex = data.findIndex(msg => 
+        !msg.isUser && msg.text && msg.text.includes('Du er nu forbundet til en live chat')
+      );
+      
+      if (livechatStartIndex !== -1) {
+        // Check if there are any non-user messages after the livechat start message
+        const messagesAfterStart = data.slice(livechatStartIndex + 1);
+        agentJoined = messagesAfterStart.some(msg => !msg.isUser);
+      }
+    }
+
     res.json({ 
       conversation_data: data,
-      last_viewed_by_agent: result.rows[0].last_viewed_by_agent,
+      agent_joined: agentJoined,
       conversation_id: result.rows[0].id
     });
   } catch (err) {
     console.error('Error fetching livechat conversation:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// Mark agent as viewing livechat conversation
-app.post('/livechat-agent-joined', authenticateToken, async (req, res) => {
-  const { conversation_id } = req.body;
-
-  if (!conversation_id) {
-    return res.status(400).json({ error: 'conversation_id is required' });
-  }
-
-  try {
-    const result = await pool.query(
-      `UPDATE conversations 
-       SET last_viewed_by_agent = NOW() 
-       WHERE id = $1 AND bug_status = 'livechat'
-       RETURNING *`,
-      [conversation_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Livechat conversation not found' });
-    }
-
-    res.json({ message: 'Agent joined conversation', conversation: result.rows[0] });
-  } catch (err) {
-    console.error('Error marking agent joined:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
