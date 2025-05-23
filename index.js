@@ -955,7 +955,8 @@ app.post('/register', async (req, res) => {
     is_admin,
     is_limited_admin,
     accessible_chatbot_ids,
-    accessible_user_ids
+    accessible_user_ids,
+    livechat // New field
   } = req.body;
 
   // Basic validation: Ensure chatbot_filepath is an array if provided
@@ -982,9 +983,10 @@ app.post('/register', async (req, res) => {
          is_admin,
          is_limited_admin,
          accessible_chatbot_ids,
-         accessible_user_ids
+         accessible_user_ids,
+         livechat // New field
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) // Added $12
        RETURNING *`,
 
       [
@@ -998,7 +1000,8 @@ app.post('/register', async (req, res) => {
         is_admin,
         is_limited_admin,
         accessible_chatbot_ids || [],
-        accessible_user_ids || []
+        accessible_user_ids || [],
+        livechat || false // Default to false if not provided
       ]
     );
 
@@ -1030,7 +1033,8 @@ app.post('/login', async (req, res) => {
       isAdmin: user.is_admin,
       isLimitedAdmin: user.is_limited_admin,
       accessibleChatbotIds: user.accessible_chatbot_ids || [],
-      accessibleUserIds: user.accessible_user_ids || []
+      accessibleUserIds: user.accessible_user_ids || [],
+      livechat: user.livechat || false // Include livechat status
     };
     const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '24h' });
 
@@ -1067,7 +1071,8 @@ app.post('/login', async (req, res) => {
       accessible_chatbot_ids: user.accessible_chatbot_ids || [],
       accessible_user_ids: user.accessible_user_ids || [],
       thumbs_rating: user.thumbs_rating || false,
-      company_info: user.company_info || ''
+      company_info: user.company_info || '',
+      livechat: user.livechat || false // Return livechat status
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -1156,7 +1161,8 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       emne,
       score,
       customer_rating,
-      lacking_info
+      lacking_info,
+      form_data // Added form_data parameter
       // removed source_chunks parameter
     ) {
       const client = await pool.connect();
@@ -1165,21 +1171,21 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, created_at = NOW()
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, created_at = NOW(), form_data = $8
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
           // removed source_chunks ($8) from query and parameters
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, form_data] // Added form_data
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, form_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
             // removed source_chunks from query and parameters
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, form_data] // Added form_data
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1204,7 +1210,8 @@ app.post('/conversations', async (req, res) => {
     emne,
     score,
     customer_rating,
-    lacking_info
+    lacking_info,
+    form_data // Added to capture form data
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1241,7 +1248,8 @@ app.post('/conversations', async (req, res) => {
       emne,
       score,
       customer_rating,
-      lacking_info
+      lacking_info,
+      form_data // Pass form_data
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1367,7 +1375,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed, is_live_chat
       FROM conversations
       WHERE chatbot_id = ANY($1)
     `;
@@ -1400,7 +1408,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryParams.push(`${conversation_filter}`);
     }
 
-    queryText += ` ORDER BY created_at DESC `;
+    queryText += ` ORDER BY live_chat_started_at DESC NULLS LAST, created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
 
@@ -1440,6 +1448,16 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
 app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
+    // Admin/Limited Admin Check: Ensure user has access to the conversation's chatbot_id
+    const convResult = await pool.query('SELECT chatbot_id FROM conversations WHERE id = $1', [id]);
+    if (convResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    const convChatbotId = convResult.rows[0].chatbot_id;
+    if (!req.user.isAdmin && !(req.user.accessibleChatbotIds || []).includes(convChatbotId)) {
+      return res.status(403).json({ error: 'Forbidden: Access denied to this conversation.' });
+    }
+
     const result = await pool.query(
       'UPDATE conversations SET viewed = FALSE WHERE id = $1 RETURNING *', 
       [id]
@@ -2347,7 +2365,7 @@ app.get('/company-info', authenticateToken, async (req, res) => {
   try {
     // Get user's company info
     const result = await pool.query(
-      'SELECT company_info FROM users WHERE id = $1',
+      'SELECT company_info, livechat FROM users WHERE id = $1', // Added livechat
       [userId]
     );
 
@@ -2356,7 +2374,8 @@ app.get('/company-info', authenticateToken, async (req, res) => {
     }
 
     return res.status(200).json({
-      company_info: result.rows[0].company_info || '' 
+      company_info: result.rows[0].company_info || '',
+      livechat: result.rows[0].livechat || false // Return livechat status
     });
   } catch (error) {
     console.error('Error fetching company information:', error);
