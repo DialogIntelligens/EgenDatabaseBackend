@@ -1158,39 +1158,87 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status
+      bug_status,
+      is_livechat = false
     ) {
-      const client = await pool.connect();
       try {
-        await client.query('BEGIN');
-
-        const updateResult = await client.query(
-          `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), created_at = NOW()
-           WHERE user_id = $1 AND chatbot_id = $2
-           RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
-        );
-
-        if (updateResult.rows.length === 0) {
-          const insertResult = await client.query(
-            `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
+        // First, try to find an existing conversation for this user and chatbot
+        let existingConversation;
+        
+        if (is_livechat) {
+          // For livechat, look for existing livechat conversation
+          existingConversation = await pool.query(
+            'SELECT id FROM conversations WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE ORDER BY created_at DESC LIMIT 1',
+            [user_id, chatbot_id]
           );
-          await client.query('COMMIT');
-          return insertResult.rows[0];
         } else {
-          await client.query('COMMIT');
-          return updateResult.rows[0];
+          // For regular conversations, look for non-livechat conversations
+          existingConversation = await pool.query(
+            'SELECT id FROM conversations WHERE user_id = $1 AND chatbot_id = $2 AND (is_livechat = FALSE OR is_livechat IS NULL) ORDER BY created_at DESC LIMIT 1',
+            [user_id, chatbot_id]
+          );
         }
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
+
+        let conversationId;
+        const conversationDataString = JSON.stringify(conversation_data);
+
+        if (existingConversation.rows.length > 0) {
+          conversationId = existingConversation.rows[0].id;
+          
+          // Update the existing conversation
+          const updateQuery = `
+            UPDATE conversations 
+            SET conversation_data = $1, 
+                emne = $2, 
+                score = $3,
+                ${customer_rating !== null ? 'customer_rating = $4,' : ''}
+                lacking_info = $${customer_rating !== null ? '5' : '4'}, 
+                ${bug_status ? `bug_status = $${customer_rating !== null ? '6' : '5'},` : ''}
+                is_livechat = $${customer_rating !== null ? (bug_status ? '7' : '6') : (bug_status ? '6' : '5')},
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $${customer_rating !== null ? (bug_status ? '8' : '7') : (bug_status ? '7' : '6')}
+            RETURNING *
+          `;
+          
+          const updateValues = [
+            conversationDataString, 
+            emne, 
+            score,
+            ...(customer_rating !== null ? [customer_rating] : []),
+            lacking_info,
+            ...(bug_status ? [bug_status] : []),
+            is_livechat,
+            conversationId
+          ];
+          
+          const result = await pool.query(updateQuery, updateValues);
+          return result.rows[0];
+        } else {
+          // Create a new conversation
+          const insertQuery = `
+            INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, ${customer_rating !== null ? 'customer_rating,' : ''} lacking_info, ${bug_status ? 'bug_status,' : ''} is_livechat) 
+            VALUES ($1, $2, $3, $4, $5, ${customer_rating !== null ? '$6, $7' : '$6'}${bug_status ? `, $${customer_rating !== null ? '8' : '7'}` : ''}, $${customer_rating !== null ? (bug_status ? '9' : '8') : (bug_status ? '8' : '7')}) 
+            RETURNING *
+          `;
+          
+          const insertValues = [
+            user_id, 
+            chatbot_id, 
+            conversationDataString, 
+            emne, 
+            score,
+            ...(customer_rating !== null ? [customer_rating] : []),
+            lacking_info,
+            ...(bug_status ? [bug_status] : []),
+            is_livechat
+          ];
+          
+          const result = await pool.query(insertQuery, insertValues);
+          return result.rows[0];
+        }
+      } catch (error) {
+        console.error('Error in upsertConversation:', error);
+        throw error;
       }
     }
 
@@ -1204,7 +1252,8 @@ app.post('/conversations', async (req, res) => {
     score,
     customer_rating,
     lacking_info,
-    bug_status
+    bug_status,
+    is_livechat
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1233,7 +1282,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation WITHOUT the source_chunks argument
+    // Call upsertConversation with the is_livechat parameter
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1242,7 +1291,8 @@ app.post('/conversations', async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status
+      bug_status,
+      is_livechat
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1314,7 +1364,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id, fejlstatus, customer_rating, emne } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne, is_livechat_only } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -1330,10 +1380,18 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     let queryParams = [chatbotIds];
     let paramIndex = 2;
 
-
-    if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND bug_status = $${paramIndex++}`;
-      queryParams.push(fejlstatus);
+    // Handle livechat-only filtering
+    if (is_livechat_only === 'true') {
+      queryText += ` AND is_livechat = TRUE`;
+    } else if (fejlstatus && fejlstatus !== '') {
+      if (fejlstatus === 'livechat') {
+        // Use is_livechat field for livechat filtering
+        queryText += ` AND is_livechat = TRUE`;
+      } else {
+        // Use bug_status for other fejlstatus values
+        queryText += ` AND bug_status = $${paramIndex++}`;
+        queryParams.push(fejlstatus);
+      }
     }
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND customer_rating = $${paramIndex++}`;
@@ -1358,7 +1416,7 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, is_livechat_only } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1384,9 +1442,19 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
-    if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND bug_status = $${paramIndex++}`;
-      queryParams.push(fejlstatus);
+    
+    // Handle livechat-only filtering
+    if (is_livechat_only === 'true') {
+      queryText += ` AND is_livechat = TRUE`;
+    } else if (fejlstatus && fejlstatus !== '') {
+      if (fejlstatus === 'livechat') {
+        // Use is_livechat field for livechat filtering
+        queryText += ` AND is_livechat = TRUE`;
+      } else {
+        // Use bug_status for other fejlstatus values
+        queryText += ` AND bug_status = $${paramIndex++}`;
+        queryParams.push(fejlstatus);
+      }
     }
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND customer_rating = $${paramIndex++}`;
@@ -2376,7 +2444,7 @@ app.get('/livechat-conversation', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT conversation_data FROM conversations
-       WHERE user_id = $1 AND chatbot_id = $2 AND bug_status = 'livechat'
+       WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
     );
