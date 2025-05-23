@@ -1067,7 +1067,8 @@ app.post('/login', async (req, res) => {
       accessible_chatbot_ids: user.accessible_chatbot_ids || [],
       accessible_user_ids: user.accessible_user_ids || [],
       thumbs_rating: user.thumbs_rating || false,
-      company_info: user.company_info || ''
+      company_info: user.company_info || '',
+      livechat: user.livechat || false
     });
   } catch (err) {
     console.error('Error logging in:', err);
