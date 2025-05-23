@@ -1179,65 +1179,42 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
           );
         }
 
-        let conversationId;
         const conversationDataString = JSON.stringify(conversation_data);
 
         if (existingConversation.rows.length > 0) {
-          conversationId = existingConversation.rows[0].id;
+          // Update existing conversation
+          const conversationId = existingConversation.rows[0].id;
           
-          // Update the existing conversation
-          const updateQuery = `
-            UPDATE conversations 
-            SET conversation_data = $1, 
-                emne = $2, 
-                score = $3,
-                ${customer_rating !== null ? 'customer_rating = $4,' : ''}
-                lacking_info = $${customer_rating !== null ? '5' : '4'}, 
-                ${bug_status ? `bug_status = $${customer_rating !== null ? '6' : '5'},` : ''}
-                is_livechat = $${customer_rating !== null ? (bug_status ? '7' : '6') : (bug_status ? '6' : '5')},
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $${customer_rating !== null ? (bug_status ? '8' : '7') : (bug_status ? '7' : '6')}
-            RETURNING *
-          `;
+          const result = await pool.query(
+            `UPDATE conversations 
+             SET conversation_data = $1, 
+                 emne = $2, 
+                 score = $3,
+                 customer_rating = $4,
+                 lacking_info = $5, 
+                 bug_status = $6,
+                 is_livechat = $7,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $8
+             RETURNING *`,
+            [conversationDataString, emne, score, customer_rating, lacking_info, bug_status, is_livechat, conversationId]
+          );
           
-          const updateValues = [
-            conversationDataString, 
-            emne, 
-            score,
-            ...(customer_rating !== null ? [customer_rating] : []),
-            lacking_info,
-            ...(bug_status ? [bug_status] : []),
-            is_livechat,
-            conversationId
-          ];
-          
-          const result = await pool.query(updateQuery, updateValues);
           return result.rows[0];
         } else {
-          // Create a new conversation
-          const insertQuery = `
-            INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, ${customer_rating !== null ? 'customer_rating,' : ''} lacking_info, ${bug_status ? 'bug_status,' : ''} is_livechat) 
-            VALUES ($1, $2, $3, $4, $5, ${customer_rating !== null ? '$6, $7' : '$6'}${bug_status ? `, $${customer_rating !== null ? '8' : '7'}` : ''}, $${customer_rating !== null ? (bug_status ? '9' : '8') : (bug_status ? '8' : '7')}) 
-            RETURNING *
-          `;
+          // Create new conversation
+          const result = await pool.query(
+            `INSERT INTO conversations (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, is_livechat) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+             RETURNING *`,
+            [user_id, chatbot_id, conversationDataString, emne, score, customer_rating, lacking_info, bug_status, is_livechat]
+          );
           
-          const insertValues = [
-            user_id, 
-            chatbot_id, 
-            conversationDataString, 
-            emne, 
-            score,
-            ...(customer_rating !== null ? [customer_rating] : []),
-            lacking_info,
-            ...(bug_status ? [bug_status] : []),
-            is_livechat
-          ];
-          
-          const result = await pool.query(insertQuery, insertValues);
           return result.rows[0];
         }
       } catch (error) {
         console.error('Error in upsertConversation:', error);
+        console.error('Parameters:', { user_id, chatbot_id, emne, score, customer_rating, lacking_info, bug_status, is_livechat });
         throw error;
       }
     }
