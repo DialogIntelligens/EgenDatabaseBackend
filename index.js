@@ -955,8 +955,7 @@ app.post('/register', async (req, res) => {
     is_admin,
     is_limited_admin,
     accessible_chatbot_ids,
-    accessible_user_ids,
-    livechat // New field
+    accessible_user_ids
   } = req.body;
 
   // Basic validation: Ensure chatbot_filepath is an array if provided
@@ -983,10 +982,9 @@ app.post('/register', async (req, res) => {
          is_admin,
          is_limited_admin,
          accessible_chatbot_ids,
-         accessible_user_ids,
-         livechat // New field
+         accessible_user_ids
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) // Added $12
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
 
       [
@@ -1000,8 +998,7 @@ app.post('/register', async (req, res) => {
         is_admin,
         is_limited_admin,
         accessible_chatbot_ids || [],
-        accessible_user_ids || [],
-        livechat || false // Default to false if not provided
+        accessible_user_ids || []
       ]
     );
 
@@ -1033,8 +1030,7 @@ app.post('/login', async (req, res) => {
       isAdmin: user.is_admin,
       isLimitedAdmin: user.is_limited_admin,
       accessibleChatbotIds: user.accessible_chatbot_ids || [],
-      accessibleUserIds: user.accessible_user_ids || [],
-      livechat: user.livechat || false // Include livechat status
+      accessibleUserIds: user.accessible_user_ids || []
     };
     const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '24h' });
 
@@ -1071,8 +1067,7 @@ app.post('/login', async (req, res) => {
       accessible_chatbot_ids: user.accessible_chatbot_ids || [],
       accessible_user_ids: user.accessible_user_ids || [],
       thumbs_rating: user.thumbs_rating || false,
-      company_info: user.company_info || '',
-      livechat: user.livechat || false // Return livechat status
+      company_info: user.company_info || ''
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -1161,8 +1156,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       emne,
       score,
       customer_rating,
-      lacking_info,
-      form_data // Added form_data parameter
+      lacking_info
       // removed source_chunks parameter
     ) {
       const client = await pool.connect();
@@ -1171,21 +1165,21 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, created_at = NOW(), form_data = $8
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
           // removed source_chunks ($8) from query and parameters
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, form_data] // Added form_data
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, form_data)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING *`,
             // removed source_chunks from query and parameters
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, form_data] // Added form_data
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1210,8 +1204,7 @@ app.post('/conversations', async (req, res) => {
     emne,
     score,
     customer_rating,
-    lacking_info,
-    form_data // Added to capture form data
+    lacking_info
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1248,8 +1241,7 @@ app.post('/conversations', async (req, res) => {
       emne,
       score,
       customer_rating,
-      lacking_info,
-      form_data // Pass form_data
+      lacking_info
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1367,42 +1359,26 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
   const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne } = req.query;
 
-  if (!chatbot_id && !req.user.isAdmin) { // Allow admin to query all if no chatbot_id specified
-    return res.status(400).json({ error: 'chatbot_id is required for non-admin users' });
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
   }
 
   try {
-    const chatbotIds = chatbot_id ? chatbot_id.split(',') : [];
+    const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed, is_live_chat
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed
       FROM conversations
-      WHERE 1=1
-    `; // Start with 1=1 to easily append AND conditions
-    let queryParams = [];
-    let paramIndex = 1;
-
-    if (chatbot_id) {
-        queryText += ` AND chatbot_id = ANY($${paramIndex++})`;
-        queryParams.push(chatbotIds);
-    } else if (!req.user.isAdmin) {
-        // If not admin and no specific chatbot_id, this should not happen due to check above
-        // but as a safeguard, limit to their accessible chatbots if any
-        const userChatbotIds = req.user.accessibleChatbotIds || [];
-         if (userChatbotIds.length > 0) {
-            queryText += ` AND chatbot_id = ANY($${paramIndex++})`;
-            queryParams.push(userChatbotIds);
-        } else {
-            // No chatbots accessible and not admin, return empty
-            return res.json([]);
-        }
-    }
-    // If admin and no chatbot_id, all conversations are fetched (no chatbot_id filter added)
+      WHERE chatbot_id = ANY($1)
+    `;
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
       queryText += ` AND lacking_info = $${paramIndex++}`;
       queryParams.push(lacking_info === 'true');
     }
+
     if (start_date && end_date) {
       queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
@@ -1424,103 +1400,17 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryParams.push(`${conversation_filter}`);
     }
 
-    queryText += ` ORDER BY live_chat_started_at DESC NULLS LAST, created_at DESC `;
+    queryText += ` ORDER BY created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
 
     const result = await pool.query(queryText, queryParams);
-    return res.json(result.rows.map(row => ({ // Ensure conversation_data is parsed
-        ...row,
-        conversation_data: typeof row.conversation_data === 'string' ? JSON.parse(row.conversation_data) : row.conversation_data
-    })));
+    return res.json(result.rows);
   } catch (err) {
     console.error('Error retrieving metadata from /conversations-metadata:', err);
     return res
       .status(500)
       .json({ error: 'Database error', details: err.message });
-  }
-});
-
-// Endpoint to get conversations escalated to live chat
-app.get('/livechat-conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne } = req.query;
-  const userId = req.user.userId;
-  const isAdmin = req.user.isAdmin;
-
-  // For live chat, agents should only see chats for chatbots they are assigned to if chatbot_id is not ALL
-  // Admins can see all or filter by specific chatbot_id
-
-  try {
-    let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed, is_live_chat, live_chat_started_at
-      FROM conversations
-      WHERE is_live_chat = TRUE
-    `;
-    let queryParams = [];
-    let paramIndex = 1;
-
-    // Filter by chatbot_id if provided, respecting admin/agent access
-    if (chatbot_id && chatbot_id !== 'ALL') {
-      const requestedChatbotIds = chatbot_id.split(',');
-      if (!isAdmin) {
-        // Non-admin: filter by intersection of their accessible chatbots and requested ones
-        const accessibleUserChatbots = req.user.accessibleChatbotIds || [];
-        const allowedChatbots = requestedChatbotIds.filter(id => accessibleUserChatbots.includes(id));
-        if (allowedChatbots.length === 0) return res.json([]); // No accessible chatbots from request
-        queryText += ` AND chatbot_id = ANY($${paramIndex++})`;
-        queryParams.push(allowedChatbots);
-      } else {
-        // Admin: can request any specific chatbot_ids
-        queryText += ` AND chatbot_id = ANY($${paramIndex++})`;
-        queryParams.push(requestedChatbotIds);
-      }
-    } else if (!isAdmin) {
-      // Non-admin and 'ALL' or no chatbot_id: limit to their accessible chatbots
-      const accessibleUserChatbots = req.user.accessibleChatbotIds || [];
-      if (accessibleUserChatbots.length === 0) return res.json([]); // No chatbots accessible
-      queryText += ` AND chatbot_id = ANY($${paramIndex++})`;
-      queryParams.push(accessibleUserChatbots);
-    }
-    // If admin and chatbot_id is 'ALL' or not provided, they see all live chats (no chatbot_id filter added here)
-
-
-    if (lacking_info === 'true' || lacking_info === 'false') {
-      queryText += ` AND lacking_info = $${paramIndex++}`;
-      queryParams.push(lacking_info === 'true');
-    }
-    if (start_date && end_date) {
-      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      queryParams.push(start_date, end_date);
-    }
-    if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND bug_status = $${paramIndex++}`;
-      queryParams.push(fejlstatus);
-    }
-    if (customer_rating && customer_rating !== '') {
-      queryText += ` AND customer_rating = $${paramIndex++}`;
-      queryParams.push(customer_rating);
-    }
-    if (emne && emne !== '') {
-      queryText += ` AND emne = $${paramIndex++}`;
-      queryParams.push(emne);
-    }
-    if (conversation_filter && conversation_filter.trim() !== '') {
-      queryText += ` AND conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
-      queryParams.push(`${conversation_filter}`);
-    }
-
-    queryText += ` ORDER BY live_chat_started_at DESC NULLS LAST, created_at DESC `;
-    queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
-    queryParams.push(page_size || 50, (page_number || 0) * (page_size || 50));
-
-    const result = await pool.query(queryText, queryParams);
-    return res.json(result.rows.map(row => ({ // Ensure conversation_data is parsed
-        ...row,
-        conversation_data: typeof row.conversation_data === 'string' ? JSON.parse(row.conversation_data) : row.conversation_data
-    })));
-  } catch (err) {
-    console.error('Error retrieving live chat conversations:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
@@ -1534,25 +1424,10 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
     
-    // Mark the conversation as viewed by the user who opened it.
-    // If it's an agent opening a live chat, this also implies viewed.
-    // More specific logic for agent views could be added if needed (e.g., separate `agent_viewed_at` field)
-    if (!result.rows[0].viewed) { // Only update if not already viewed generally
-        await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
-        result.rows[0].viewed = true; // Reflect in the response
+    // Only mark the conversation as viewed if the user is not an admin
+    if (!req.user.isAdmin) {
+      await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
     }
-
-    // Parse conversation_data if it's a string
-    let conversationData = result.rows[0].conversation_data;
-    if (typeof conversationData === 'string') {
-        try {
-            conversationData = JSON.parse(conversationData);
-        } catch (parseError) {
-            console.error("Error parsing conversation_data for conversation ID:", id, parseError);
-            // Keep it as a string if parsing fails, or handle error as appropriate
-        }
-    }
-    result.rows[0].conversation_data = conversationData;
     
     res.json(result.rows[0]);
   } catch (err) {
@@ -1565,16 +1440,6 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
 app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    // Admin/Limited Admin Check: Ensure user has access to the conversation's chatbot_id
-    const convResult = await pool.query('SELECT chatbot_id FROM conversations WHERE id = $1', [id]);
-    if (convResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-    const convChatbotId = convResult.rows[0].chatbot_id;
-    if (!req.user.isAdmin && !(req.user.accessibleChatbotIds || []).includes(convChatbotId)) {
-      return res.status(403).json({ error: 'Forbidden: Access denied to this conversation.' });
-    }
-
     const result = await pool.query(
       'UPDATE conversations SET viewed = FALSE WHERE id = $1 RETURNING *', 
       [id]
@@ -2482,7 +2347,7 @@ app.get('/company-info', authenticateToken, async (req, res) => {
   try {
     // Get user's company info
     const result = await pool.query(
-      'SELECT company_info, livechat FROM users WHERE id = $1', // Added livechat
+      'SELECT company_info FROM users WHERE id = $1',
       [userId]
     );
 
@@ -2491,8 +2356,7 @@ app.get('/company-info', authenticateToken, async (req, res) => {
     }
 
     return res.status(200).json({
-      company_info: result.rows[0].company_info || '',
-      livechat: result.rows[0].livechat || false // Return livechat status
+      company_info: result.rows[0].company_info || '' 
     });
   } catch (error) {
     console.error('Error fetching company information:', error);
