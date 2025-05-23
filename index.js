@@ -1457,6 +1457,26 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
   }
 });
 
+// PATCH to mark conversation as read
+app.patch('/conversation/:id/mark-read', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      'UPDATE conversations SET viewed = TRUE WHERE id = $1 RETURNING *', 
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error marking conversation as read:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 /* ================================
    update-conversations Endpoint
 ================================ */
@@ -2375,7 +2395,7 @@ app.get('/livechat-conversation', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT conversation_data FROM conversations
+      `SELECT id, conversation_data, last_viewed_by_agent FROM conversations
        WHERE user_id = $1 AND chatbot_id = $2 AND bug_status = 'livechat'
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
@@ -2394,9 +2414,41 @@ app.get('/livechat-conversation', async (req, res) => {
       }
     }
 
-    res.json({ conversation_data: data });
+    res.json({ 
+      conversation_data: data,
+      last_viewed_by_agent: result.rows[0].last_viewed_by_agent,
+      conversation_id: result.rows[0].id
+    });
   } catch (err) {
     console.error('Error fetching livechat conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Mark agent as viewing livechat conversation
+app.post('/livechat-agent-joined', authenticateToken, async (req, res) => {
+  const { conversation_id } = req.body;
+
+  if (!conversation_id) {
+    return res.status(400).json({ error: 'conversation_id is required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE conversations 
+       SET last_viewed_by_agent = NOW() 
+       WHERE id = $1 AND bug_status = 'livechat'
+       RETURNING *`,
+      [conversation_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Livechat conversation not found' });
+    }
+
+    res.json({ message: 'Agent joined conversation', conversation: result.rows[0] });
+  } catch (err) {
+    console.error('Error marking agent joined:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
