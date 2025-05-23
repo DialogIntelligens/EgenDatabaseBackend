@@ -271,27 +271,70 @@ function renderMarkdownToPdf(doc, markdownText) {
 // Helper function to add a base64 image to the PDF
 function addBase64ImageToPdf(doc, base64String, options = {}) {
   if (!base64String) {
-    console.log('Base64 image data is missing');
+    console.error('Base64 image data is missing');
     return false;
   }
   
   try {
-    // Remove the data URL prefix if present
+    // Remove the data URL prefix if present and verify the data
     const imageData = base64String.includes('base64,') 
       ? base64String.split('base64,')[1] 
       : base64String;
-    
-    // Add image to the PDF
-    doc.image(Buffer.from(imageData, 'base64'), {
-      fit: [500, 350],
-      align: 'center',
-      valign: 'center',
-      ...options
+
+    if (!imageData || imageData.length < 100) {
+      console.error('Invalid or empty image data');
+      return false;
+    }
+
+    // Debug: Log image data details
+    console.log('Processing image:', {
+      totalLength: imageData.length,
+      startsWithSlash: imageData.startsWith('/'),
+      startsWithiVBOR: imageData.startsWith('iVBOR'),
+      containsValidChars: /^[A-Za-z0-9+/=]+$/.test(imageData)
     });
+
+    // Set default size and position if not provided
+    const x = options.x || 50;
+    const y = options.y || doc.y;
+    const width = options.width || 500;
+    const height = options.height || 300;
+
+    try {
+      // Try to decode a small sample to verify it's valid base64
+      Buffer.from(imageData.slice(0, 100), 'base64');
+    } catch (e) {
+      console.error('Invalid base64 data:', e);
+      return false;
+    }
+
+    // Create buffer from base64
+    const imageBuffer = Buffer.from(imageData, 'base64');
     
-    return true;
+    if (imageBuffer.length === 0) {
+      console.error('Image buffer is empty');
+      return false;
+    }
+
+    // Add image to the PDF with error handling
+    try {
+      doc.image(imageBuffer, x, y, {
+        fit: [width, height],
+        align: 'center',
+        valign: 'center'
+      });
+      
+      // Move the cursor below the image
+      doc.y = y + height + 10;
+      
+      console.log('Image added successfully');
+      return true;
+    } catch (imageError) {
+      console.error('Error adding image to PDF:', imageError);
+      return false;
+    }
   } catch (error) {
-    console.error('Error adding base64 image to PDF:', error);
+    console.error('Error processing base64 image:', error);
     return false;
   }
 }
@@ -625,7 +668,7 @@ export async function generateStatisticsReport(data, timePeriod) {
       doc.moveDown();
       
       if (chartImages?.dailyChart) {
-        const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart);
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.dailyChart, { x: 50, y: doc.y, width: 500, height: 300 });
         if (!imageAdded) {
           doc.fillColor('#666')
              .fontSize(12)
@@ -645,7 +688,7 @@ export async function generateStatisticsReport(data, timePeriod) {
       doc.moveDown();
       
       if (chartImages?.hourlyChart) {
-        const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart);
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.hourlyChart, { x: 50, y: doc.y, width: 500, height: 300 });
         if (!imageAdded) {
           doc.fillColor('#666')
              .fontSize(12)
@@ -665,7 +708,7 @@ export async function generateStatisticsReport(data, timePeriod) {
       doc.moveDown();
       
       if (chartImages?.topicChart) {
-        const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart);
+        const imageAdded = addBase64ImageToPdf(doc, chartImages.topicChart, { x: 50, y: doc.y, width: 500, height: 300 });
         if (!imageAdded) {
           doc.fillColor('#666')
              .fontSize(12)
