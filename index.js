@@ -2365,6 +2365,42 @@ app.get('/company-info', authenticateToken, async (req, res) => {
   }
 });
 
+// Retrieve livechat conversation for widget polling
+app.get('/livechat-conversation', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT conversation_data FROM conversations
+       WHERE user_id = $1 AND chatbot_id = $2 AND bug_status = 'livechat'
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id, chatbot_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    let data = result.rows[0].conversation_data;
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        console.error('Error parsing conversation_data JSON:', e);
+      }
+    }
+
+    res.json({ conversation_data: data });
+  } catch (err) {
+    console.error('Error fetching livechat conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
