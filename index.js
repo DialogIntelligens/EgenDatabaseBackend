@@ -1457,26 +1457,6 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
   }
 });
 
-// PATCH to mark conversation as read
-app.patch('/conversation/:id/mark-read', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await pool.query(
-      'UPDATE conversations SET viewed = TRUE WHERE id = $1 RETURNING *', 
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error marking conversation as read:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
 /* ================================
    update-conversations Endpoint
 ================================ */
@@ -2395,7 +2375,7 @@ app.get('/livechat-conversation', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, conversation_data FROM conversations
+      `SELECT conversation_data FROM conversations
        WHERE user_id = $1 AND chatbot_id = $2 AND bug_status = 'livechat'
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
@@ -2414,26 +2394,7 @@ app.get('/livechat-conversation', async (req, res) => {
       }
     }
 
-    // Check if agent has joined by looking for staff messages
-    // Agent messages are non-user messages that come after the initial livechat activation message
-    let agentJoined = false;
-    if (Array.isArray(data)) {
-      const livechatStartIndex = data.findIndex(msg => 
-        !msg.isUser && msg.text && msg.text.includes('Du er nu forbundet til en live chat')
-      );
-      
-      if (livechatStartIndex !== -1) {
-        // Check if there are any non-user messages after the livechat start message
-        const messagesAfterStart = data.slice(livechatStartIndex + 1);
-        agentJoined = messagesAfterStart.some(msg => !msg.isUser);
-      }
-    }
-
-    res.json({ 
-      conversation_data: data,
-      agent_joined: agentJoined,
-      conversation_id: result.rows[0].id
-    });
+    res.json({ conversation_data: data });
   } catch (err) {
     console.error('Error fetching livechat conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
