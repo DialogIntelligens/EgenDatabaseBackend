@@ -762,9 +762,16 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
     }
     
     // Query pinecone_data where namespace matches any of the user's namespaces
+    // Also, join with pinecone_data_views to check if the authenticated user has viewed the data
     const result = await pool.query(
-      'SELECT * FROM pinecone_data WHERE namespace = ANY($1) ORDER BY created_at DESC',
-      [userNamespaces]
+      `SELECT 
+         pd.*, 
+         CASE WHEN pdv.user_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_viewed
+       FROM pinecone_data pd
+       LEFT JOIN pinecone_data_views pdv ON pd.id = pdv.pinecone_data_id AND pdv.user_id = $1
+       WHERE pd.namespace = ANY($2) 
+       ORDER BY pd.created_at DESC`,
+      [authenticatedUserId, userNamespaces] // Use authenticatedUserId for the view check
     );
     
     res.json(
@@ -789,7 +796,8 @@ app.get('/pinecone-data', authenticateToken, async (req, res) => {
           pinecone_index_name: row.pinecone_index_name,
           namespace: row.namespace,
           expiration_time: row.expiration_time,
-          group: group // Include group information
+          group: group, // Include group information
+          has_viewed: row.has_viewed // Include the has_viewed status
         };
       })
     );
@@ -859,6 +867,37 @@ app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
     }
   } catch (err) {
     console.error('Error deleting data:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// New endpoint to mark Pinecone data as viewed
+app.post('/pinecone-data/:data_id/mark-viewed', authenticateToken, async (req, res) => {
+  const { data_id } = req.params;
+  const userId = req.user.userId;
+
+  if (!data_id) {
+    return res.status(400).json({ error: 'data_id is required' });
+  }
+
+  try {
+    // Check if the pinecone_data entry exists
+    const dataCheck = await pool.query('SELECT id FROM pinecone_data WHERE id = $1', [data_id]);
+    if (dataCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Pinecone data not found' });
+    }
+
+    // Insert a record into pinecone_data_views, or do nothing if it already exists
+    await pool.query(
+      `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
+      [userId, data_id]
+    );
+
+    res.status(200).json({ message: 'Data marked as viewed successfully' });
+  } catch (err) {
+    console.error('Error marking data as viewed:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
