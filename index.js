@@ -545,6 +545,14 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
            RETURNING *`,
           [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, JSON.stringify(metadata)]
         );
+        // Mark as viewed by the uploader
+        const newPineconeDataId = result.rows[0].id;
+        await pool.query(
+          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
+          [targetUserId, newPineconeDataId]
+        );
         res.status(201).json(result.rows[0]);
       } catch (dbError) {
         // If metadata column doesn't exist, try without it
@@ -555,6 +563,14 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING *`,
           [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
+        );
+        // Mark as viewed by the uploader (fallback)
+        const newPineconeDataIdFallback = fallbackResult.rows[0].id;
+        await pool.query(
+          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
+          [targetUserId, newPineconeDataIdFallback]
         );
         res.status(201).json(fallbackResult.rows[0]);
       }
@@ -676,6 +692,17 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
           'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3 WHERE id = $4 RETURNING *',
           [title, text, JSON.stringify(metadata), id]
         );
+
+        // Reset viewed status for all users for this chunk, then mark as viewed for the updater
+        const updatedPineconeDataId = result.rows[0].id;
+        await pool.query('DELETE FROM pinecone_data_views WHERE pinecone_data_id = $1', [updatedPineconeDataId]);
+        await pool.query(
+          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
+          [userId, updatedPineconeDataId] // userId is req.user.userId (the updater)
+        );
+
         res.json(result.rows[0]);
       } catch (dbError) {
         // If metadata column doesn't exist, try without it
@@ -684,6 +711,17 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
           'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
           [title, text, id]
         );
+
+        // Reset viewed status for all users (fallback), then mark as viewed for the updater
+        const updatedPineconeDataIdFallback = fallbackResult.rows[0].id;
+        await pool.query('DELETE FROM pinecone_data_views WHERE pinecone_data_id = $1', [updatedPineconeDataIdFallback]);
+        await pool.query(
+          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
+          [userId, updatedPineconeDataIdFallback] // userId is req.user.userId (the updater)
+        );
+
         res.json(fallbackResult.rows[0]);
       }
     } catch (error) {
