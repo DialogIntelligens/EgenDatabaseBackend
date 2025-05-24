@@ -2401,6 +2401,116 @@ app.get('/livechat-conversation', async (req, res) => {
   }
 });
 
+/* ================================
+   Support Status Endpoints
+================================ */
+
+// Get support status for a specific chatbot
+app.get('/support-status/:chatbot_id', async (req, res) => {
+  const { chatbot_id } = req.params;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    // Get all users with livechat enabled for this chatbot
+    const result = await pool.query(
+      `SELECT ss.user_id, ss.is_live, u.username 
+       FROM support_status ss
+       JOIN users u ON ss.user_id = u.id
+       WHERE ss.chatbot_id = $1 AND u.livechat = true`,
+      [chatbot_id]
+    );
+
+    // Check if any support agent is live
+    const isAnyAgentLive = result.rows.some(row => row.is_live);
+
+    res.json({ 
+      support_available: isAnyAgentLive,
+      agents: result.rows
+    });
+  } catch (err) {
+    console.error('Error fetching support status:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Update support status for a user
+app.post('/support-status', authenticateToken, async (req, res) => {
+  const { chatbot_id, is_live } = req.body;
+  const user_id = req.user.userId;
+
+  if (!chatbot_id || typeof is_live !== 'boolean') {
+    return res.status(400).json({ error: 'chatbot_id and is_live (boolean) are required' });
+  }
+
+  try {
+    // Check if user has livechat enabled
+    const userCheck = await pool.query(
+      'SELECT livechat FROM users WHERE id = $1',
+      [user_id]
+    );
+
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!userCheck.rows[0].livechat) {
+      return res.status(403).json({ error: 'User does not have livechat access' });
+    }
+
+    // Upsert support status
+    const result = await pool.query(
+      `INSERT INTO support_status (user_id, chatbot_id, is_live, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, chatbot_id)
+       DO UPDATE SET is_live = $3, updated_at = NOW()
+       RETURNING *`,
+      [user_id, chatbot_id, is_live]
+    );
+
+    res.json({
+      message: 'Support status updated successfully',
+      status: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error updating support status:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Get current user's support status for all their chatbots
+app.get('/my-support-status', authenticateToken, async (req, res) => {
+  const user_id = req.user.userId;
+
+  try {
+    // Check if user has livechat enabled
+    const userCheck = await pool.query(
+      'SELECT livechat, chatbot_ids FROM users WHERE id = $1',
+      [user_id]
+    );
+
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!userCheck.rows[0].livechat) {
+      return res.status(403).json({ error: 'User does not have livechat access' });
+    }
+
+    const result = await pool.query(
+      'SELECT * FROM support_status WHERE user_id = $1',
+      [user_id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching user support status:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
