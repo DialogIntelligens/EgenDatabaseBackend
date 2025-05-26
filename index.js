@@ -1068,8 +1068,7 @@ app.post('/login', async (req, res) => {
       accessible_user_ids: user.accessible_user_ids || [],
       thumbs_rating: user.thumbs_rating || false,
       company_info: user.company_info || '',
-      livechat: user.livechat || false,
-      agent_name: user.agent_name || 'Support Agent'
+      livechat: user.livechat || false
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -2515,113 +2514,4 @@ app.get('/my-support-status', authenticateToken, async (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-});
-
-// Allow admins to update company info for any user
-
-// Add endpoint to update agent name
-app.put('/update-agent-name', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { agent_name } = req.body;
-
-  if (agent_name === undefined || agent_name.trim() === '') {
-    return res.status(400).json({ error: 'agent_name field is required and cannot be empty' });
-  }
-
-  // Validate agent name length
-  if (agent_name.length > 100) {
-    return res.status(400).json({ error: 'Agent name cannot exceed 100 characters' });
-  }
-
-  try {
-    // Update agent_name in the users table
-    const result = await pool.query(
-      'UPDATE users SET agent_name = $1 WHERE id = $2 RETURNING id, username, agent_name',
-      [agent_name.trim(), userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Agent name updated successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username,
-        agent_name: result.rows[0].agent_name
-      }
-    });
-  } catch (error) {
-    console.error('Error updating agent name:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// Allow admins to update agent name for any user
-app.put('/update-agent-name/:userId', authenticateToken, async (req, res) => {
-  const targetUserId = parseInt(req.params.userId);
-  const { agent_name } = req.body;
-
-  // Only admins can update other users' agent names
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Only admins can update other users\' agent names' });
-  }
-
-  if (agent_name === undefined || agent_name.trim() === '') {
-    return res.status(400).json({ error: 'agent_name field is required and cannot be empty' });
-  }
-
-  // Validate agent name length
-  if (agent_name.length > 100) {
-    return res.status(400).json({ error: 'Agent name cannot exceed 100 characters' });
-  }
-
-  try {
-    // Update agent_name in the users table
-    const result = await pool.query(
-      'UPDATE users SET agent_name = $1 WHERE id = $2 RETURNING id, username, agent_name',
-      [agent_name.trim(), targetUserId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Agent name updated successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username,
-        agent_name: result.rows[0].agent_name
-      }
-    });
-  } catch (error) {
-    console.error('Error updating agent name:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// Get agent name
-app.get('/agent-name', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-
-  try {
-    // Get user's agent name
-    const result = await pool.query(
-      'SELECT agent_name FROM users WHERE id = $1',
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      agent_name: result.rows[0].agent_name || 'Support Agent'
-    });
-  } catch (error) {
-    console.error('Error fetching agent name:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
 });
