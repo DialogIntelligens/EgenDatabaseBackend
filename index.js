@@ -1596,11 +1596,35 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     // Get chatbot_id from the request or use user's chatbot IDs
     let chatbotIds;
     if (!chatbot_id || chatbot_id === 'ALL') {
-      // Get chatbot IDs from previously fetched user data
-      if (!userResult.rows[0].chatbot_ids) {
-        return res.status(400).json({ error: 'No chatbot IDs found for user' });
+      // Check if user is admin
+      if (req.user.isAdmin) {
+        // Admin: fetch all chatbot IDs from all users
+        try {
+          const allUsersResult = await pool.query('SELECT chatbot_ids FROM users');
+          let mergedIds = [];
+          for (const row of allUsersResult.rows) {
+            let ids = row.chatbot_ids || [];
+            if (typeof ids === 'string') {
+              ids = JSON.parse(ids);
+            }
+            mergedIds = mergedIds.concat(ids);
+          }
+          // Remove duplicates
+          const uniqueIds = [...new Set(mergedIds)];
+          chatbotIds = uniqueIds;
+          console.log('Admin: Using all chatbot IDs for report generation:', chatbotIds);
+        } catch (error) {
+          console.error('Error fetching all chatbot IDs for admin:', error);
+          // Fall back to user's own IDs
+          chatbotIds = userResult.rows[0].chatbot_ids || [];
+        }
+      } else {
+        // Regular user: use their own chatbot IDs
+        if (!userResult.rows[0].chatbot_ids) {
+          return res.status(400).json({ error: 'No chatbot IDs found for user' });
+        }
+        chatbotIds = userResult.rows[0].chatbot_ids;
       }
-      chatbotIds = userResult.rows[0].chatbot_ids;
     } else {
       // Use the specific chatbot ID
       chatbotIds = [chatbot_id];
