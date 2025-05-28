@@ -385,83 +385,6 @@ app.post('/api/proxy/bevco-order', async (req, res) => {
 });
 
 /* ================================
-   CRM Endpoints
-================================ */
-app.post('/crm', async (req, res) => {
-  const { websiteuserid, usedChatbot, madePurchase, chatbot_id } = req.body;
-
-  if (!websiteuserid) {
-    return res.status(400).json({ error: 'Missing websiteuserid' });
-  }
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'Missing chatbot_id' });
-  }
-
-  try {
-    // Convert to 'true'/'false' strings
-    const incomingUsedChatbot =
-      usedChatbot === 'true' || usedChatbot === true ? 'true' : 'false';
-    const incomingMadePurchase = parseInt(madePurchase) || 0; // Default to 0 if not a number
-
-    // Upsert logic with CASE WHEN to preserve 'true'
-    const query = `
-      INSERT INTO crm (websiteuserid, user_id, usedChatbot, madePurchase, chatbot_id)
-      VALUES ($1, $1, $2, $3, $4)
-      ON CONFLICT (websiteuserid)
-      DO UPDATE SET
-        usedChatbot = CASE
-          WHEN crm.usedchatbot = 'true' THEN 'true'
-          ELSE EXCLUDED.usedchatbot
-        END,
-        madePurchase = CASE
-          WHEN crm.madepurchase != 0  THEN crm.madepurchase
-          ELSE EXCLUDED.madepurchase
-        END,
-        chatbot_id = EXCLUDED.chatbot_id
-      RETURNING *;
-    `;
-    const values = [websiteuserid, incomingUsedChatbot, incomingMadePurchase, chatbot_id];
-
-    const result = await pool.query(query, values);
-    return res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error in /crm endpoint:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-app.get('/crm', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM crm ORDER BY created_at DESC');
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-app.post('/crm-data-for-user', async (req, res) => {
-  const { user_id, chatbot_id } = req.body;
-  if (!user_id) {
-    return res.status(400).json({ error: 'Missing user_id' });
-  }
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'Missing chatbot_id' });
-  }
-  try {
-    const result = await pool.query('SELECT * FROM crm WHERE user_id = $1 AND chatbot_id = $2', [
-      user_id,
-      chatbot_id,
-    ]);
-    if (result.rows.length === 0) {
-      return res.json({ usedChatbot: false, madePurchase: false });
-    }
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-/* ================================
    Pinecone Data Endpoints
 ================================ */
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
@@ -950,7 +873,6 @@ app.post('/register', async (req, res) => {
     chatbot_ids,
     pinecone_api_key,
     pinecone_indexes,
-    show_purchase,
     chatbot_filepath,
     is_admin,
     is_limited_admin,
@@ -977,14 +899,13 @@ app.post('/register', async (req, res) => {
          chatbot_ids,
          pinecone_api_key,
          pinecone_indexes,
-         show_purchase,
          chatbot_filepath,
          is_admin,
          is_limited_admin,
          accessible_chatbot_ids,
          accessible_user_ids
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
 
       [
@@ -993,7 +914,6 @@ app.post('/register', async (req, res) => {
         chatbotIdsArray,
         pinecone_api_key,
         pineconeIndexesJSON,
-        show_purchase,
         chatbot_filepath || [],
         is_admin,
         is_limited_admin,
@@ -1060,7 +980,6 @@ app.post('/login', async (req, res) => {
     return res.json({
       token,
       chatbot_ids: chatbotIds,
-      show_purchase: user.show_purchase,
       chatbot_filepath: user.chatbot_filepath || [],
       is_admin: user.is_admin,
       is_limited_admin: user.is_limited_admin,
@@ -2050,10 +1969,13 @@ app.get('/users', authenticateToken, async (req, res) => {
     queryText += ' ORDER BY id DESC';
 
     const result = await pool.query(queryText, queryParams);
-    const users = result.rows.map(user => ({
-      ...user,
-      chatbot_filepath: user.chatbot_filepath || []
-    }));
+    const users = result.rows.map(user => {
+      const { show_purchase, ...rest } = user; // remove conversion tracking field
+      return {
+        ...rest,
+        chatbot_filepath: user.chatbot_filepath || []
+      };
+    });
     res.json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
