@@ -1953,7 +1953,7 @@ app.get('/users', authenticateToken, async (req, res) => {
     // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
     let queryText = `
       SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
+             pinecone_indexes, chatbot_filepath, thumbs_rating
       FROM users`;
     let queryParams = [];
 
@@ -1970,9 +1970,8 @@ app.get('/users', authenticateToken, async (req, res) => {
 
     const result = await pool.query(queryText, queryParams);
     const users = result.rows.map(user => {
-      const { show_purchase, ...rest } = user; // remove conversion tracking field
       return {
-        ...rest,
+        ...user,
         chatbot_filepath: user.chatbot_filepath || []
       };
     });
@@ -1995,7 +1994,7 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
     // Get full user details except password, including chatbot_filepath array
     const result = await pool.query(`
       SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, show_purchase, chatbot_filepath, thumbs_rating
+             pinecone_indexes, chatbot_filepath, thumbs_rating
       FROM users
       WHERE id = $1
     `, [userId]);
