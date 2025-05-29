@@ -22,15 +22,26 @@ router.post('/track-purchase', async (req, res) => {
     const {
       user_id,
       chatbot_id,
-      event_type, // 'add_to_cart' or 'purchase_complete'
+      event_type, // 'add_to_cart', 'checkout_started', or 'purchase_complete'
       amount,
       currency_code = 'DKK',
       product_count,
       metadata = {}
     } = req.body;
 
+    console.log('Purchase tracking request received:', {
+      user_id,
+      chatbot_id,
+      event_type,
+      amount,
+      currency_code,
+      product_count,
+      metadata
+    });
+
     // Validate required fields
     if (!user_id || !chatbot_id || !event_type || amount === undefined) {
+      console.error('Missing required fields:', { user_id, chatbot_id, event_type, amount });
       return res.status(400).json({ 
         error: 'Missing required fields: user_id, chatbot_id, event_type, and amount are required' 
       });
@@ -52,12 +63,14 @@ router.post('/track-purchase', async (req, res) => {
 
       if (conversationResult.rows.length === 0) {
         await client.query('ROLLBACK');
+        console.error('No conversation found for user:', user_id, 'chatbot:', chatbot_id);
         return res.status(404).json({ 
           error: 'No conversation found for this user and chatbot' 
         });
       }
 
       const conversationId = conversationResult.rows[0].id;
+      console.log('Found conversation ID:', conversationId);
 
       // Insert the purchase event
       await client.query(
@@ -66,6 +79,8 @@ router.post('/track-purchase', async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [conversationId, user_id, chatbot_id, event_type, amount, currency_code, product_count, metadata]
       );
+
+      console.log('Purchase event inserted');
 
       // Update the conversation based on event type
       if (event_type === 'purchase_complete') {
@@ -79,7 +94,8 @@ router.post('/track-purchase', async (req, res) => {
            WHERE id = $3`,
           [amount, currency_code, conversationId]
         );
-      } else if (event_type === 'add_to_cart') {
+        console.log('Conversation updated for purchase_complete');
+      } else if (event_type === 'add_to_cart' || event_type === 'checkout_started') {
         // Update cart amount (could be multiple add to cart events)
         await client.query(
           `UPDATE conversations 
@@ -89,14 +105,18 @@ router.post('/track-purchase', async (req, res) => {
            WHERE id = $3`,
           [amount, currency_code, conversationId]
         );
+        console.log(`Conversation updated for ${event_type}`);
       }
 
       await client.query('COMMIT');
 
+      console.log('Purchase event tracked successfully');
       res.json({ 
         success: true, 
         message: 'Purchase event tracked successfully',
-        conversation_id: conversationId
+        conversation_id: conversationId,
+        event_type: event_type,
+        amount: amount
       });
 
     } catch (error) {
