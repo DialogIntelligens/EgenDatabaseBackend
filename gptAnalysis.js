@@ -86,19 +86,14 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     }
 
     // Extract relevant metrics for the prompt
-    const { 
+    const {
       totalMessages,
-      averageMessagesPerDay, 
-      totalConversations, 
+      averageMessagesPerDay,
+      totalConversations,
       totalCustomerRatings,
       averageCustomerRating,
       csatScore,
       thumbsRating,
-      totalVisitors,
-      overallConversionRate,
-      chatbotConversionRate,
-      nonChatbotConversionRate,
-      showPurchase,
       companyInfo,
       textAnalysis,
       emneData,
@@ -138,17 +133,6 @@ ${csatScore ? `- Customer Satisfaction (CSAT): ${csatScore}` : ''}
 
 Do not mention the amount of people that have rated the chatbot unless very relevant, only mention the average rating.
 `;
-
-    // Add conversion statistics if applicable
-    if (showPurchase) {
-      prompt += `
-CONVERSION METRICS:
-- Total Visitors: ${totalVisitors}
-- Overall Conversion Rate: ${overallConversionRate}%
-- Chatbot Conversion Rate: ${chatbotConversionRate}%
-- Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%
-`;
-    }
 
     // Add topic distribution data if available
     if (emneData && emneData.labels && emneData.labels.length > 0) {
