@@ -10,6 +10,7 @@ import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
+import purchaseTrackingRouter from './purchaseTracking.js'; // Import purchase tracking
 
 const { Pool } = pg;
 
@@ -60,6 +61,9 @@ app.options('*', cors());
 
 // Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
 app.set('trust proxy', true);
+
+// Add purchase tracking routes
+app.use('/api/purchase', purchaseTrackingRouter);
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -1079,7 +1083,8 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status
+      bug_status,
+      form_data
     ) {
       const client = await pool.connect();
       try {
@@ -1087,19 +1092,19 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), created_at = NOW()
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), form_data = $9, created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, form_data]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, form_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, form_data]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1125,7 +1130,8 @@ app.post('/conversations', async (req, res) => {
     score,
     customer_rating,
     lacking_info,
-    bug_status
+    bug_status,
+    form_data // Add this to support form data
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1154,7 +1160,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation WITHOUT the source_chunks argument
+    // Call upsertConversation WITH the form_data argument
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1163,7 +1169,8 @@ app.post('/conversations', async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status
+      bug_status,
+      form_data // Pass the form_data
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1289,7 +1296,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed,
+             tracking_enabled, has_purchase, purchase_amount, cart_amount, currency_code
       FROM conversations
       WHERE chatbot_id = ANY($1)
     `;
@@ -1340,18 +1348,37 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
 app.get('/conversation/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    // Get the conversation
-    const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
+    // Get the conversation with purchase data
+    const result = await pool.query(`
+      SELECT c.*, 
+             c.tracking_enabled,
+             c.has_purchase,
+             c.purchase_amount,
+             c.cart_amount,
+             c.currency_code,
+             c.purchase_timestamp
+      FROM conversations c
+      WHERE c.id = $1`, [id]);
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
+    
+    // Get purchase events for this conversation
+    const eventsResult = await pool.query(
+      'SELECT * FROM purchase_events WHERE conversation_id = $1 ORDER BY created_at ASC',
+      [id]
+    );
+    
+    const conversation = result.rows[0];
+    conversation.purchase_events = eventsResult.rows;
     
     // Only mark the conversation as viewed if the user is not an admin
     if (!req.user.isAdmin) {
       await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
     }
     
-    res.json(result.rows[0]);
+    res.json(conversation);
   } catch (err) {
     console.error('Error retrieving conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
