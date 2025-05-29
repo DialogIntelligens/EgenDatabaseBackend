@@ -599,11 +599,6 @@ export async function generateStatisticsReport(data, timePeriod) {
         averageCustomerRating,
         csatScore,
         thumbsRating,
-        totalVisitors,
-        overallConversionRate,
-        chatbotConversionRate,
-        nonChatbotConversionRate,
-        showPurchase,
         chartImages // Chart images from screen capture
       } = data;
       
@@ -618,21 +613,6 @@ export async function generateStatisticsReport(data, timePeriod) {
         doc.text(`Customer Satisfaction (CSAT): ${csatScore}`);
       }
 
-      // Add conversion statistics if applicable
-      if (showPurchase) {
-        doc.moveDown();
-        doc.fillColor('#333')
-           .fontSize(16)
-           .text('Conversion Statistics', { underline: true });
-        doc.moveDown();
-        
-        doc.fillColor('#333').fontSize(12);
-        doc.text(`Total Visitors: ${totalVisitors}`);
-        doc.text(`Overall Conversion Rate: ${overallConversionRate}%`);
-        doc.text(`Chatbot Conversion Rate: ${chatbotConversionRate}%`);
-        doc.text(`Non-Chatbot Conversion Rate: ${nonChatbotConversionRate}%`);
-      }
-      
       // Add daily/weekly messages chart (only if image is available)
       doc.addPage();
       doc.fillColor('#333')
