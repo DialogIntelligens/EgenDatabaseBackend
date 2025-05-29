@@ -1215,12 +1215,12 @@ app.get('/conversations', authenticateToken, async (req, res) => {
     let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
-      queryText += ` AND lacking_info = $${paramIndex++}`;
+      queryText += ` AND c.lacking_info = $${paramIndex++}`;
       queryParams.push(lacking_info === 'true');
     }
 
     if (start_date && end_date) {
-      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryText += ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
 
@@ -1253,15 +1253,15 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
 
 
     if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND bug_status = $${paramIndex++}`;
+      queryText += ` AND c.bug_status = $${paramIndex++}`;
       queryParams.push(fejlstatus);
     }
     if (customer_rating && customer_rating !== '') {
-      queryText += ` AND customer_rating = $${paramIndex++}`;
+      queryText += ` AND c.customer_rating = $${paramIndex++}`;
       queryParams.push(customer_rating);
     }
     if (emne && emne !== '') {
-      queryText += ` AND emne = $${paramIndex++}`;
+      queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
     }
     const result = await pool.query(queryText, queryParams);
@@ -1289,40 +1289,43 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed
-      FROM conversations
-      WHERE chatbot_id = ANY($1)
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed,
+             COALESCE(SUM(p.amount), 0) as purchase_amount
+      FROM conversations c
+      LEFT JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
+      WHERE c.chatbot_id = ANY($1)
     `;
     let queryParams = [chatbotIds];
     let paramIndex = 2;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
-      queryText += ` AND lacking_info = $${paramIndex++}`;
+      queryText += ` AND c.lacking_info = $${paramIndex++}`;
       queryParams.push(lacking_info === 'true');
     }
 
     if (start_date && end_date) {
-      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryText += ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
     if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND bug_status = $${paramIndex++}`;
+      queryText += ` AND c.bug_status = $${paramIndex++}`;
       queryParams.push(fejlstatus);
     }
     if (customer_rating && customer_rating !== '') {
-      queryText += ` AND customer_rating = $${paramIndex++}`;
+      queryText += ` AND c.customer_rating = $${paramIndex++}`;
       queryParams.push(customer_rating);
     }
     if (emne && emne !== '') {
-      queryText += ` AND emne = $${paramIndex++}`;
+      queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
     }
     if (conversation_filter && conversation_filter.trim() !== '') {
-      queryText += ` AND conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
       queryParams.push(`${conversation_filter}`);
     }
 
-    queryText += ` ORDER BY created_at DESC `;
+    queryText += ` GROUP BY c.id `;
+    queryText += ` ORDER BY c.created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
 
@@ -1340,8 +1343,17 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
 app.get('/conversation/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    // Get the conversation
-    const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
+    // Get the conversation with purchase data
+    const result = await pool.query(
+      `SELECT c.*, 
+              COALESCE(SUM(p.amount), 0) as purchase_amount
+       FROM conversations c
+       LEFT JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
+       WHERE c.id = $1
+       GROUP BY c.id`, 
+      [id]
+    );
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
