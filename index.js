@@ -1079,7 +1079,8 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status
+      bug_status,
+      purchase_tracking_enabled
     ) {
       const client = await pool.connect();
       try {
@@ -1087,19 +1088,19 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), created_at = NOW()
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled), created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1125,7 +1126,8 @@ app.post('/conversations', async (req, res) => {
     score,
     customer_rating,
     lacking_info,
-    bug_status
+    bug_status,
+    purchase_tracking_enabled
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1163,7 +1165,8 @@ app.post('/conversations', async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status
+      bug_status,
+      purchase_tracking_enabled
     );
     res.status(201).json(result);
   } catch (err) {
