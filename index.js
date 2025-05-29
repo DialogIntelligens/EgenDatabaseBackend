@@ -10,7 +10,6 @@ import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
-import purchaseTrackingRouter from './purchaseTracking.js'; // Import purchase tracking
 
 const { Pool } = pg;
 
@@ -61,9 +60,6 @@ app.options('*', cors());
 
 // Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
 app.set('trust proxy', true);
-
-// Add purchase tracking routes
-app.use('/api/purchase', purchaseTrackingRouter);
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -1083,8 +1079,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status,
-      form_data
+      bug_status
     ) {
       const client = await pool.connect();
       try {
@@ -1092,19 +1087,19 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), form_data = $9, created_at = NOW()
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, form_data]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, form_data)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, form_data]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1130,8 +1125,7 @@ app.post('/conversations', async (req, res) => {
     score,
     customer_rating,
     lacking_info,
-    bug_status,
-    form_data // Add this to support form data
+    bug_status
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1160,7 +1154,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation WITH the form_data argument
+    // Call upsertConversation WITHOUT the source_chunks argument
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1169,8 +1163,7 @@ app.post('/conversations', async (req, res) => {
       score,
       customer_rating,
       lacking_info,
-      bug_status,
-      form_data // Pass the form_data
+      bug_status
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1296,8 +1289,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed,
-             tracking_enabled, has_purchase, purchase_amount, cart_amount, currency_code
+      SELECT id, created_at, emne, customer_rating, bug_status, conversation_data, viewed
       FROM conversations
       WHERE chatbot_id = ANY($1)
     `;
@@ -1348,37 +1340,18 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
 app.get('/conversation/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    // Get the conversation with purchase data
-    const result = await pool.query(`
-      SELECT c.*, 
-             c.tracking_enabled,
-             c.has_purchase,
-             c.purchase_amount,
-             c.cart_amount,
-             c.currency_code,
-             c.purchase_timestamp
-      FROM conversations c
-      WHERE c.id = $1`, [id]);
-    
+    // Get the conversation
+    const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
-    
-    // Get purchase events for this conversation
-    const eventsResult = await pool.query(
-      'SELECT * FROM purchase_events WHERE conversation_id = $1 ORDER BY created_at ASC',
-      [id]
-    );
-    
-    const conversation = result.rows[0];
-    conversation.purchase_events = eventsResult.rows;
     
     // Only mark the conversation as viewed if the user is not an admin
     if (!req.user.isAdmin) {
       await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
     }
     
-    res.json(conversation);
+    res.json(result.rows[0]);
   } catch (err) {
     console.error('Error retrieving conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
@@ -2523,4 +2496,88 @@ app.get('/my-support-status', authenticateToken, async (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+
+/* ================================
+   Purchases (Chatbot conversion tracking)
+================================ */
+
+// Simple helper to validate purchase payloads
+function validatePurchasePayload(body) {
+  const { user_id, chatbot_id, amount } = body;
+  if (!user_id || user_id.toString().trim() === "") {
+    return "user_id is required";
+  }
+  if (!chatbot_id || chatbot_id.toString().trim() === "") {
+    return "chatbot_id is required";
+  }
+  if (amount === undefined || amount === null || isNaN(parseFloat(amount))) {
+    return "amount must be a valid number";
+  }
+  return null;
+}
+
+/*
+  POST /purchases
+  Body: { user_id: string, chatbot_id: string, amount: number }
+  Creates a purchase record attributed to a chatbot conversation.
+*/
+app.post('/purchases', async (req, res) => {
+  try {
+    const validationError = validatePurchasePayload(req.body);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const { user_id, chatbot_id, amount } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO purchases (user_id, chatbot_id, amount)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [user_id, chatbot_id, parseFloat(amount)]
+    );
+
+    return res.status(201).json({ message: 'Purchase recorded', purchase: result.rows[0] });
+  } catch (err) {
+    console.error('Error recording purchase:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+/*
+  GET /purchases/:chatbot_id
+  Optional query params: user_id (filter by user), start_date, end_date
+  Returns list of purchases for a chatbot – useful for dashboard stats.
+*/
+app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { user_id, start_date, end_date } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    let queryText = `SELECT * FROM purchases WHERE chatbot_id = $1`;
+    const queryParams = [chatbot_id];
+    let idx = 2;
+
+    if (user_id) {
+      queryText += ` AND user_id = $${idx++}`;
+      queryParams.push(user_id);
+    }
+    if (start_date && end_date) {
+      queryText += ` AND created_at BETWEEN $${idx++} AND $${idx++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    queryText += ' ORDER BY created_at DESC';
+
+    const result = await pool.query(queryText, queryParams);
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching purchases:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
 });
