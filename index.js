@@ -1211,8 +1211,8 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 
     let queryText = `
       SELECT *
-      FROM conversations
-      WHERE chatbot_id = ANY($1)
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)
     `;
     let queryParams = [chatbotIds];
     let paramIndex = 2;
@@ -1248,8 +1248,8 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
 
     let queryText = `
       SELECT COUNT(id) AS conversation_count
-      FROM conversations
-      WHERE chatbot_id = ANY($1)
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)
     `;
     let queryParams = [chatbotIds];
     let paramIndex = 2;
