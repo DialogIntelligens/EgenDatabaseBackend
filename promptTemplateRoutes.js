@@ -86,7 +86,7 @@ export function registerPromptTemplateRoutes(app, pool, authenticateToken) {
            VALUES ($1,$2,$3,$4)`,
           [
             currentTemplate.version,
-            currentTemplate.sections, // Keep as JSONB, don't stringify
+            JSON.stringify(currentTemplate.sections), // stringify to valid JSON
             currentTemplate.updated_at,
             modifiedBy,
           ],
