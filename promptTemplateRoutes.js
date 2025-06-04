@@ -14,12 +14,29 @@ export function registerPromptTemplateRoutes(app, pool, authenticateToken) {
   ============================= */
 
   // GET /prompt-template -> current template (single row)
-  router.get('/', async (_req, res) => {
+  router.get('/', async (req, res) => {
     try {
+      console.log('GET /prompt-template called');
       const { rows } = await pool.query('SELECT * FROM statestik_prompt_template LIMIT 1');
+      console.log('Template query result:', rows.length, 'rows found');
+      
+      if (rows.length > 0) {
+        console.log('Template data:', {
+          id: rows[0].id,
+          version: rows[0].version,
+          sectionsType: typeof rows[0].sections,
+          sectionsLength: Array.isArray(rows[0].sections) ? rows[0].sections.length : 'not array'
+        });
+      }
+      
       res.json(rows[0] || null);
     } catch (err) {
       console.error('GET /prompt-template error:', err);
+      console.error('Error details:', {
+        message: err.message,
+        stack: err.stack,
+        code: err.code
+      });
       res.status(500).json({ error: 'Server error', details: err.message });
     }
   });
@@ -35,40 +52,73 @@ export function registerPromptTemplateRoutes(app, pool, authenticateToken) {
       return res.status(400).json({ error: 'sections must be an array' });
     }
 
+    // Validate sections structure
+    for (const section of sections) {
+      if (!section.hasOwnProperty('key') || !section.hasOwnProperty('content')) {
+        return res.status(400).json({ error: 'Each section must have key and content properties' });
+      }
+      if (typeof section.key !== 'number' || typeof section.content !== 'string') {
+        return res.status(400).json({ error: 'Section key must be number and content must be string' });
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      console.log('Starting template update transaction');
 
       // Move current template (if any) to history table
       const cur = await client.query('SELECT * FROM statestik_prompt_template LIMIT 1');
-      if (cur.rows.length) {
+      console.log('Current template rows found:', cur.rows.length);
+      
+      let newVersion = 1;
+      if (cur.rows.length > 0) {
+        const currentTemplate = cur.rows[0];
+        newVersion = (currentTemplate.version || 0) + 1;
+        
+        // Only insert to history if we have a valid user ID
+        const modifiedBy = req.user?.userId || null;
+        console.log('Archiving template version', currentTemplate.version, 'modified by user', modifiedBy);
+        
         await client.query(
           `INSERT INTO statestik_prompt_template_history
              (version, sections, updated_at, modified_by)
            VALUES ($1,$2,$3,$4)`,
           [
-            cur.rows[0].version,
-            cur.rows[0].sections,
-            cur.rows[0].updated_at,
-            req.user.userId,
+            currentTemplate.version,
+            currentTemplate.sections, // Keep as JSONB, don't stringify
+            currentTemplate.updated_at,
+            modifiedBy,
           ],
         );
+        console.log('Successfully archived current template');
       }
 
-      // Insert new template (single-row table pattern)
-      const newVersion = (cur.rows[0]?.version || 0) + 1;
+      // Delete current template
       await client.query('DELETE FROM statestik_prompt_template');
+      console.log('Deleted current template');
+      
+      // Insert new template (single-row table pattern)
+      console.log('Inserting new template version', newVersion, 'with sections:', sections);
       await client.query(
         `INSERT INTO statestik_prompt_template (version, sections, updated_at)
          VALUES ($1,$2,NOW())`,
-        [newVersion, JSON.stringify(sections)],
+        [newVersion, JSON.stringify(sections)], // Convert to JSON string for storage
       );
+      console.log('Successfully inserted new template');
 
       await client.query('COMMIT');
+      console.log('Transaction committed successfully');
+      
       res.json({ message: 'template updated', version: newVersion });
     } catch (e) {
       await client.query('ROLLBACK');
       console.error('PUT /prompt-template error:', e);
+      console.error('Error details:', {
+        message: e.message,
+        stack: e.stack,
+        code: e.code
+      });
       res.status(500).json({ error: 'Server error', details: e.message });
     } finally {
       client.release();
