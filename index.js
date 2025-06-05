@@ -2362,6 +2362,59 @@ app.put('/update-profile-picture', authenticateToken, async (req, res) => {
   }
 });
 
+// Upload logo/image endpoint for profile pictures
+app.post('/upload-logo', authenticateToken, async (req, res) => {
+  try {
+    // Handle both multipart form data and direct base64
+    let imageData = null;
+    let mimeType = null;
+    
+    if (req.body.image) {
+      // Handle base64 data from form data
+      const base64Data = req.body.image;
+      if (base64Data.startsWith('data:')) {
+        // Extract mime type and base64 data
+        const matches = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches) {
+          mimeType = matches[1];
+          imageData = matches[2];
+        } else {
+          return res.status(400).json({ error: 'Invalid base64 image format' });
+        }
+      } else {
+        return res.status(400).json({ error: 'Image must be base64 encoded with data URL format' });
+      }
+    } else {
+      return res.status(400).json({ error: 'No image data provided' });
+    }
+
+    // Validate mime type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(mimeType)) {
+      return res.status(400).json({ error: 'Invalid file type. Allowed types: JPEG, PNG, GIF, WebP' });
+    }
+
+    // Validate base64 size (approximate file size check)
+    const sizeInBytes = (imageData.length * 3) / 4;
+    const maxSizeInBytes = 5 * 1024 * 1024; // 5MB
+    if (sizeInBytes > maxSizeInBytes) {
+      return res.status(400).json({ error: 'File size too large. Maximum 5MB allowed.' });
+    }
+
+    // For now, return the data URL as the "uploaded" URL
+    // In production, you would upload to a cloud service like Cloudinary or AWS S3
+    const dataUrl = `data:${mimeType};base64,${imageData}`;
+    
+    return res.status(200).json({
+      message: 'Image uploaded successfully',
+      url: dataUrl
+    });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    return res.status(500).json({ error: 'Upload failed', details: error.message });
+  }
+});
+
 // Retrieve livechat conversation for widget polling
 app.get('/livechat-conversation', async (req, res) => {
   const { user_id, chatbot_id } = req.query;
