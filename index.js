@@ -62,6 +62,45 @@ app.options('*', cors());
 // Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
 app.set('trust proxy', true);
 
+// Database migration function to update profile_picture column
+async function migrateProfilePictureColumn() {
+  try {
+    // Check if column exists and its type
+    const columnCheck = await pool.query(`
+      SELECT data_type, character_maximum_length 
+      FROM information_schema.columns 
+      WHERE table_name = 'users' AND column_name = 'profile_picture'
+    `);
+    
+    if (columnCheck.rows.length > 0) {
+      const currentType = columnCheck.rows[0].data_type;
+      const maxLength = columnCheck.rows[0].character_maximum_length;
+      
+      // If it's varchar with limited length, upgrade to TEXT
+      if (currentType === 'character varying' && maxLength && maxLength <= 500) {
+        console.log('Migrating profile_picture column from varchar to TEXT...');
+        await pool.query('ALTER TABLE users ALTER COLUMN profile_picture TYPE TEXT');
+        console.log('Successfully migrated profile_picture column to TEXT');
+      } else if (currentType === 'text') {
+        console.log('profile_picture column is already TEXT type');
+      } else {
+        console.log(`profile_picture column type: ${currentType}, max_length: ${maxLength}`);
+      }
+    } else {
+      // Column doesn't exist, add it as TEXT
+      console.log('Adding profile_picture column as TEXT...');
+      await pool.query('ALTER TABLE users ADD COLUMN profile_picture TEXT');
+      console.log('Successfully added profile_picture column');
+    }
+  } catch (error) {
+    console.error('Error migrating profile_picture column:', error);
+    // Don't exit the process, just log the error
+  }
+}
+
+// Run migration on startup
+migrateProfilePictureColumn();
+
 // JWT auth middleware
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
