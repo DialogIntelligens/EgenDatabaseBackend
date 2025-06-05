@@ -1120,7 +1120,8 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       customer_rating,
       lacking_info,
       bug_status,
-      purchase_tracking_enabled
+      purchase_tracking_enabled,
+      is_livechat = false
     ) {
       const client = await pool.connect();
       try {
@@ -1128,19 +1129,19 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled), created_at = NOW()
+           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled), is_livechat = COALESCE($10, is_livechat), created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1167,7 +1168,8 @@ app.post('/conversations', async (req, res) => {
     customer_rating,
     lacking_info,
     bug_status,
-    purchase_tracking_enabled
+    purchase_tracking_enabled,
+    is_livechat
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1196,7 +1198,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation WITHOUT the source_chunks argument
+    // Call upsertConversation with is_livechat parameter
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1206,7 +1208,8 @@ app.post('/conversations', async (req, res) => {
       customer_rating,
       lacking_info,
       bug_status,
-      purchase_tracking_enabled
+      purchase_tracking_enabled,
+      is_livechat || false
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1296,8 +1299,12 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
 
 
     if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND c.bug_status = $${paramIndex++}`;
-      queryParams.push(fejlstatus);
+      if (fejlstatus === 'livechat') {
+        queryText += ` AND c.is_livechat = TRUE`;
+      } else {
+        queryText += ` AND c.bug_status = $${paramIndex++}`;
+        queryParams.push(fejlstatus);
+      }
     }
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND c.customer_rating = $${paramIndex++}`;
@@ -1351,8 +1358,12 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryParams.push(start_date, end_date);
     }
     if (fejlstatus && fejlstatus !== '') {
-      queryText += ` AND c.bug_status = $${paramIndex++}`;
-      queryParams.push(fejlstatus);
+      if (fejlstatus === 'livechat') {
+        queryText += ` AND c.is_livechat = TRUE`;
+      } else {
+        queryText += ` AND c.bug_status = $${paramIndex++}`;
+        queryParams.push(fejlstatus);
+      }
     }
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND c.customer_rating = $${paramIndex++}`;
@@ -2465,7 +2476,7 @@ app.get('/livechat-conversation', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT conversation_data FROM conversations
-       WHERE user_id = $1 AND chatbot_id = $2 AND bug_status = 'livechat'
+       WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
     );
