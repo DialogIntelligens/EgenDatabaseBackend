@@ -1129,7 +1129,15 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
 
         const updateResult = await client.query(
           `UPDATE conversations
-           SET conversation_data = $3, emne = $4, score = $5, customer_rating = $6, lacking_info = $7, bug_status = COALESCE($8, bug_status), purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled), is_livechat = COALESCE($10, is_livechat), created_at = NOW()
+           SET conversation_data = $3,
+               emne = COALESCE($4, emne),
+               score = COALESCE($5, score),
+               customer_rating = COALESCE($6, customer_rating),
+               lacking_info = COALESCE($7, lacking_info),
+               bug_status = COALESCE($8, bug_status),
+               purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled),
+               is_livechat = COALESCE($10, is_livechat),
+               created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
           [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat]
@@ -1195,60 +1203,6 @@ app.post('/conversations', async (req, res) => {
   }
 
   try {
-    // If this is a livechat conversation and we don't have emne/score, try to get them
-    if (is_livechat && (!emne || !score)) {
-      try {
-        // Get the chatbot's statestikAPI
-        const chatbotResult = await pool.query('SELECT statestikapi FROM chatbots WHERE id = $1', [chatbot_id]);
-        
-        if (chatbotResult.rows.length > 0 && chatbotResult.rows[0].statestikapi) {
-          const statestikAPI = chatbotResult.rows[0].statestikapi;
-          
-          // Convert conversation data to text for statistics analysis
-          let conversationText = '';
-          if (Array.isArray(conversation_data)) {
-            conversationText = conversation_data
-              .map((msg) => {
-                const role = msg.isUser ? "User" : "AI";
-                return `${role}: ${msg.text || ''}`;
-              })
-              .join("\n");
-          } else if (typeof conversation_data === 'string') {
-            const parsed = JSON.parse(conversation_data);
-            if (Array.isArray(parsed)) {
-              conversationText = parsed
-                .map((msg) => {
-                  const role = msg.isUser ? "User" : "AI";
-                  return `${role}: ${msg.text || ''}`;
-                })
-                .join("\n");
-            }
-          }
-          
-          if (conversationText.trim()) {
-            console.log('Getting statistics for livechat conversation...');
-            const statistics = await getEmneAndScore(conversationText, statestikAPI);
-            
-            // Use the statistics if we got valid results
-            if (!emne && statistics.emne) {
-              emne = statistics.emne;
-            }
-            if (!score && statistics.score) {
-              score = statistics.score;
-            }
-            if (lacking_info === undefined && statistics.lacking_info !== undefined) {
-              lacking_info = statistics.lacking_info;
-            }
-            
-            console.log(`Livechat statistics: emne=${emne}, score=${score}, lacking_info=${lacking_info}`);
-          }
-        }
-      } catch (statsError) {
-        console.error('Error getting statistics for livechat conversation:', statsError);
-        // Continue without statistics rather than failing the whole request
-      }
-    }
-
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
