@@ -2708,21 +2708,6 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
   }
 });
 
-/* ================================
-   Prompt Template System Registration
-   
-   Supports multiple prompt types via parameterized routes:
-   - statestik: Statistics flow prompts
-   - fordelingsflow: Distribution flow prompts  
-   - api_endpoint: Main API endpoint prompts
-   - flow3: Flow3 specific prompts
-   
-   Available endpoints for each promptType:
-   - GET /prompt-template/{promptType} - Get template
-   - PUT /prompt-template/{promptType} - Update template (admin)
-   - GET /prompt-template/{promptType}/overrides/{chatbot_id} - Get overrides
-   - POST /prompt-template/{promptType}/overrides - Add/update override
-   - DELETE /prompt-template/{promptType}/overrides/{id} - Delete override  
-   - GET /prompt-template/{promptType}/final/{chatbot_id} - Get merged prompt
-================================ */
+// After Express app is initialised and authenticateToken is declared but before app.listen
+// Register all prompt template routes (statestik, fordelingsflow, api-endpoint, flow3)
 registerPromptTemplateRoutes(app, pool, authenticateToken);
