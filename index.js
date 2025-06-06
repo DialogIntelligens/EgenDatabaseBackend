@@ -2709,5 +2709,4 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
 });
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
-// Register all prompt template routes (statestik, fordelingsflow, api-endpoint, flow3)
 registerPromptTemplateRoutes(app, pool, authenticateToken);
