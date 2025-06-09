@@ -1397,12 +1397,38 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
     const totalOpens = parseInt(opensResult.rows[0]?.total_opens || 0);
 
     // Query to get total conversations (users who actually had conversations)
-    // We need to build the date filter for conversations table
+    // For existing chatbots, we need to be smart about the date range
     let conversationDateFilter = '';
     let conversationParams = [chatbotIds];
     let conversationParamIndex = 2;
 
-    if (start_date && end_date) {
+    // If no date filter is provided, check if this chatbot has tracking data
+    if (!start_date || !end_date) {
+      // Get the earliest chatbot open date for these chatbots
+      const firstOpenQuery = `
+        SELECT MIN(opened_at) as first_open_date
+        FROM chatbot_opens
+        WHERE chatbot_id = ANY($1)
+      `;
+      const firstOpenResult = await pool.query(firstOpenQuery, [chatbotIds]);
+      const firstOpenDate = firstOpenResult.rows[0]?.first_open_date;
+
+      if (firstOpenDate) {
+        // Only count conversations from when tracking started
+        conversationDateFilter = ` AND c.created_at >= $${conversationParamIndex++}`;
+        conversationParams.push(firstOpenDate);
+        console.log('Using first open date for greeting rate calculation:', firstOpenDate);
+      } else {
+        // No opens tracked yet, so greeting rate should be N/A
+        return res.json({
+          total_opens: 0,
+          total_conversations: 0,
+          greeting_rate_percentage: 0,
+          note: 'No chatbot opens tracked yet'
+        });
+      }
+    } else {
+      // Use provided date range
       conversationDateFilter = ` AND c.created_at BETWEEN $${conversationParamIndex++} AND $${conversationParamIndex++}`;
       conversationParams.push(start_date, end_date);
     }
@@ -1418,14 +1444,22 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
 
     // Calculate greeting rate
     let greetingRate = 0;
+    let note = null;
+    
     if (totalOpens > 0) {
       greetingRate = Math.round((totalConversations / totalOpens) * 100);
+      // Cap at 100% as greeting rate shouldn't exceed 100%
+      greetingRate = Math.min(greetingRate, 100);
+    } else if (totalConversations > 0) {
+      // This shouldn't happen with our new logic, but just in case
+      note = 'Tracking data incomplete';
     }
 
     return res.json({
       total_opens: totalOpens,
       total_conversations: totalConversations,
-      greeting_rate_percentage: greetingRate
+      greeting_rate_percentage: greetingRate,
+      ...(note && { note })
     });
 
   } catch (err) {
