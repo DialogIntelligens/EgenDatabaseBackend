@@ -1246,6 +1246,37 @@ app.post('/delete', async (req, res) => {
   }
 });
 
+// POST track chatbot open for greeting rate statistics
+app.post('/track-chatbot-open', async (req, res) => {
+  const { chatbot_id, user_id } = req.body;
+  
+  if (!chatbot_id || !user_id) {
+    return res.status(400).json({ error: 'chatbot_id and user_id are required' });
+  }
+
+  try {
+    // Check if this user+chatbot combination already exists (to avoid duplicates)
+    const existingOpen = await pool.query(
+      'SELECT id FROM chatbot_opens WHERE chatbot_id = $1 AND user_id = $2',
+      [chatbot_id, user_id]
+    );
+
+    if (existingOpen.rows.length === 0) {
+      // Insert new chatbot open record
+      await pool.query(
+        'INSERT INTO chatbot_opens (chatbot_id, user_id) VALUES ($1, $2)',
+        [chatbot_id, user_id]
+      );
+      console.log(`Chatbot open tracked: ${chatbot_id} - ${user_id}`);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error tracking chatbot open:', error);
+    res.status(500).json({ error: 'Failed to track chatbot open' });
+  }
+});
+
 /* 
   CHANGED: /conversations now uses comma-separated chatbot_id to match multiple IDs via ANY($1).
 */
@@ -1330,6 +1361,76 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     return res
       .status(500)
       .json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET greeting rate statistics
+app.get('/greeting-rate', authenticateToken, async (req, res) => {
+  const { chatbot_id, start_date, end_date } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+    
+    // Base query parameters
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+    let dateFilter = '';
+
+    // Add date filtering if provided
+    if (start_date && end_date) {
+      dateFilter = ` AND opened_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    // Query to get total chatbot opens
+    const opensQuery = `
+      SELECT COUNT(DISTINCT user_id) AS total_opens
+      FROM chatbot_opens
+      WHERE chatbot_id = ANY($1)${dateFilter}
+    `;
+    
+    const opensResult = await pool.query(opensQuery, queryParams);
+    const totalOpens = parseInt(opensResult.rows[0]?.total_opens || 0);
+
+    // Query to get total conversations (users who actually had conversations)
+    // We need to build the date filter for conversations table
+    let conversationDateFilter = '';
+    let conversationParams = [chatbotIds];
+    let conversationParamIndex = 2;
+
+    if (start_date && end_date) {
+      conversationDateFilter = ` AND c.created_at BETWEEN $${conversationParamIndex++} AND $${conversationParamIndex++}`;
+      conversationParams.push(start_date, end_date);
+    }
+
+    const conversationsQuery = `
+      SELECT COUNT(DISTINCT c.user_id) AS total_conversations
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)${conversationDateFilter}
+    `;
+    
+    const conversationsResult = await pool.query(conversationsQuery, conversationParams);
+    const totalConversations = parseInt(conversationsResult.rows[0]?.total_conversations || 0);
+
+    // Calculate greeting rate
+    let greetingRate = 0;
+    if (totalOpens > 0) {
+      greetingRate = Math.round((totalConversations / totalOpens) * 100);
+    }
+
+    return res.json({
+      total_opens: totalOpens,
+      total_conversations: totalConversations,
+      greeting_rate_percentage: greetingRate
+    });
+
+  } catch (err) {
+    console.error('Error calculating greeting rate:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
