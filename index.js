@@ -1121,7 +1121,8 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
       lacking_info,
       bug_status,
       purchase_tracking_enabled,
-      is_livechat = false
+      is_livechat = false,
+      fallback = null
     ) {
       const client = await pool.connect();
       try {
@@ -1137,19 +1138,20 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
                bug_status = COALESCE($8, bug_status),
                purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled),
                is_livechat = COALESCE($10, is_livechat),
+               fallback = COALESCE($11, fallback),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1177,7 +1179,8 @@ app.post('/conversations', async (req, res) => {
     lacking_info,
     bug_status,
     purchase_tracking_enabled,
-    is_livechat
+    is_livechat,
+    fallback
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1206,7 +1209,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation with is_livechat parameter
+    // Call upsertConversation with is_livechat and fallback parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1217,7 +1220,8 @@ app.post('/conversations', async (req, res) => {
       lacking_info,
       bug_status,
       purchase_tracking_enabled,
-      is_livechat || false
+      is_livechat || false,
+      fallback
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1612,13 +1616,13 @@ app.post('/update-conversations', async (req, res) => {
 
     for (let conversation of conversations.rows) {
       const conversationText = conversation.conversation_data;
-      const { emne, score, lacking_info } = await getEmneAndScore(conversationText, prediction_url);
+      const { emne, score, lacking_info, fallback } = await getEmneAndScore(conversationText, prediction_url);
 
       await pool.query(
         `UPDATE conversations
-         SET emne = $1, score = $2, lacking_info = $3
-         WHERE id = $4`,
-        [emne, score, lacking_info, conversation.id]
+         SET emne = $1, score = $2, lacking_info = $3, fallback = $4
+         WHERE id = $5`,
+        [emne, score, lacking_info, fallback, conversation.id]
       );
     }
 
@@ -1647,15 +1651,17 @@ const getEmneAndScore = async (conversationText, prediction_url) => {
     const emneMatch = text.match(/Emne\(([^)]+)\)/);
     const scoreMatch = text.match(/Happy\(([^)]+)\)/);
     const infoMatch = text.match(/info\(([^)]+)\)/i);
+    const fallbackMatch = text.match(/fallback\(([^)]+)\)/i);
 
     const emne = emneMatch ? emneMatch[1] : null;
     const score = scoreMatch ? scoreMatch[1] : null;
     const lacking_info = infoMatch && infoMatch[1].toLowerCase() === 'yes' ? true : false;
+    const fallback = fallbackMatch ? fallbackMatch[1].toLowerCase() === 'yes' : null;
 
-    return { emne, score, lacking_info };
+    return { emne, score, lacking_info, fallback };
   } catch (error) {
     console.error('Error getting emne, score, and lacking_info:', error);
-    return { emne: null, score: null, lacking_info: false };
+    return { emne: null, score: null, lacking_info: false, fallback: null };
   }
 };
 
