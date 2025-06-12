@@ -10,7 +10,7 @@ import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
-import { registerPromptTemplateRoutes } from './promptTemplateRoutes.js';
+import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 
 const { Pool } = pg;
 
@@ -2850,4 +2850,4 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
 });
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
-registerPromptTemplateRoutes(app, pool, authenticateToken);
+registerPromptTemplateV2Routes(app, pool, authenticateToken);
