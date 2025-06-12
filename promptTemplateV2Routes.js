@@ -213,41 +213,28 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 
 /* Helper to build final prompt */
 export async function buildPrompt(pool, chatbot_id, flow_key) {
-  try {
-    let templateSections = [];
-    if (flow_key === 'statistics') {
-      const stats = await pool.query('SELECT sections FROM prompt_templates WHERE is_system_template=TRUE LIMIT 1');
-      templateSections = stats.rows[0]?.sections || [];
-    } else {
-      const tmpl = await pool.query(
-        `SELECT pt.sections
-         FROM flow_template_assignments fa
-         JOIN prompt_templates pt ON pt.id = fa.template_id
-         WHERE fa.chatbot_id=$1 AND fa.flow_key=$2
-         LIMIT 1`,
-        [chatbot_id, flow_key],
-      );
-      templateSections = tmpl.rows[0]?.sections || [];
-    }
-    
-    // If no template sections, return empty string
-    if (!templateSections || templateSections.length === 0) {
-      return '';
-    }
-    
-    const map = new Map(templateSections.map(s => [Number(s.key), s.content]));
-    const ovRows = await pool.query('SELECT section_key, action, content FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2', [chatbot_id, flow_key]);
-    for (const ov of ovRows.rows) {
-      const key = Number(ov.section_key);
-      if (ov.action === 'remove') map.delete(key);
-      else if (ov.action === 'modify') map.set(key, ov.content);
-      else if (ov.action === 'add') map.set(key, ov.content);
-    }
-    
-    const result = [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c.trim()).join('\n\n');
-    return result || '';
-  } catch (error) {
-    console.error('Error building prompt:', error);
-    return '';
+  let templateSections = [];
+  if (flow_key === 'statistics') {
+    const stats = await pool.query('SELECT sections FROM prompt_templates WHERE is_system_template=TRUE LIMIT 1');
+    templateSections = stats.rows[0]?.sections || [];
+  } else {
+    const tmpl = await pool.query(
+      `SELECT pt.sections
+       FROM flow_template_assignments fa
+       JOIN prompt_templates pt ON pt.id = fa.template_id
+       WHERE fa.chatbot_id=$1 AND fa.flow_key=$2
+       LIMIT 1`,
+      [chatbot_id, flow_key],
+    );
+    templateSections = tmpl.rows[0]?.sections || [];
   }
+  const map = new Map(templateSections.map(s => [Number(s.key), s.content]));
+  const ovRows = await pool.query('SELECT section_key, action, content FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2', [chatbot_id, flow_key]);
+  for (const ov of ovRows.rows) {
+    const key = Number(ov.section_key);
+    if (ov.action === 'remove') map.delete(key);
+    else if (ov.action === 'modify') map.set(key, ov.content);
+    else if (ov.action === 'add') map.set(key, ov.content);
+  }
+  return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c.trim()).join('\n\n');
 } 
