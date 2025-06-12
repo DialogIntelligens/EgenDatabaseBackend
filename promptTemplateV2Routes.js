@@ -1,10 +1,4 @@
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /**
  * Registers V2 prompt template routes under /prompt-template
@@ -12,46 +6,6 @@ const __dirname = path.dirname(__filename);
  */
 export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   const router = express.Router();
-
-  /* =============================
-     MIGRATION ENDPOINT (ADMIN ONLY)
-  ============================= */
-  router.post('/migrate-v2', authenticateToken, async (req, res) => {
-    if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
-    
-    try {
-      console.log('Starting V2 migration...');
-      
-      // Read the migration SQL file
-      const migrationPath = path.join(__dirname, '..', 'clean_v2_migration.sql');
-      const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
-      
-      console.log('Executing migration SQL...');
-      await pool.query(migrationSQL);
-      
-      console.log('Migration completed successfully!');
-      
-      // Verify tables were created
-      const result = await pool.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name IN ('prompt_templates', 'flow_template_assignments', 'prompt_overrides', 'prompt_template_history')
-        ORDER BY table_name
-      `);
-      
-      console.log('V2 tables found:', result.rows.map(r => r.table_name));
-      
-      res.json({ 
-        message: 'Migration completed successfully',
-        tables_created: result.rows.map(r => r.table_name)
-      });
-      
-    } catch (error) {
-      console.error('Migration failed:', error);
-      res.status(500).json({ error: 'Migration failed', details: error.message });
-    }
-  });
 
   /* =============================
      TEMPLATE CRUD ROUTES
