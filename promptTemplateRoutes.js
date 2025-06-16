@@ -10,7 +10,10 @@ export function registerPromptTemplateRoutes(app, pool, authenticateToken) {
   const router = express.Router();
 
   // Valid flow types
-  const VALID_FLOW_TYPES = ['statistics', 'main', 'flow2', 'flow3', 'flow4', 'apiflow', 'metadata'];
+  const VALID_FLOW_TYPES = [
+    'statistics', 'main', 'flow2', 'flow3', 'flow4', 'apiflow', 'metadata',
+    'main_rephrase', 'flow2_rephrase', 'flow3_rephrase', 'flow4_rephrase', 'apiflow_rephrase', 'metadata_rephrase'
+  ];
 
   /* =============================
      MASTER TEMPLATE ROUTES
