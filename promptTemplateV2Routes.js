@@ -143,8 +143,20 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
      OVERRIDES
   ============================= */
   router.get('/overrides/:chatbot_id/:flow_key', async (req, res) => {
+    const { chatbot_id, flow_key } = req.params;
+    console.log('=== GET OVERRIDES DEBUG ===');
+    console.log('Fetching overrides for:', { chatbot_id, flow_key });
+    
     try {
-      const { rows } = await pool.query('SELECT * FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 ORDER BY section_key', [req.params.chatbot_id, req.params.flow_key]);
+      const { rows } = await pool.query('SELECT * FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 ORDER BY section_key', [chatbot_id, flow_key]);
+      console.log('Found overrides:', rows.length);
+      console.log('Override details:', rows.map(r => ({
+        id: r.id,
+        section_key: r.section_key,
+        action: r.action,
+        content_length: r.content ? r.content.length : 0
+      })));
+      console.log('=== END GET OVERRIDES DEBUG ===');
       res.json(rows);
     } catch (err) {
       console.error('GET overrides error', err);
@@ -154,19 +166,44 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 
   router.post('/overrides', authenticateToken, async (req, res) => {
     const { chatbot_id, flow_key, section_key, action, content } = req.body;
-    if (!chatbot_id || !flow_key || !section_key || !action) return res.status(400).json({ error: 'chatbot_id, flow_key, section_key, action required' });
-    if (!['add', 'modify', 'remove'].includes(action)) return res.status(400).json({ error: 'invalid action' });
+    
+    console.log('=== POST OVERRIDES DEBUG ===');
+    console.log('Received override data:', {
+      chatbot_id,
+      flow_key,
+      section_key,
+      action,
+      content: content ? `${content.length} chars` : 'null'
+    });
+    
+    if (!chatbot_id || !flow_key || !section_key || !action) {
+      console.log('Missing required fields');
+      return res.status(400).json({ error: 'chatbot_id, flow_key, section_key, action required' });
+    }
+    if (!['add', 'modify', 'remove'].includes(action)) {
+      console.log('Invalid action:', action);
+      return res.status(400).json({ error: 'invalid action' });
+    }
     try {
-      await pool.query(
+      console.log('Executing database query...');
+      const result = await pool.query(
         `INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at)
          VALUES ($1,$2,$3,$4,$5,NOW())
          ON CONFLICT (chatbot_id, flow_key, section_key)
-         DO UPDATE SET action=$4, content=$5, updated_at=NOW()`,
+         DO UPDATE SET action=$4, content=$5, updated_at=NOW()
+         RETURNING id, action`,
         [chatbot_id, flow_key, section_key, action, content || null],
       );
+      console.log('Database result:', result.rows[0]);
+      console.log('=== END POST OVERRIDES DEBUG ===');
       res.json({ message: 'saved' });
     } catch (err) {
       console.error('POST overrides error', err);
+      console.error('Error details:', {
+        message: err.message,
+        code: err.code,
+        detail: err.detail
+      });
       res.status(500).json({ error: 'Server error', details: err.message });
     }
   });
