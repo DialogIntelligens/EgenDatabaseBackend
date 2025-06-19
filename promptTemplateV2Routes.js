@@ -143,20 +143,8 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
      OVERRIDES
   ============================= */
   router.get('/overrides/:chatbot_id/:flow_key', async (req, res) => {
-    const { chatbot_id, flow_key } = req.params;
-    console.log('=== GET OVERRIDES DEBUG ===');
-    console.log('Fetching overrides for:', { chatbot_id, flow_key });
-    
     try {
-      const { rows } = await pool.query('SELECT * FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 ORDER BY section_key', [chatbot_id, flow_key]);
-      console.log('Found overrides:', rows.length);
-      console.log('Override details:', rows.map(r => ({
-        id: r.id,
-        section_key: r.section_key,
-        action: r.action,
-        content_length: r.content ? r.content.length : 0
-      })));
-      console.log('=== END GET OVERRIDES DEBUG ===');
+      const { rows } = await pool.query('SELECT * FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 ORDER BY section_key', [req.params.chatbot_id, req.params.flow_key]);
       res.json(rows);
     } catch (err) {
       console.error('GET overrides error', err);
@@ -166,44 +154,19 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 
   router.post('/overrides', authenticateToken, async (req, res) => {
     const { chatbot_id, flow_key, section_key, action, content } = req.body;
-    
-    console.log('=== POST OVERRIDES DEBUG ===');
-    console.log('Received override data:', {
-      chatbot_id,
-      flow_key,
-      section_key,
-      action,
-      content: content ? `${content.length} chars` : 'null'
-    });
-    
-    if (!chatbot_id || !flow_key || !section_key || !action) {
-      console.log('Missing required fields');
-      return res.status(400).json({ error: 'chatbot_id, flow_key, section_key, action required' });
-    }
-    if (!['add', 'modify', 'remove'].includes(action)) {
-      console.log('Invalid action:', action);
-      return res.status(400).json({ error: 'invalid action' });
-    }
+    if (!chatbot_id || !flow_key || !section_key || !action) return res.status(400).json({ error: 'chatbot_id, flow_key, section_key, action required' });
+    if (!['add', 'modify', 'remove'].includes(action)) return res.status(400).json({ error: 'invalid action' });
     try {
-      console.log('Executing database query...');
-      const result = await pool.query(
+      await pool.query(
         `INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at)
          VALUES ($1,$2,$3,$4,$5,NOW())
          ON CONFLICT (chatbot_id, flow_key, section_key)
-         DO UPDATE SET action=$4, content=$5, updated_at=NOW()
-         RETURNING id, action`,
+         DO UPDATE SET action=$4, content=$5, updated_at=NOW()`,
         [chatbot_id, flow_key, section_key, action, content || null],
       );
-      console.log('Database result:', result.rows[0]);
-      console.log('=== END POST OVERRIDES DEBUG ===');
       res.json({ message: 'saved' });
     } catch (err) {
       console.error('POST overrides error', err);
-      console.error('Error details:', {
-        message: err.message,
-        code: err.code,
-        detail: err.detail
-      });
       res.status(500).json({ error: 'Server error', details: err.message });
     }
   });
@@ -251,10 +214,29 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 /* Helper to build final prompt */
 export async function buildPrompt(pool, chatbot_id, flow_key) {
   let templateSections = [];
+  
   if (flow_key === 'statistics') {
+    // Try V2 system first
     const stats = await pool.query('SELECT sections FROM prompt_templates WHERE is_system_template=TRUE LIMIT 1');
     templateSections = stats.rows[0]?.sections || [];
+    
+    // If no V2 template found, try V1 backward compatibility
+    if (templateSections.length === 0) {
+      try {
+        const v1Stats = await pool.query('SELECT sections FROM statistics_prompt_template LIMIT 1');
+        if (v1Stats.rows[0]?.sections) {
+          // Convert V1 format to V2 format if needed
+          const v1Sections = typeof v1Stats.rows[0].sections === 'string' 
+            ? JSON.parse(v1Stats.rows[0].sections) 
+            : v1Stats.rows[0].sections;
+          templateSections = Array.isArray(v1Sections) ? v1Sections : [];
+        }
+      } catch (err) {
+        console.log('No V1 statistics template found, using empty template');
+      }
+    }
   } else {
+    // Try V2 system first
     const tmpl = await pool.query(
       `SELECT pt.sections
        FROM flow_template_assignments fa
@@ -264,14 +246,57 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
       [chatbot_id, flow_key],
     );
     templateSections = tmpl.rows[0]?.sections || [];
+    
+    // If no V2 assignment found, try V1 backward compatibility
+    if (templateSections.length === 0) {
+      try {
+        const v1TableName = `${flow_key}_prompt_template`;
+        const v1Template = await pool.query(`SELECT sections FROM ${v1TableName} LIMIT 1`);
+        if (v1Template.rows[0]?.sections) {
+          // Convert V1 format to V2 format if needed
+          const v1Sections = typeof v1Template.rows[0].sections === 'string' 
+            ? JSON.parse(v1Template.rows[0].sections) 
+            : v1Template.rows[0].sections;
+          templateSections = Array.isArray(v1Sections) ? v1Sections : [];
+        }
+      } catch (err) {
+        console.log(`No V1 ${flow_key} template found, using empty template`);
+      }
+    }
   }
+  
+  // Ensure templateSections is in the correct format for V2
+  // V2 expects array of {key: number, content: string}
+  // V1 might have stored it differently
+  if (templateSections.length > 0 && templateSections[0] && typeof templateSections[0].key !== 'number') {
+    // If it's not in V2 format, try to convert it
+    console.log('Converting template sections to V2 format');
+    templateSections = templateSections.map((section, index) => ({
+      key: section.key || index,
+      content: section.content || section
+    }));
+  }
+  
   const map = new Map(templateSections.map(s => [Number(s.key), s.content]));
+  
+  // Apply overrides
   const ovRows = await pool.query('SELECT section_key, action, content FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2', [chatbot_id, flow_key]);
+  console.log(`Found ${ovRows.rows.length} overrides for chatbot ${chatbot_id}, flow ${flow_key}`);
+  
   for (const ov of ovRows.rows) {
     const key = Number(ov.section_key);
-    if (ov.action === 'remove') map.delete(key);
-    else if (ov.action === 'modify') map.set(key, ov.content);
-    else if (ov.action === 'add') map.set(key, ov.content);
+    console.log(`Applying override: ${ov.action} for key ${key}`);
+    if (ov.action === 'remove') {
+      map.delete(key);
+    } else if (ov.action === 'modify') {
+      map.set(key, ov.content);
+    } else if (ov.action === 'add') {
+      map.set(key, ov.content);
+    }
   }
-  return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c.trim()).join('\n\n');
+  
+  const finalSections = [...map.entries()].sort((a, b) => a[0] - b[0]);
+  console.log(`Final prompt has ${finalSections.length} sections`);
+  
+  return finalSections.map(([, c]) => c.trim()).join('\n\n');
 } 
