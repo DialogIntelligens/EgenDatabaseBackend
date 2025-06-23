@@ -1193,6 +1193,42 @@ app.delete('/conversations/:id/comments/:commentId', authenticateToken, async (r
   }
 });
 
+// POST mark comments as viewed for a conversation
+app.post('/conversations/:id/comments/mark-viewed', authenticateToken, async (req, res) => {
+  const conversationId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    // Get all comments for this conversation
+    const comments = await pool.query(
+      'SELECT id FROM conversation_comments WHERE conversation_id = $1',
+      [conversationId]
+    );
+
+    if (comments.rows.length === 0) {
+      return res.json({ message: 'No comments to mark as viewed' });
+    }
+
+    // Mark all comments as viewed by this user
+    const commentIds = comments.rows.map(comment => comment.id);
+    
+    // Use INSERT ... ON CONFLICT to avoid duplicates
+    for (const commentId of commentIds) {
+      await pool.query(
+        `INSERT INTO conversation_comment_views (user_id, comment_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, comment_id) DO NOTHING`,
+        [userId, commentId]
+      );
+    }
+
+    res.json({ message: 'Comments marked as viewed', count: commentIds.length });
+  } catch (err) {
+    console.error('Error marking comments as viewed:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
     // Helper upsert function
     async function upsertConversation(
       user_id,
@@ -1414,6 +1450,7 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
 
   try {
     const chatbotIds = chatbot_id.split(',');
+    const userId = req.user.userId;
 
     let queryText = `
       SELECT COUNT(id) AS conversation_count
@@ -1427,6 +1464,16 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     if (fejlstatus && fejlstatus !== '') {
       if (fejlstatus === 'livechat') {
         queryText += ` AND c.is_livechat = TRUE`;
+      } else if (fejlstatus === 'unread_comments') {
+        queryText += ` AND EXISTS (
+          SELECT 1 FROM conversation_comments cc
+          WHERE cc.conversation_id = c.id
+          AND NOT EXISTS (
+            SELECT 1 FROM conversation_comment_views ccv
+            WHERE ccv.comment_id = cc.id AND ccv.user_id = $${paramIndex++}
+          )
+        )`;
+        queryParams.push(userId);
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
@@ -1567,16 +1614,28 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
 
   try {
     const chatbotIds = chatbot_id.split(',');
+    const userId = req.user.userId;
 
     let queryText = `
       SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed,
-             COALESCE(SUM(p.amount), 0) as purchase_amount
+             COALESCE(SUM(p.amount), 0) as purchase_amount,
+             CASE 
+               WHEN EXISTS (
+                 SELECT 1 FROM conversation_comments cc
+                 WHERE cc.conversation_id = c.id
+                 AND NOT EXISTS (
+                   SELECT 1 FROM conversation_comment_views ccv
+                   WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
+                 )
+               ) THEN TRUE
+               ELSE FALSE
+             END as has_unread_comments
       FROM conversations c
       LEFT JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
       WHERE c.chatbot_id = ANY($1)
     `;
-    let queryParams = [chatbotIds];
-    let paramIndex = 2;
+    let queryParams = [chatbotIds, userId];
+    let paramIndex = 3;
 
     if (lacking_info === 'true' || lacking_info === 'false') {
       queryText += ` AND c.lacking_info = $${paramIndex++}`;
@@ -1590,6 +1649,15 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     if (fejlstatus && fejlstatus !== '') {
       if (fejlstatus === 'livechat') {
         queryText += ` AND c.is_livechat = TRUE`;
+      } else if (fejlstatus === 'unread_comments') {
+        queryText += ` AND EXISTS (
+          SELECT 1 FROM conversation_comments cc
+          WHERE cc.conversation_id = c.id
+          AND NOT EXISTS (
+            SELECT 1 FROM conversation_comment_views ccv
+            WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
+          )
+        )`;
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
