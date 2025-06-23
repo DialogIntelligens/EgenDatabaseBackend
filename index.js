@@ -1070,12 +1070,12 @@ app.delete('/conversations/:id', authenticateToken, async (req, res) => {
 // PATCH conversation
 app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   const conversationId = req.params.id;
-  const { bug_status, notes, lacking_info } = req.body;
+  const { bug_status, lacking_info } = req.body;
 
-  if (bug_status === undefined && notes === undefined && lacking_info === undefined) {
+  if (bug_status === undefined && lacking_info === undefined) {
     return res
       .status(400)
-      .json({ error: 'At least one of bug_status, notes, or lacking_info must be provided' });
+      .json({ error: 'At least one of bug_status or lacking_info must be provided' });
   }
 
   try {
@@ -1086,10 +1086,6 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
     if (bug_status !== undefined) {
       fields.push(`bug_status = $${idx++}`);
       values.push(bug_status);
-    }
-    if (notes !== undefined) {
-      fields.push(`notes = $${idx++}`);
-      values.push(notes);
     }
     if (lacking_info !== undefined) {
       fields.push(`lacking_info = $${idx++}`);
@@ -1106,6 +1102,93 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+/* ================================
+   Comment Endpoints
+================================ */
+// GET comments for a conversation
+app.get('/conversations/:id/comments', authenticateToken, async (req, res) => {
+  const conversationId = req.params.id;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM conversation_comments WHERE conversation_id = $1 ORDER BY created_at ASC',
+      [conversationId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching comments:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// POST new comment
+app.post('/conversations/:id/comments', authenticateToken, async (req, res) => {
+  const conversationId = req.params.id;
+  const { username, comment_text } = req.body;
+
+  if (!username || !comment_text) {
+    return res.status(400).json({ error: 'Username and comment_text are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'INSERT INTO conversation_comments (conversation_id, username, comment_text) VALUES ($1, $2, $3) RETURNING *',
+      [conversationId, username, comment_text]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating comment:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// PUT update comment
+app.put('/conversations/:id/comments/:commentId', authenticateToken, async (req, res) => {
+  const { commentId } = req.params;
+  const { username, comment_text } = req.body;
+
+  if (!username || !comment_text) {
+    return res.status(400).json({ error: 'Username and comment_text are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE conversation_comments SET username = $1, comment_text = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+      [username, comment_text, commentId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating comment:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// DELETE comment
+app.delete('/conversations/:id/comments/:commentId', authenticateToken, async (req, res) => {
+  const { commentId } = req.params;
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM conversation_comments WHERE id = $1 RETURNING *',
+      [commentId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+    
+    res.json({ message: 'Comment deleted successfully', deleted: result.rows[0] });
+  } catch (err) {
+    console.error('Error deleting comment:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
