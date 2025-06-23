@@ -1229,6 +1229,37 @@ app.post('/conversations/:id/comments/mark-viewed', authenticateToken, async (re
   }
 });
 
+// POST mark comments as unread for a conversation
+app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (req, res) => {
+  const conversationId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    // Get all comments for this conversation
+    const comments = await pool.query(
+      'SELECT id FROM conversation_comments WHERE conversation_id = $1',
+      [conversationId]
+    );
+
+    if (comments.rows.length === 0) {
+      return res.json({ message: 'No comments to mark as unread' });
+    }
+
+    // Remove all view records for this user and conversation's comments
+    const commentIds = comments.rows.map(comment => comment.id);
+    
+    await pool.query(
+      'DELETE FROM conversation_comment_views WHERE user_id = $1 AND comment_id = ANY($2)',
+      [userId, commentIds]
+    );
+
+    res.json({ message: 'Comments marked as unread', count: commentIds.length });
+  } catch (err) {
+    console.error('Error marking comments as unread:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
     // Helper upsert function
     async function upsertConversation(
       user_id,
