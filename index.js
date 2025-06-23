@@ -1474,7 +1474,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id, fejlstatus, customer_rating, emne } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne, conversation_filter } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -1517,6 +1517,21 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     if (emne && emne !== '') {
       queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
+    }
+    if (conversation_filter && conversation_filter.trim() !== '') {
+      const filter = conversation_filter.trim();
+      const isNumeric = /^\d+$/.test(filter);
+      
+      if (isNumeric) {
+        // Search by both conversation ID and conversation text if the filter is numeric
+        queryText += ` AND (c.id = $${paramIndex++} OR c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%')`;
+        queryParams.push(parseInt(filter), filter);
+        paramIndex++; // Increment by 1 more since we used 2 parameters
+      } else {
+        // Search by conversation text content if the filter is not numeric
+        queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+        queryParams.push(filter);
+      }
     }
     const result = await pool.query(queryText, queryParams);
     return res.json(result.rows);
@@ -1703,8 +1718,19 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryParams.push(emne);
     }
     if (conversation_filter && conversation_filter.trim() !== '') {
-      queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
-      queryParams.push(`${conversation_filter}`);
+      const filter = conversation_filter.trim();
+      const isNumeric = /^\d+$/.test(filter);
+      
+      if (isNumeric) {
+        // Search by both conversation ID and conversation text if the filter is numeric
+        queryText += ` AND (c.id = $${paramIndex++} OR c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%')`;
+        queryParams.push(parseInt(filter), filter);
+        paramIndex++; // Increment by 1 more since we used 2 parameters
+      } else {
+        // Search by conversation text content if the filter is not numeric
+        queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+        queryParams.push(filter);
+      }
     }
 
     queryText += ` GROUP BY c.id `;
