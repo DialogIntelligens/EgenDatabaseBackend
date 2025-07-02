@@ -3119,7 +3119,6 @@ app.get('/api/error-logs', authenticateToken, async (req, res) => {
     const {
       chatbot_id,
       error_category,
-      is_resolved,
       start_date,
       end_date,
       page = 0,
@@ -3127,9 +3126,8 @@ app.get('/api/error-logs', authenticateToken, async (req, res) => {
     } = req.query;
 
     let queryText = `
-      SELECT el.*, u.username as resolved_by_username
-      FROM error_logs el
-      LEFT JOIN users u ON el.resolved_by = u.id
+      SELECT *
+      FROM error_logs
       WHERE 1=1
     `;
     const queryParams = [];
@@ -3137,27 +3135,22 @@ app.get('/api/error-logs', authenticateToken, async (req, res) => {
 
     // Add filters
     if (chatbot_id) {
-      queryText += ` AND el.chatbot_id = $${paramIndex++}`;
+      queryText += ` AND chatbot_id = $${paramIndex++}`;
       queryParams.push(chatbot_id);
     }
 
     if (error_category) {
-      queryText += ` AND el.error_category = $${paramIndex++}`;
+      queryText += ` AND error_category = $${paramIndex++}`;
       queryParams.push(error_category);
     }
 
-    if (is_resolved !== undefined) {
-      queryText += ` AND el.is_resolved = $${paramIndex++}`;
-      queryParams.push(is_resolved === 'true');
-    }
-
     if (start_date && end_date) {
-      queryText += ` AND el.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
 
     // Add pagination
-    queryText += ` ORDER BY el.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     queryParams.push(parseInt(page_size), parseInt(page) * parseInt(page_size));
 
     const result = await pool.query(queryText, queryParams);
@@ -3212,13 +3205,7 @@ app.get('/api/error-statistics', authenticateToken, async (req, res) => {
       queryParams
     );
 
-    // Get resolved vs unresolved
-    const resolvedResult = await pool.query(
-      `SELECT is_resolved, COUNT(*) as count
-       FROM error_logs${dateFilter}
-       GROUP BY is_resolved`,
-      queryParams
-    );
+
 
     // Get recent error trends (last 7 days)
     const trendResult = await pool.query(
@@ -3234,7 +3221,6 @@ app.get('/api/error-statistics', authenticateToken, async (req, res) => {
       total_errors: parseInt(totalResult.rows[0].total_errors),
       by_category: categoryResult.rows,
       by_chatbot: chatbotResult.rows,
-      by_status: resolvedResult.rows,
       recent_trend: trendResult.rows
     });
   } catch (err) {
@@ -3243,41 +3229,3 @@ app.get('/api/error-statistics', authenticateToken, async (req, res) => {
   }
 });
 
-// PATCH /api/error-logs/:id/resolve - Mark an error as resolved (admin only)
-app.patch('/api/error-logs/:id/resolve', authenticateToken, async (req, res) => {
-  // Only admins can resolve errors
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  const { id } = req.params;
-  const { is_resolved } = req.body;
-  const userId = req.user.userId;
-
-  try {
-    const result = await pool.query(
-      `UPDATE error_logs 
-       SET is_resolved = $1, resolved_at = $2, resolved_by = $3
-       WHERE id = $4
-       RETURNING *`,
-      [
-        is_resolved,
-        is_resolved ? new Date() : null,
-        is_resolved ? userId : null,
-        id
-      ]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Error log not found' });
-    }
-
-    res.json({
-      message: 'Error status updated successfully',
-      error_log: result.rows[0]
-    });
-  } catch (err) {
-    console.error('Error updating error status:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
