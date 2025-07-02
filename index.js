@@ -3035,151 +3035,207 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
 
 /* ================================
-   Chatbot Error Monitoring Endpoints
+   Error Logging Endpoints
 ================================ */
 
-// POST endpoint to log chatbot errors
-app.post('/chatbot-errors', async (req, res) => {
-  const { 
-    chatbot_id, 
-    error_category, 
-    error_message, 
-    error_stack, 
-    user_id, 
-    severity = 'medium',
-    metadata 
-  } = req.body;
-
-  if (!chatbot_id || !error_category || !error_message) {
-    return res.status(400).json({ 
-      error: 'chatbot_id, error_category, and error_message are required' 
-    });
+// Helper function to categorize errors automatically
+function categorizeError(errorMessage, errorDetails) {
+  const message = errorMessage.toLowerCase();
+  
+  if (message.includes('api') || message.includes('fetch') || message.includes('request')) {
+    return 'API_ERROR';
+  } else if (message.includes('database') || message.includes('sql') || message.includes('query')) {
+    return 'DATABASE_ERROR';
+  } else if (message.includes('auth') || message.includes('token') || message.includes('unauthorized')) {
+    return 'AUTHENTICATION_ERROR';
+  } else if (message.includes('validation') || message.includes('invalid') || message.includes('required')) {
+    return 'VALIDATION_ERROR';
+  } else if (message.includes('network') || message.includes('connection') || message.includes('timeout')) {
+    return 'NETWORK_ERROR';
+  } else if (message.includes('parsing') || message.includes('json') || message.includes('syntax')) {
+    return 'PARSING_ERROR';
+  } else if (message.includes('openai') || message.includes('embedding') || message.includes('gpt')) {
+    return 'AI_SERVICE_ERROR';
+  } else if (message.includes('pinecone') || message.includes('vector')) {
+    return 'VECTOR_DATABASE_ERROR';
+  } else {
+    return 'UNKNOWN_ERROR';
   }
+}
 
+// POST /api/log-error - Log an error from the chatbot
+app.post('/api/log-error', async (req, res) => {
   try {
+    const { 
+      chatbot_id, 
+      user_id, 
+      error_message, 
+      error_details, 
+      stack_trace 
+    } = req.body;
+
+    if (!chatbot_id || !error_message) {
+      return res.status(400).json({ error: 'chatbot_id and error_message are required' });
+    }
+
+    // Automatically categorize the error
+    const error_category = categorizeError(error_message, error_details);
+
+    // Insert error log
     const result = await pool.query(
-      `INSERT INTO chatbot_errors 
-        (chatbot_id, error_category, error_message, error_stack, user_id, severity, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [chatbot_id, error_category, error_message, error_stack, user_id, severity, metadata ? JSON.stringify(metadata) : null]
+      [
+        chatbot_id,
+        user_id || null,
+        error_category,
+        error_message,
+        error_details ? JSON.stringify(error_details) : null,
+        stack_trace || null
+      ]
     );
 
     console.log(`Error logged for chatbot ${chatbot_id}: ${error_category} - ${error_message}`);
-    res.status(201).json({ message: 'Error logged successfully', error: result.rows[0] });
+    
+    res.status(201).json({
+      message: 'Error logged successfully',
+      error_log: result.rows[0]
+    });
   } catch (err) {
-    console.error('Error logging chatbot error:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    console.error('Error logging error to database:', err);
+    res.status(500).json({ error: 'Failed to log error', details: err.message });
   }
 });
 
-// GET error statistics (admin only)
-app.get('/chatbot-errors/statistics', authenticateToken, async (req, res) => {
+// GET /api/error-logs - Get error logs with filtering (admin only)
+app.get('/api/error-logs', authenticateToken, async (req, res) => {
+  // Only admins can view error logs
   if (!req.user.isAdmin) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
-  const { chatbot_id, start_date, end_date, time_period = '7' } = req.query;
+  try {
+    const {
+      chatbot_id,
+      error_category,
+      is_resolved,
+      start_date,
+      end_date,
+      page = 0,
+      page_size = 50
+    } = req.query;
+
+    let queryText = `
+      SELECT el.*, u.username as resolved_by_username
+      FROM error_logs el
+      LEFT JOIN users u ON el.resolved_by = u.id
+      WHERE 1=1
+    `;
+    const queryParams = [];
+    let paramIndex = 1;
+
+    // Add filters
+    if (chatbot_id) {
+      queryText += ` AND el.chatbot_id = $${paramIndex++}`;
+      queryParams.push(chatbot_id);
+    }
+
+    if (error_category) {
+      queryText += ` AND el.error_category = $${paramIndex++}`;
+      queryParams.push(error_category);
+    }
+
+    if (is_resolved !== undefined) {
+      queryText += ` AND el.is_resolved = $${paramIndex++}`;
+      queryParams.push(is_resolved === 'true');
+    }
+
+    if (start_date && end_date) {
+      queryText += ` AND el.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    // Add pagination
+    queryText += ` ORDER BY el.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    queryParams.push(parseInt(page_size), parseInt(page) * parseInt(page_size));
+
+    const result = await pool.query(queryText, queryParams);
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching error logs:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET /api/error-statistics - Get error statistics (admin only)
+app.get('/api/error-statistics', authenticateToken, async (req, res) => {
+  // Only admins can view error statistics
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
 
   try {
-    // Calculate date range
+    const { start_date, end_date } = req.query;
+
     let dateFilter = '';
-    let queryParams = [];
+    const queryParams = [];
     let paramIndex = 1;
 
     if (start_date && end_date) {
-      dateFilter = ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      dateFilter = ` WHERE created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
-    } else if (time_period && time_period !== 'all') {
-      const days = parseInt(time_period);
-      if (!isNaN(days)) {
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - days);
-        dateFilter = ` AND created_at >= $${paramIndex++}`;
-        queryParams.push(startDate.toISOString());
-      }
     }
 
-    // Filter by chatbot_id if provided
-    let chatbotFilter = '';
-    if (chatbot_id && chatbot_id !== 'ALL') {
-      const chatbotIds = chatbot_id.split(',');
-      chatbotFilter = ` AND chatbot_id = ANY($${paramIndex++})`;
-      queryParams.push(chatbotIds);
-    }
-
-    // Total errors count
-    const totalErrorsResult = await pool.query(
-      `SELECT COUNT(*) as total_errors FROM chatbot_errors WHERE 1=1${dateFilter}${chatbotFilter}`,
+    // Get total error count
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) as total_errors FROM error_logs${dateFilter}`,
       queryParams
     );
 
-    // Errors by category
+    // Get errors by category
     const categoryResult = await pool.query(
-      `SELECT error_category, COUNT(*) as count 
-       FROM chatbot_errors 
-       WHERE 1=1${dateFilter}${chatbotFilter}
-       GROUP BY error_category 
+      `SELECT error_category, COUNT(*) as count
+       FROM error_logs${dateFilter}
+       GROUP BY error_category
        ORDER BY count DESC`,
       queryParams
     );
 
-    // Errors by severity
-    const severityResult = await pool.query(
-      `SELECT severity, COUNT(*) as count 
-       FROM chatbot_errors 
-       WHERE 1=1${dateFilter}${chatbotFilter}
-       GROUP BY severity 
-       ORDER BY 
-         CASE severity 
-           WHEN 'critical' THEN 1 
-           WHEN 'high' THEN 2 
-           WHEN 'medium' THEN 3 
-           WHEN 'low' THEN 4 
-           ELSE 5 
-         END`,
-      queryParams
-    );
-
-    // Errors by chatbot
+    // Get errors by chatbot
     const chatbotResult = await pool.query(
-      `SELECT chatbot_id, COUNT(*) as count 
-       FROM chatbot_errors 
-       WHERE 1=1${dateFilter}${chatbotFilter}
-       GROUP BY chatbot_id 
+      `SELECT chatbot_id, COUNT(*) as count
+       FROM error_logs${dateFilter}
+       GROUP BY chatbot_id
        ORDER BY count DESC`,
       queryParams
     );
 
-    // Recent errors trend (last 7 days)
+    // Get resolved vs unresolved
+    const resolvedResult = await pool.query(
+      `SELECT is_resolved, COUNT(*) as count
+       FROM error_logs${dateFilter}
+       GROUP BY is_resolved`,
+      queryParams
+    );
+
+    // Get recent error trends (last 7 days)
     const trendResult = await pool.query(
-      `SELECT 
-         DATE(created_at) as date,
-         COUNT(*) as count
-       FROM chatbot_errors 
-       WHERE created_at >= NOW() - INTERVAL '7 days'${chatbotFilter}
+      `SELECT DATE(created_at) as date, COUNT(*) as count
+       FROM error_logs
+       WHERE created_at >= NOW() - INTERVAL '7 days'
        GROUP BY DATE(created_at)
        ORDER BY date DESC`,
-      chatbot_id && chatbot_id !== 'ALL' ? [chatbot_id.split(',')] : []
-    );
-
-    // Resolved vs unresolved
-    const resolvedResult = await pool.query(
-      `SELECT 
-         SUM(CASE WHEN resolved THEN 1 ELSE 0 END) as resolved_count,
-         SUM(CASE WHEN NOT resolved THEN 1 ELSE 0 END) as unresolved_count
-       FROM chatbot_errors 
-       WHERE 1=1${dateFilter}${chatbotFilter}`,
-      queryParams
+      []
     );
 
     res.json({
-      total_errors: parseInt(totalErrorsResult.rows[0].total_errors),
-      errors_by_category: categoryResult.rows,
-      errors_by_severity: severityResult.rows,
-      errors_by_chatbot: chatbotResult.rows,
-      errors_trend: trendResult.rows,
-      resolution_stats: resolvedResult.rows[0]
+      total_errors: parseInt(totalResult.rows[0].total_errors),
+      by_category: categoryResult.rows,
+      by_chatbot: chatbotResult.rows,
+      by_status: resolvedResult.rows,
+      recent_trend: trendResult.rows
     });
   } catch (err) {
     console.error('Error fetching error statistics:', err);
@@ -3187,144 +3243,41 @@ app.get('/chatbot-errors/statistics', authenticateToken, async (req, res) => {
   }
 });
 
-// GET error logs with filtering (admin only)
-app.get('/chatbot-errors', authenticateToken, async (req, res) => {
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  const { 
-    chatbot_id, 
-    error_category, 
-    severity, 
-    resolved,
-    start_date, 
-    end_date,
-    page = 0,
-    limit = 50,
-    search
-  } = req.query;
-
-  try {
-    let queryText = `
-      SELECT ce.*, u.username as resolved_by_username
-      FROM chatbot_errors ce
-      LEFT JOIN users u ON ce.resolved_by = u.id
-      WHERE 1=1
-    `;
-    let queryParams = [];
-    let paramIndex = 1;
-
-    // Filter by chatbot_id
-    if (chatbot_id && chatbot_id !== 'ALL') {
-      const chatbotIds = chatbot_id.split(',');
-      queryText += ` AND ce.chatbot_id = ANY($${paramIndex++})`;
-      queryParams.push(chatbotIds);
-    }
-
-    // Filter by category
-    if (error_category && error_category !== 'ALL') {
-      queryText += ` AND ce.error_category = $${paramIndex++}`;
-      queryParams.push(error_category);
-    }
-
-    // Filter by severity
-    if (severity && severity !== 'ALL') {
-      queryText += ` AND ce.severity = $${paramIndex++}`;
-      queryParams.push(severity);
-    }
-
-    // Filter by resolved status
-    if (resolved === 'true' || resolved === 'false') {
-      queryText += ` AND ce.resolved = $${paramIndex++}`;
-      queryParams.push(resolved === 'true');
-    }
-
-    // Date range filter
-    if (start_date && end_date) {
-      queryText += ` AND ce.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      queryParams.push(start_date, end_date);
-    }
-
-    // Search filter
-    if (search && search.trim() !== '') {
-      queryText += ` AND (ce.error_message ILIKE $${paramIndex++} OR ce.error_category ILIKE $${paramIndex++})`;
-      queryParams.push(`%${search}%`, `%${search}%`);
-    }
-
-    // Get total count for pagination
-    const countQuery = queryText.replace('SELECT ce.*, u.username as resolved_by_username', 'SELECT COUNT(*)');
-    const countResult = await pool.query(countQuery, queryParams);
-    const totalCount = parseInt(countResult.rows[0].count);
-
-    // Add ordering and pagination
-    queryText += ` ORDER BY ce.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    queryParams.push(parseInt(limit), parseInt(page) * parseInt(limit));
-
-    const result = await pool.query(queryText, queryParams);
-
-    res.json({
-      errors: result.rows,
-      pagination: {
-        total: totalCount,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalCount / parseInt(limit))
-      }
-    });
-  } catch (err) {
-    console.error('Error fetching error logs:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// PATCH endpoint to mark error as resolved (admin only)
-app.patch('/chatbot-errors/:id/resolve', authenticateToken, async (req, res) => {
+// PATCH /api/error-logs/:id/resolve - Mark an error as resolved (admin only)
+app.patch('/api/error-logs/:id/resolve', authenticateToken, async (req, res) => {
+  // Only admins can resolve errors
   if (!req.user.isAdmin) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
   const { id } = req.params;
-  const { resolved = true } = req.body;
+  const { is_resolved } = req.body;
+  const userId = req.user.userId;
 
   try {
     const result = await pool.query(
-      `UPDATE chatbot_errors 
-       SET resolved = $1, resolved_by = $2, resolved_at = $3
+      `UPDATE error_logs 
+       SET is_resolved = $1, resolved_at = $2, resolved_by = $3
        WHERE id = $4
        RETURNING *`,
-      [resolved, resolved ? req.user.userId : null, resolved ? new Date() : null, id]
+      [
+        is_resolved,
+        is_resolved ? new Date() : null,
+        is_resolved ? userId : null,
+        id
+      ]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Error not found' });
+      return res.status(404).json({ error: 'Error log not found' });
     }
 
-    res.json({ message: 'Error status updated', error: result.rows[0] });
+    res.json({
+      message: 'Error status updated successfully',
+      error_log: result.rows[0]
+    });
   } catch (err) {
     console.error('Error updating error status:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// DELETE endpoint to delete error log (admin only)
-app.delete('/chatbot-errors/:id', authenticateToken, async (req, res) => {
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  const { id } = req.params;
-
-  try {
-    const result = await pool.query('DELETE FROM chatbot_errors WHERE id = $1 RETURNING *', [id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Error not found' });
-    }
-
-    res.json({ message: 'Error deleted successfully' });
-  } catch (err) {
-    console.error('Error deleting error log:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
