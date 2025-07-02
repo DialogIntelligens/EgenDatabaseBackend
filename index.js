@@ -2430,13 +2430,21 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user' });
   }
 
-  const { chatbot_ids, chatbot_filepath } = req.body;
+  const { chatbot_ids, chatbot_filepath, monthly_payment } = req.body;
   
   // Validate input
   if ((!chatbot_ids || !Array.isArray(chatbot_ids)) && 
-      (!chatbot_filepath || !Array.isArray(chatbot_filepath))) {
+      (!chatbot_filepath || !Array.isArray(chatbot_filepath)) &&
+      (monthly_payment === undefined)) {
     return res.status(400).json({ 
-      error: 'No valid data provided. At least one of chatbot_ids or chatbot_filepath must be an array.'
+      error: 'No valid data provided. At least one of chatbot_ids, chatbot_filepath, or monthly_payment must be provided.'
+    });
+  }
+  
+  // Validate monthly_payment if provided
+  if (monthly_payment !== undefined && (isNaN(monthly_payment) || monthly_payment < 0)) {
+    return res.status(400).json({ 
+      error: 'monthly_payment must be a non-negative number.'
     });
   }
   
@@ -2464,6 +2472,12 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       paramIndex++;
     }
     
+    if (monthly_payment !== undefined) {
+      updateFields.push(`monthly_payment = $${paramIndex}`);
+      queryParams.push(monthly_payment);
+      paramIndex++;
+    }
+    
     // Add the ID as the last parameter
     queryParams.push(targetId);
     
@@ -2472,7 +2486,7 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       UPDATE users 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, username, chatbot_ids, chatbot_filepath
+      RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment
     `;
     
     const result = await pool.query(updateQuery, queryParams);
