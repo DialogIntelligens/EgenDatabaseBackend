@@ -2600,6 +2600,113 @@ app.post('/reset-password/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Revenue Analytics endpoint (Admin only)
+app.get('/revenue-analytics', authenticateToken, async (req, res) => {
+  // Only full admins can access revenue analytics
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  }
+
+  try {
+    // Fetch all users with their monthly payments
+    const usersQuery = `
+      SELECT 
+        id,
+        username,
+        monthly_payment,
+        created_at
+      FROM users 
+      WHERE monthly_payment IS NOT NULL
+      ORDER BY monthly_payment DESC
+    `;
+    
+    const usersResult = await pool.query(usersQuery);
+    const users = usersResult.rows;
+
+    // For each user, calculate their message statistics
+    const usersWithStats = await Promise.all(users.map(async (user) => {
+      try {
+        // Get all conversations for this user
+        const conversationsQuery = `
+          SELECT 
+            conversation_data,
+            created_at
+          FROM conversations 
+          WHERE user_id = $1
+        `;
+        
+        const conversationsResult = await pool.query(conversationsQuery, [user.id]);
+        const conversations = conversationsResult.rows;
+
+        // Calculate total messages from this user
+        let totalMessages = 0;
+        
+        conversations.forEach(conv => {
+          let conversationData = conv.conversation_data;
+          
+          // Parse conversation_data if it's a string
+          if (typeof conversationData === 'string') {
+            try {
+              conversationData = JSON.parse(conversationData);
+            } catch (e) {
+              console.error('Error parsing conversation_data for user:', user.username);
+              conversationData = [];
+            }
+          }
+          
+          // Ensure it's an array
+          if (Array.isArray(conversationData)) {
+            // Count user messages
+            const userMessages = conversationData.filter(msg => 
+              msg && (msg.isUser === true || msg.sender === 'user')
+            );
+            totalMessages += userMessages.length;
+          }
+        });
+
+        // Calculate how many months the user has been active
+        const userCreatedAt = new Date(user.created_at);
+        const now = new Date();
+        const monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30))); // At least 1 month
+
+        return {
+          ...user,
+          total_messages: totalMessages,
+          months_active: monthsActive,
+          monthly_payment: parseFloat(user.monthly_payment) || 0
+        };
+      } catch (error) {
+        console.error(`Error calculating stats for user ${user.username}:`, error);
+        return {
+          ...user,
+          total_messages: 0,
+          months_active: 1,
+          monthly_payment: parseFloat(user.monthly_payment) || 0
+        };
+      }
+    }));
+
+    // Calculate summary statistics
+    const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
+    const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
+    const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
+
+    res.json({
+      users: usersWithStats,
+      summary: {
+        total_users: users.length,
+        paying_users: payingUsers.length,
+        total_monthly_revenue: totalRevenue,
+        average_monthly_payment: averagePayment
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching revenue analytics:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
 // Add this before the app.listen section, near other user-related endpoints
 
 // Add endpoint to update company information
