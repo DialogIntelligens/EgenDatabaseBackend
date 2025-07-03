@@ -2350,7 +2350,7 @@ app.get('/users', authenticateToken, async (req, res) => {
     // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
     let queryText = `
       SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment
       FROM users`;
     let queryParams = [];
 
@@ -2391,7 +2391,7 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
     // Get full user details except password, including chatbot_filepath array
     const result = await pool.query(`
       SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment
       FROM users
       WHERE id = $1
     `, [userId]);
