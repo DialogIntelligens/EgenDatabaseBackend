@@ -2616,12 +2616,18 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         monthly_payment,
         created_at
       FROM users 
-      WHERE monthly_payment IS NOT NULL
-      ORDER BY monthly_payment DESC
+      ORDER BY monthly_payment DESC NULLS LAST
     `;
     
     const usersResult = await pool.query(usersQuery);
     const users = usersResult.rows;
+
+    console.log('Revenue Analytics Debug - Total users fetched:', users.length);
+    console.log('Users with monthly_payment:', users.map(u => ({ 
+      username: u.username, 
+      monthly_payment: u.monthly_payment,
+      monthly_payment_type: typeof u.monthly_payment 
+    })));
 
     // For each user, calculate their message statistics
     const usersWithStats = await Promise.all(users.map(async (user) => {
@@ -2690,6 +2696,15 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
     const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
+
+    console.log('Revenue Analytics Debug - Final results:');
+    console.log('Paying users:', payingUsers.length);
+    console.log('Total revenue:', totalRevenue);
+    console.log('Paying users data:', payingUsers.map(u => ({ 
+      username: u.username, 
+      monthly_payment: u.monthly_payment,
+      total_messages: u.total_messages 
+    })));
 
     res.json({
       users: usersWithStats,
