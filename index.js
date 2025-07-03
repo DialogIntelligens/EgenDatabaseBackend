@@ -11,6 +11,7 @@ import { generateStatisticsReport } from './reportGenerator.js'; // Import repor
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
+import { freshdeskRouter } from './freshdeskAPI.js';
 
 const { Pool } = pg;
 
@@ -3225,6 +3226,9 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
+
+// Register Freshdesk API routes
+app.use('/api', freshdeskRouter);
 
 /* ================================
    Error Logging Endpoints
