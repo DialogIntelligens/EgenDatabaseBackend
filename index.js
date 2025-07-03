@@ -2622,16 +2622,20 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const usersResult = await pool.query(usersQuery);
     const users = usersResult.rows;
 
-    console.log('Revenue Analytics Debug - Total users fetched:', users.length);
-    console.log('Users with monthly_payment:', users.map(u => ({ 
-      username: u.username, 
-      monthly_payment: u.monthly_payment,
-      monthly_payment_type: typeof u.monthly_payment 
-    })));
-
     // For each user, calculate their message statistics
     const usersWithStats = await Promise.all(users.map(async (user) => {
       try {
+        // Safety check for required user fields
+        if (!user || !user.id || !user.username) {
+          console.error('Invalid user object:', user);
+          return {
+            id: user?.id || 0,
+            username: user?.username || 'Unknown',
+            total_messages: 0,
+            months_active: 1,
+            monthly_payment: 0
+          };
+        }
         // Get all conversations for this user
         const conversationsQuery = `
           SELECT 
@@ -2641,7 +2645,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           WHERE user_id = $1
         `;
         
-        const conversationsResult = await pool.query(conversationsQuery, [user.id]);
+        const conversationsResult = await pool.query(conversationsQuery, [user.id.toString()]);
         const conversations = conversationsResult.rows;
 
         // Calculate total messages from this user
@@ -2696,15 +2700,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
     const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
-
-    console.log('Revenue Analytics Debug - Final results:');
-    console.log('Paying users:', payingUsers.length);
-    console.log('Total revenue:', totalRevenue);
-    console.log('Paying users data:', payingUsers.map(u => ({ 
-      username: u.username, 
-      monthly_payment: u.monthly_payment,
-      total_messages: u.total_messages 
-    })));
 
     res.json({
       users: usersWithStats,
