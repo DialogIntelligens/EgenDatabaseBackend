@@ -2664,11 +2664,15 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           
           // Ensure it's an array
           if (Array.isArray(conversationData)) {
+            console.log(`Conversation sample for ${user.username}:`, conversationData.slice(0, 3));
             // Count user messages
             const userMessages = conversationData.filter(msg => 
               msg && (msg.isUser === true || msg.sender === 'user')
             );
+            console.log(`Found ${userMessages.length} user messages in this conversation`);
             totalMessages += userMessages.length;
+          } else {
+            console.log(`Conversation data not array for ${user.username}:`, typeof conversationData);
           }
         });
 
@@ -2704,6 +2708,10 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
 
     console.log(`Summary: ${users.length} total users, ${payingUsers.length} paying users, ${totalRevenue} kr total revenue`);
+    console.log('All users with messages and payments:');
+    usersWithStats.forEach(user => {
+      console.log(`- ${user.username}: ${user.total_messages} messages, ${user.monthly_payment} kr`);
+    });
 
     res.json({
       users: usersWithStats,
