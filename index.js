@@ -2679,12 +2679,12 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
         
-        // Calculate user's account age in months for average calculation
+        // Calculate user's account age in days for average calculation
         const userCreatedAt = new Date(conversations.length > 0 ? 
           Math.min(...conversations.map(conv => new Date(conv.created_at).getTime())) : now);
-        const monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30.44))); // Average days per month
+        const daysActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24))); // Days active
         
-        console.log(`User ${user.username} calculation: First conversation: ${userCreatedAt.toISOString()}, Months active: ${monthsActive}`);
+        console.log(`User ${user.username} calculation: First conversation: ${userCreatedAt.toISOString()}, Days active: ${daysActive}`);
         
         conversations.forEach(conv => {
           let conversationData = conv.conversation_data;
@@ -2720,8 +2720,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           }
         });
 
-        // Calculate average monthly messages
-        const averageMonthlyMessages = totalMessages / monthsActive;
+        // Calculate average monthly messages: (total messages / days active) * 30
+        const averageDailyMessages = totalMessages / daysActive;
+        const averageMonthlyMessages = averageDailyMessages * 30;
 
         // Safely parse monthly_payment
         let monthlyPayment = 0;
@@ -2729,7 +2730,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           monthlyPayment = parseFloat(user.monthly_payment) || 0;
         }
 
-        console.log(`User ${user.username}: ${totalMessages} total, ${Math.round(averageMonthlyMessages)} avg monthly, ${monthlyMessages} last 30 days, ${lastMonthMessages} last month, ${monthlyPayment} kr payment`);
+        console.log(`User ${user.username}: ${totalMessages} total, ${averageDailyMessages.toFixed(2)} avg daily, ${Math.round(averageMonthlyMessages)} avg monthly (daily*30), ${monthlyMessages} last 30 days, ${lastMonthMessages} last month, ${monthlyPayment} kr payment`);
 
         return {
           ...user,
@@ -2737,7 +2738,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           monthly_messages: monthlyMessages, // Last 30 days
           average_monthly_messages: Math.round(averageMonthlyMessages),
           last_month_messages: lastMonthMessages,
-          months_active: monthsActive,
+          days_active: daysActive,
           monthly_payment: monthlyPayment
         };
       } catch (error) {
