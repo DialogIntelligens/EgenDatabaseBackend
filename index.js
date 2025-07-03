@@ -2680,8 +2680,11 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
         
         // Calculate user's account age in months for average calculation
-        const userCreatedAt = new Date(conversations.length > 0 ? conversations[conversations.length - 1].created_at : now);
+        const userCreatedAt = new Date(conversations.length > 0 ? 
+          Math.min(...conversations.map(conv => new Date(conv.created_at).getTime())) : now);
         const monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30.44))); // Average days per month
+        
+        console.log(`User ${user.username} calculation: First conversation: ${userCreatedAt.toISOString()}, Months active: ${monthsActive}`);
         
         conversations.forEach(conv => {
           let conversationData = conv.conversation_data;
