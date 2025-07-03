@@ -2669,6 +2669,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
 
         // Calculate total messages from all conversations for this user's chatbots
         let totalMessages = 0;
+        let monthlyMessages = 0;
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
         conversations.forEach(conv => {
           let conversationData = conv.conversation_data;
@@ -2690,6 +2693,12 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
               msg && (msg.isUser === true || msg.sender === 'user')
             );
             totalMessages += userMessages.length;
+            
+            // Count monthly messages (only from last 30 days)
+            const conversationDate = new Date(conv.created_at);
+            if (conversationDate >= thirtyDaysAgo) {
+              monthlyMessages += userMessages.length;
+            }
           }
         });
 
@@ -2699,11 +2708,12 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           monthlyPayment = parseFloat(user.monthly_payment) || 0;
         }
 
-        console.log(`User ${user.username}: ${totalMessages} messages, ${monthlyPayment} kr payment`);
+        console.log(`User ${user.username}: ${totalMessages} total messages, ${monthlyMessages} monthly messages, ${monthlyPayment} kr payment`);
 
         return {
           ...user,
           total_messages: totalMessages,
+          monthly_messages: monthlyMessages,
           monthly_payment: monthlyPayment
         };
       } catch (error) {
