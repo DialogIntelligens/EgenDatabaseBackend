@@ -2610,12 +2610,13 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
   try {
     console.log('Revenue analytics request started');
     
-    // Fetch all users with their monthly payments (including those with 0 or NULL)
+    // Fetch all users with their monthly payments and chatbot IDs
     const usersQuery = `
       SELECT 
         id,
         username,
-        monthly_payment
+        monthly_payment,
+        chatbot_ids
       FROM users 
       ORDER BY monthly_payment DESC NULLS LAST
     `;
@@ -2630,23 +2631,43 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
       try {
         console.log(`Processing user: ${user.username} (ID: ${user.id})`);
         
-        // Convert user.id to string to match conversations.user_id (text type)
-        const userIdStr = user.id.toString();
+        // Get the user's chatbot IDs
+        let chatbotIds = user.chatbot_ids || [];
+        if (typeof chatbotIds === 'string') {
+          try {
+            chatbotIds = JSON.parse(chatbotIds);
+          } catch (e) {
+            console.error('Error parsing chatbot_ids for user:', user.username, e);
+            chatbotIds = [];
+          }
+        }
         
-        // Get all conversations for this user
+        if (!Array.isArray(chatbotIds) || chatbotIds.length === 0) {
+          console.log(`User ${user.username} has no chatbot IDs`);
+          return {
+            ...user,
+            total_messages: 0,
+            monthly_payment: parseFloat(user.monthly_payment) || 0
+          };
+        }
+
+        console.log(`User ${user.username} owns chatbots: ${chatbotIds.join(', ')}`);
+
+        // Get all conversations for chatbots owned by this user
         const conversationsQuery = `
           SELECT 
             conversation_data,
-            created_at
+            created_at,
+            chatbot_id
           FROM conversations 
-          WHERE user_id = $1
+          WHERE chatbot_id = ANY($1)
         `;
         
-        const conversationsResult = await pool.query(conversationsQuery, [userIdStr]);
+        const conversationsResult = await pool.query(conversationsQuery, [chatbotIds]);
         const conversations = conversationsResult.rows;
-        console.log(`User ${user.username} has ${conversations.length} conversations`);
+        console.log(`Found ${conversations.length} conversations for user ${user.username}'s chatbots`);
 
-        // Calculate total messages from this user
+        // Calculate total messages from all conversations for this user's chatbots
         let totalMessages = 0;
         
         conversations.forEach(conv => {
@@ -2657,22 +2678,18 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             try {
               conversationData = JSON.parse(conversationData);
             } catch (e) {
-              console.error('Error parsing conversation_data for user:', user.username, e);
+              console.error('Error parsing conversation_data:', e);
               conversationData = [];
             }
           }
           
           // Ensure it's an array
           if (Array.isArray(conversationData)) {
-            console.log(`Conversation sample for ${user.username}:`, conversationData.slice(0, 3));
-            // Count user messages
+            // Count user messages (messages from the chatbot users, not the dashboard user)
             const userMessages = conversationData.filter(msg => 
               msg && (msg.isUser === true || msg.sender === 'user')
             );
-            console.log(`Found ${userMessages.length} user messages in this conversation`);
             totalMessages += userMessages.length;
-          } else {
-            console.log(`Conversation data not array for ${user.username}:`, typeof conversationData);
           }
         });
 
@@ -2708,10 +2725,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
 
     console.log(`Summary: ${users.length} total users, ${payingUsers.length} paying users, ${totalRevenue} kr total revenue`);
-    console.log('All users with messages and payments:');
-    usersWithStats.forEach(user => {
-      console.log(`- ${user.username}: ${user.total_messages} messages, ${user.monthly_payment} kr`);
-    });
 
     res.json({
       users: usersWithStats,
