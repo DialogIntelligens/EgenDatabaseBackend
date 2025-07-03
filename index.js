@@ -2633,6 +2633,8 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
   }
 
   try {
+    console.log('Starting revenue analytics calculation...');
+    
     // Fetch all users with their monthly payments
     const usersQuery = `
       SELECT 
@@ -2646,10 +2648,14 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     
     const usersResult = await pool.query(usersQuery);
     const users = usersResult.rows;
+    
+    console.log(`Found ${users.length} users to process`);
 
     // For each user, calculate their message statistics
-    const usersWithStats = await Promise.all(users.map(async (user) => {
+    const usersWithStats = await Promise.all(users.map(async (user, index) => {
       try {
+        console.log(`Processing user ${index + 1}/${users.length}: ${user.username}`);
+        
         // Safety check for required user fields
         if (!user || !user.id || !user.username) {
           console.error('Invalid user object:', user);
@@ -2661,72 +2667,94 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             monthly_payment: 0
           };
         }
+        
         // Get all conversations for this user
         const conversationsQuery = `
           SELECT 
             conversation_data,
             created_at
           FROM conversations 
-          WHERE user_id = $1
+          WHERE user_id = $1::text
         `;
         
         const conversationsResult = await pool.query(conversationsQuery, [user.id.toString()]);
         const conversations = conversationsResult.rows;
+        
+        console.log(`User ${user.username} has ${conversations.length} conversations`);
 
         // Calculate total messages from this user
         let totalMessages = 0;
         
-        conversations.forEach(conv => {
-          let conversationData = conv.conversation_data;
-          
-          // Parse conversation_data if it's a string
-          if (typeof conversationData === 'string') {
-            try {
-              conversationData = JSON.parse(conversationData);
-            } catch (e) {
-              console.error('Error parsing conversation_data for user:', user.username);
-              conversationData = [];
+        conversations.forEach((conv, convIndex) => {
+          try {
+            let conversationData = conv.conversation_data;
+            
+            // Parse conversation_data if it's a string
+            if (typeof conversationData === 'string') {
+              try {
+                conversationData = JSON.parse(conversationData);
+              } catch (e) {
+                console.error(`Error parsing conversation_data for user ${user.username}, conversation ${convIndex}:`, e.message);
+                conversationData = [];
+              }
             }
-          }
-          
-          // Ensure it's an array
-          if (Array.isArray(conversationData)) {
-            // Count user messages
-            const userMessages = conversationData.filter(msg => 
-              msg && (msg.isUser === true || msg.sender === 'user')
-            );
-            totalMessages += userMessages.length;
+            
+            // Ensure it's an array
+            if (Array.isArray(conversationData)) {
+              // Count user messages
+              const userMessages = conversationData.filter(msg => 
+                msg && (msg.isUser === true || msg.sender === 'user')
+              );
+              totalMessages += userMessages.length;
+            } else {
+              console.warn(`Conversation data is not an array for user ${user.username}, conversation ${convIndex}`);
+            }
+          } catch (convError) {
+            console.error(`Error processing conversation ${convIndex} for user ${user.username}:`, convError.message);
           }
         });
 
         // Calculate how many months the user has been active
-        const userCreatedAt = new Date(user.created_at);
-        const now = new Date();
-        const monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30))); // At least 1 month
+        let monthsActive = 1;
+        try {
+          if (user.created_at) {
+            const userCreatedAt = new Date(user.created_at);
+            const now = new Date();
+            monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30))); // At least 1 month
+          }
+        } catch (dateError) {
+          console.error(`Error calculating months active for user ${user.username}:`, dateError.message);
+        }
 
-        return {
+        const result = {
           ...user,
           total_messages: totalMessages,
           months_active: monthsActive,
           monthly_payment: parseFloat(user.monthly_payment) || 0
         };
+        
+        console.log(`Completed processing user ${user.username}: ${totalMessages} messages, ${monthsActive} months active, ${result.monthly_payment} kr/month`);
+        return result;
+        
       } catch (error) {
-        console.error(`Error calculating stats for user ${user.username}:`, error);
+        console.error(`Error calculating stats for user ${user?.username || 'unknown'}:`, error);
         return {
           ...user,
           total_messages: 0,
           months_active: 1,
-          monthly_payment: parseFloat(user.monthly_payment) || 0
+          monthly_payment: parseFloat(user?.monthly_payment) || 0
         };
       }
     }));
+
+    console.log('Completed processing all users, calculating summary...');
 
     // Calculate summary statistics
     const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
     const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
 
-    res.json({
+    const response = {
       users: usersWithStats,
       summary: {
         total_users: users.length,
@@ -2734,11 +2762,19 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         total_monthly_revenue: totalRevenue,
         average_monthly_payment: averagePayment
       }
-    });
+    };
+
+    console.log('Revenue analytics calculation completed successfully');
+    res.json(response);
 
   } catch (error) {
     console.error('Error fetching revenue analytics:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message,
+      debug: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
