@@ -98,32 +98,32 @@ async function migrateProfilePictureColumn() {
   }
 }
 
-// Database migration function to add monthly_payment column
+// Run migration on startup
+migrateProfilePictureColumn();
+
+// Migration function to ensure the monthly_payment column exists (and create it if missing)
 async function migrateMonthlyPaymentColumn() {
   try {
-    // Check if monthly_payment column exists
     const columnCheck = await pool.query(`
-      SELECT column_name, data_type 
+      SELECT data_type 
       FROM information_schema.columns 
-      WHERE table_name = 'users' AND column_name = 'monthly_payment'
-    `);
-    
+      WHERE table_name = 'users' AND column_name = 'monthly_payment'`
+    );
+
     if (columnCheck.rows.length === 0) {
-      // Column doesn't exist, add it
-      console.log('Adding monthly_payment column...');
-      await pool.query('ALTER TABLE users ADD COLUMN monthly_payment NUMERIC(10,2) DEFAULT 0.00');
+      console.log('Adding monthly_payment column (NUMERIC(10,2) DEFAULT 0) to users table...');
+      await pool.query(`ALTER TABLE users ADD COLUMN monthly_payment NUMERIC(10,2) DEFAULT 0`);
       console.log('Successfully added monthly_payment column');
     } else {
       console.log('monthly_payment column already exists');
     }
   } catch (error) {
     console.error('Error migrating monthly_payment column:', error);
-    // Don't exit the process, just log the error
+    // Do not crash the server if migration fails
   }
 }
 
-// Run migrations on startup
-migrateProfilePictureColumn();
+// Run monthly_payment migration on startup
 migrateMonthlyPaymentColumn();
 
 // JWT auth middleware
@@ -2633,8 +2633,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
   }
 
   try {
-    console.log('Fetching revenue analytics...');
-    
     // Fetch all users with their monthly payments
     const usersQuery = `
       SELECT 
@@ -2648,7 +2646,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     
     const usersResult = await pool.query(usersQuery);
     const users = usersResult.rows;
-    console.log(`Found ${users.length} users for revenue analytics`);
 
     // For each user, calculate their message statistics
     const usersWithStats = await Promise.all(users.map(async (user) => {
@@ -2664,18 +2661,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             monthly_payment: 0
           };
         }
-
-        // Ensure user.id is valid before converting to string
-        if (!user.id) {
-          console.error('User ID is null or undefined:', user);
-          return {
-            ...user,
-            total_messages: 0,
-            months_active: 1,
-            monthly_payment: parseFloat(user.monthly_payment) || 0
-          };
-        }
-
         // Get all conversations for this user
         const conversationsQuery = `
           SELECT 
@@ -2685,39 +2670,32 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           WHERE user_id = $1
         `;
         
-        // Convert user.id to string for the query (type mismatch fix)
-        const userIdString = user.id.toString();
-        const conversationsResult = await pool.query(conversationsQuery, [userIdString]);
+        const conversationsResult = await pool.query(conversationsQuery, [user.id.toString()]);
         const conversations = conversationsResult.rows;
 
         // Calculate total messages from this user
         let totalMessages = 0;
         
         conversations.forEach(conv => {
-          try {
-            let conversationData = conv.conversation_data;
-            
-            // Parse conversation_data if it's a string
-            if (typeof conversationData === 'string') {
-              try {
-                conversationData = JSON.parse(conversationData);
-              } catch (e) {
-                console.error('Error parsing conversation_data for user:', user.username);
-                conversationData = [];
-              }
+          let conversationData = conv.conversation_data;
+          
+          // Parse conversation_data if it's a string
+          if (typeof conversationData === 'string') {
+            try {
+              conversationData = JSON.parse(conversationData);
+            } catch (e) {
+              console.error('Error parsing conversation_data for user:', user.username);
+              conversationData = [];
             }
-            
-            // Ensure it's an array
-            if (Array.isArray(conversationData)) {
-              // Count user messages
-              const userMessages = conversationData.filter(msg => 
-                msg && (msg.isUser === true || msg.sender === 'user')
-              );
-              totalMessages += userMessages.length;
-            }
-          } catch (convError) {
-            console.error(`Error processing conversation for user ${user.username}:`, convError);
-            // Continue processing other conversations
+          }
+          
+          // Ensure it's an array
+          if (Array.isArray(conversationData)) {
+            // Count user messages
+            const userMessages = conversationData.filter(msg => 
+              msg && (msg.isUser === true || msg.sender === 'user')
+            );
+            totalMessages += userMessages.length;
           }
         });
 
@@ -2733,14 +2711,12 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           monthly_payment: parseFloat(user.monthly_payment) || 0
         };
       } catch (error) {
-        console.error(`Error calculating stats for user ${user?.username || 'Unknown'}:`, error);
+        console.error(`Error calculating stats for user ${user.username}:`, error);
         return {
-          id: user?.id || 0,
-          username: user?.username || 'Unknown',
+          ...user,
           total_messages: 0,
           months_active: 1,
-          monthly_payment: parseFloat(user?.monthly_payment) || 0,
-          created_at: user?.created_at || new Date()
+          monthly_payment: parseFloat(user.monthly_payment) || 0
         };
       }
     }));
@@ -2749,8 +2725,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
     const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
-
-    console.log(`Revenue analytics calculated: ${usersWithStats.length} users, ${payingUsers.length} paying users, ${totalRevenue} total revenue`);
 
     res.json({
       users: usersWithStats,
