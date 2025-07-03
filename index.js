@@ -11,7 +11,7 @@ import { generateStatisticsReport } from './reportGenerator.js'; // Import repor
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
-import { freshdeskRouter } from './freshdeskAPI.js';
+import { createFreshdeskTicket } from './freshdeskHandler.js';
 
 const { Pool } = pg;
 
@@ -3135,6 +3135,47 @@ app.get('/my-support-status', authenticateToken, async (req, res) => {
   }
 });
 
+/* ================================
+   Freshdesk Ticket Creation Proxy
+================================ */
+
+// POST /api/create-freshdesk-ticket - Proxy for Freshdesk ticket creation to avoid CORS issues
+app.post('/api/create-freshdesk-ticket', async (req, res) => {
+  try {
+    console.log("Backend: Received Freshdesk ticket creation request");
+    
+    // Validate required fields
+    const { email, subject, description } = req.body;
+    if (!email || !subject || !description) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: email, subject, and description are required' 
+      });
+    }
+
+    // Call the Freshdesk handler
+    const result = await createFreshdeskTicket(req.body);
+    
+    console.log("Backend: Freshdesk ticket created successfully, returning to frontend");
+    
+    // Return the ticket ID in the format expected by the frontend
+    res.status(201).json({
+      ticket_id: result.id,
+      message: 'Freshdesk ticket created successfully',
+      freshdesk_response: result
+    });
+    
+  } catch (error) {
+    console.error("Backend: Error creating Freshdesk ticket:", error);
+    
+    // Return a structured error response
+    res.status(500).json({
+      error: 'Failed to create Freshdesk ticket',
+      message: error.message,
+      details: error.stack
+    });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
@@ -3226,9 +3267,6 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
-
-// Register Freshdesk API routes
-app.use('/api', freshdeskRouter);
 
 /* ================================
    Error Logging Endpoints
