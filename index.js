@@ -2615,8 +2615,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
       SELECT 
         id,
         username,
-        monthly_payment,
-        created_at
+        monthly_payment
       FROM users 
       ORDER BY monthly_payment DESC NULLS LAST
     `;
@@ -2673,23 +2672,17 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           }
         });
 
-        // Calculate how many months the user has been active
-        const userCreatedAt = new Date(user.created_at);
-        const now = new Date();
-        const monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30))); // At least 1 month
-
         // Safely parse monthly_payment
         let monthlyPayment = 0;
         if (user.monthly_payment !== null && user.monthly_payment !== undefined) {
           monthlyPayment = parseFloat(user.monthly_payment) || 0;
         }
 
-        console.log(`User ${user.username}: ${totalMessages} messages, ${monthsActive} months active, ${monthlyPayment} kr payment`);
+        console.log(`User ${user.username}: ${totalMessages} messages, ${monthlyPayment} kr payment`);
 
         return {
           ...user,
           total_messages: totalMessages,
-          months_active: monthsActive,
           monthly_payment: monthlyPayment
         };
       } catch (error) {
@@ -2698,7 +2691,6 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         return {
           ...user,
           total_messages: 0,
-          months_active: 1,
           monthly_payment: parseFloat(user.monthly_payment) || 0
         };
       }
