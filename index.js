@@ -21,9 +21,9 @@ const PORT = process.env.PORT || 3000;
 // PostgreSQL pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') 
+    ? false 
+    : { rejectUnauthorized: false }
 });
 
 // Cleanup old data periodically
@@ -2608,7 +2608,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Fetch all users with their monthly payments
+    console.log('Revenue analytics request started');
+    
+    // Fetch all users with their monthly payments (including those with 0 or NULL)
     const usersQuery = `
       SELECT 
         id,
@@ -2616,16 +2618,22 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         monthly_payment,
         created_at
       FROM users 
-      WHERE monthly_payment IS NOT NULL
-      ORDER BY monthly_payment DESC
+      ORDER BY monthly_payment DESC NULLS LAST
     `;
     
+    console.log('Executing users query...');
     const usersResult = await pool.query(usersQuery);
     const users = usersResult.rows;
+    console.log(`Found ${users.length} users`);
 
     // For each user, calculate their message statistics
     const usersWithStats = await Promise.all(users.map(async (user) => {
       try {
+        console.log(`Processing user: ${user.username} (ID: ${user.id})`);
+        
+        // Convert user.id to string to match conversations.user_id (text type)
+        const userIdStr = user.id.toString();
+        
         // Get all conversations for this user
         const conversationsQuery = `
           SELECT 
@@ -2635,8 +2643,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           WHERE user_id = $1
         `;
         
-        const conversationsResult = await pool.query(conversationsQuery, [user.id]);
+        const conversationsResult = await pool.query(conversationsQuery, [userIdStr]);
         const conversations = conversationsResult.rows;
+        console.log(`User ${user.username} has ${conversations.length} conversations`);
 
         // Calculate total messages from this user
         let totalMessages = 0;
@@ -2649,7 +2658,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             try {
               conversationData = JSON.parse(conversationData);
             } catch (e) {
-              console.error('Error parsing conversation_data for user:', user.username);
+              console.error('Error parsing conversation_data for user:', user.username, e);
               conversationData = [];
             }
           }
@@ -2669,14 +2678,23 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         const now = new Date();
         const monthsActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24 * 30))); // At least 1 month
 
+        // Safely parse monthly_payment
+        let monthlyPayment = 0;
+        if (user.monthly_payment !== null && user.monthly_payment !== undefined) {
+          monthlyPayment = parseFloat(user.monthly_payment) || 0;
+        }
+
+        console.log(`User ${user.username}: ${totalMessages} messages, ${monthsActive} months active, ${monthlyPayment} kr payment`);
+
         return {
           ...user,
           total_messages: totalMessages,
           months_active: monthsActive,
-          monthly_payment: parseFloat(user.monthly_payment) || 0
+          monthly_payment: monthlyPayment
         };
       } catch (error) {
         console.error(`Error calculating stats for user ${user.username}:`, error);
+        // Return user with default stats if there's an error
         return {
           ...user,
           total_messages: 0,
@@ -2686,10 +2704,14 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
       }
     }));
 
+    console.log('Finished processing all users, calculating summary...');
+
     // Calculate summary statistics
     const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
     const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
     const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
+
+    console.log(`Summary: ${users.length} total users, ${payingUsers.length} paying users, ${totalRevenue} kr total revenue`);
 
     res.json({
       users: usersWithStats,
@@ -2703,6 +2725,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching revenue analytics:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
