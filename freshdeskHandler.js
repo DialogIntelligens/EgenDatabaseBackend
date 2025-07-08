@@ -31,6 +31,10 @@ export async function createFreshdeskTicket(ticketData) {
       formData.append("group_id", ticketData.group_id);
     }
 
+    if (ticketData.product_id) {
+      formData.append("product_id", ticketData.product_id);
+    }
+
     // Append custom fields for category
     if (
       ticketData.custom_fields &&
