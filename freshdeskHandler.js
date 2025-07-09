@@ -148,5 +148,16 @@ export async function createFreshdeskTicket(ticketData) {
   const finalError = new Error(`Failed to create Freshdesk ticket after ${MAX_RETRIES + 1} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
   console.error("Backend: Final Freshdesk ticket creation failure:", finalError);
   
+  // Attach extra context so the caller can log richer details
+  finalError.context = {
+    attempts: MAX_RETRIES + 1,
+    lastError: lastError ? (lastError.message || JSON.stringify(lastError)) : null,
+    ticketMeta: {
+      email: ticketData.email,
+      subject: ticketData.subject,
+      hasAttachment: !!(ticketData.attachments && ticketData.attachments.length)
+    }
+  };
+
   throw finalError;
 } 
