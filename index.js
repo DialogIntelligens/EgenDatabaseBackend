@@ -3141,21 +3141,67 @@ app.get('/my-support-status', authenticateToken, async (req, res) => {
 
 // POST /api/create-freshdesk-ticket - Proxy for Freshdesk ticket creation to avoid CORS issues
 app.post('/api/create-freshdesk-ticket', async (req, res) => {
+  const requestStartTime = Date.now();
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
-    console.log("Backend: Received Freshdesk ticket creation request");
+    // Log sanitized request data for debugging
+    const sanitizedRequest = {
+      email: req.body.email,
+      subject: req.body.subject,
+      hasAttachments: req.body.attachments?.length > 0,
+      groupId: req.body.group_id,
+      productId: req.body.product_id,
+      descriptionLength: req.body.description?.length || 0,
+      priority: req.body.priority,
+      status: req.body.status,
+      type: req.body.type,
+      hasName: !!req.body.name,
+      requestId: requestId
+    };
+    
+    console.log("🎫 API: Received Freshdesk ticket creation request", {
+      sanitizedRequest,
+      timestamp: new Date().toISOString(),
+      userAgent: req.get('User-Agent'),
+      contentType: req.get('Content-Type'),
+      contentLength: req.get('Content-Length'),
+      origin: req.get('Origin')
+    });
     
     // Validate required fields
     const { email, subject, description } = req.body;
     if (!email || !subject || !description) {
+      console.error("🎫 API: Validation failed - missing required fields", {
+        requestId,
+        hasEmail: !!email,
+        hasSubject: !!subject,
+        hasDescription: !!description,
+        requestTime: Date.now() - requestStartTime
+      });
+      
       return res.status(400).json({ 
         error: 'Missing required fields: email, subject, and description are required' 
       });
     }
 
+    console.log("🎫 API: Validation passed, calling Freshdesk handler", {
+      requestId,
+      validationTime: Date.now() - requestStartTime
+    });
+
     // Call the Freshdesk handler
+    const handlerStartTime = Date.now();
     const result = await createFreshdeskTicket(req.body);
+    const handlerTime = Date.now() - handlerStartTime;
     
-    console.log("Backend: Freshdesk ticket created successfully, returning to frontend");
+    console.log("🎫 API: Freshdesk handler completed successfully", {
+      requestId,
+      ticketId: result.id,
+      handlerTime,
+      totalTime: Date.now() - requestStartTime,
+      email: req.body.email
+    });
     
     // Return the ticket ID in the format expected by the frontend
     res.status(201).json({
@@ -3165,13 +3211,57 @@ app.post('/api/create-freshdesk-ticket', async (req, res) => {
     });
     
   } catch (error) {
-    console.error("Backend: Error creating Freshdesk ticket:", error);
+    const errorTime = Date.now() - requestStartTime;
+    
+    console.error("🎫 API: Error creating Freshdesk ticket", {
+      requestId,
+      error: error.message,
+      errorType: error.constructor.name,
+      errorTime,
+      email: req.body?.email,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n') // First 3 lines of stack trace
+    });
+    
+    // Enhanced error logging for dashboard
+    const errorDetails = {
+      type: 'freshdesk_api_endpoint_error',
+      requestId,
+      email: req.body?.email,
+      errorTime,
+      userAgent: req.get('User-Agent'),
+      origin: req.get('Origin'),
+      requestBody: {
+        email: req.body?.email,
+        subject: req.body?.subject,
+        hasAttachments: req.body?.attachments?.length > 0,
+        descriptionLength: req.body?.description?.length || 0
+      }
+    };
+    
+    // Log to database for dashboard (similar to frontend logError)
+    try {
+      await pool.query(
+        `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          'backend_api',
+          null,
+          'API_ERROR',
+          error.message,
+          JSON.stringify(errorDetails),
+          error.stack
+        ]
+      );
+    } catch (dbError) {
+      console.error("🎫 API: Failed to log error to database", dbError);
+    }
     
     // Return a structured error response
     res.status(500).json({
       error: 'Failed to create Freshdesk ticket',
       message: error.message,
-      details: error.stack
+      details: error.stack,
+      request_id: requestId
     });
   }
 });
