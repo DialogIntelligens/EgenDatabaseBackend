@@ -3609,6 +3609,20 @@ app.get('/conversation/:id/context-chunks/:messageIndex', authenticateToken, asy
   }
 });
 
+// POST endpoint to save context chunks
+app.post('/conversation/:id/context-chunks/:messageIndex', async (req, res) => {
+  const { id: conversationId, messageIndex } = req.params;
+  const { chunks } = req.body;
+  
+  try {
+    await saveContextChunks(conversationId, parseInt(messageIndex), chunks);
+    res.json({ message: 'Context chunks saved successfully' });
+  } catch (error) {
+    console.error('Error saving context chunks:', error);
+    res.status(500).json({ error: 'Failed to save context chunks' });
+  }
+});
+
 // Modify the sendMessage function to save context chunks
 // Find the sendMessage function and modify the part where it calls streamAnswer
 const sendMessage = async (question = null) => {
