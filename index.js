@@ -3167,51 +3167,11 @@ app.post('/api/create-freshdesk-ticket', async (req, res) => {
   } catch (error) {
     console.error("Backend: Error creating Freshdesk ticket:", error);
     
-    // Enhanced error logging using the existing error logging infrastructure
-    const errorCategory = error.category || categorizeError(error.message, error.details);
-    
-    // Prepare enhanced error details for logging
-    const enhancedErrorDetails = {
-      backendError: true,
-      originalError: error.message,
-      errorType: error.name || 'UnknownError',
-      timestamp: new Date().toISOString(),
-      requestBody: {
-        email: req.body.email,
-        subject: req.body.subject,
-        hasAttachments: req.body.attachments && req.body.attachments.length > 0,
-        hasGroupId: !!req.body.group_id,
-        hasProductId: !!req.body.product_id,
-        dataSize: JSON.stringify(req.body).length
-      },
-      statusCode: error.statusCode || 500,
-      ...error.details // Include all the detailed error info from freshdeskHandler.js
-    };
-    
-    // Log the error to database using the existing error logging infrastructure
-    try {
-      await pool.query(
-        `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          'backend_freshdesk', // Use a special chatbot_id for backend errors
-          null, // No specific user_id for backend errors
-          errorCategory,
-          error.message,
-          JSON.stringify(enhancedErrorDetails),
-          error.stack || 'No stack trace available'
-        ]
-      );
-      console.log(`Backend: Error logged to database with category: ${errorCategory}`);
-    } catch (logError) {
-      console.error("Backend: Failed to log error to database:", logError);
-    }
-    
     // Return a structured error response
-    res.status(error.statusCode || 500).json({
+    res.status(500).json({
       error: 'Failed to create Freshdesk ticket',
       message: error.message,
-      details: error.details || error.stack
+      details: error.stack
     });
   }
 });
@@ -3316,38 +3276,7 @@ registerPromptTemplateV2Routes(app, pool, authenticateToken);
 function categorizeError(errorMessage, errorDetails) {
   const message = errorMessage.toLowerCase();
   
-  // Check for specific Freshdesk-related errors first
-  if (message.includes('freshdesk') || message.includes('ticket')) {
-    // Check if it's a network/timeout issue
-    if (message.includes('timeout') || message.includes('aborted') || message.includes('connection')) {
-      return 'NETWORK_ERROR';
-    }
-    // Check if it's a parsing issue
-    if (message.includes('parse') || message.includes('json') || message.includes('response')) {
-      return 'PARSING_ERROR';
-    }
-    // Check if it's a validation issue (4xx errors)
-    if (message.includes('400') || message.includes('401') || message.includes('403') || message.includes('404') || 
-        message.includes('validation') || message.includes('invalid') || message.includes('required')) {
-      return 'VALIDATION_ERROR';
-    }
-    // Check if it's a server error (5xx errors)
-    if (message.includes('500') || message.includes('502') || message.includes('503') || message.includes('504')) {
-      return 'API_ERROR';
-    }
-    // Default for other Freshdesk errors
-    return 'API_ERROR';
-  }
-  
-  // General categorization for other errors
-  if (message.includes('failed to fetch') || message.includes('network') || message.includes('connection') || 
-      message.includes('timeout') || message.includes('aborted')) {
-    return 'NETWORK_ERROR';
-  } else if (message.includes('failed to parse') || message.includes('json') || message.includes('syntax') || 
-             message.includes('parsing')) {
-    return 'PARSING_ERROR';
-  } else if (message.includes('api') || message.includes('fetch') || message.includes('request') || 
-             message.includes('response')) {
+  if (message.includes('api') || message.includes('fetch') || message.includes('request')) {
     return 'API_ERROR';
   } else if (message.includes('database') || message.includes('sql') || message.includes('query')) {
     return 'DATABASE_ERROR';
@@ -3355,8 +3284,11 @@ function categorizeError(errorMessage, errorDetails) {
     return 'AUTHENTICATION_ERROR';
   } else if (message.includes('validation') || message.includes('invalid') || message.includes('required')) {
     return 'VALIDATION_ERROR';
-  } else if (message.includes('openai') || message.includes('embedding') || message.includes('gpt') || 
-             message.includes('stream') || message.includes('ai')) {
+  } else if (message.includes('network') || message.includes('connection') || message.includes('timeout')) {
+    return 'NETWORK_ERROR';
+  } else if (message.includes('parsing') || message.includes('json') || message.includes('syntax')) {
+    return 'PARSING_ERROR';
+  } else if (message.includes('openai') || message.includes('embedding') || message.includes('gpt')) {
     return 'AI_SERVICE_ERROR';
   } else if (message.includes('pinecone') || message.includes('vector')) {
     return 'VECTOR_DATABASE_ERROR';
@@ -3372,7 +3304,6 @@ app.post('/api/log-error', async (req, res) => {
       chatbot_id, 
       user_id, 
       error_message, 
-      error_category, // Accept category from frontend
       error_details, 
       stack_trace 
     } = req.body;
@@ -3381,8 +3312,8 @@ app.post('/api/log-error', async (req, res) => {
       return res.status(400).json({ error: 'chatbot_id and error_message are required' });
     }
 
-    // Use provided category or automatically categorize the error
-    const finalErrorCategory = error_category || categorizeError(error_message, error_details);
+    // Automatically categorize the error
+    const error_category = categorizeError(error_message, error_details);
 
     // Insert error log
     const result = await pool.query(
@@ -3392,14 +3323,14 @@ app.post('/api/log-error', async (req, res) => {
       [
         chatbot_id,
         user_id || null,
-        finalErrorCategory,
+        error_category,
         error_message,
         error_details ? JSON.stringify(error_details) : null,
         stack_trace || null
       ]
     );
 
-    console.log(`Error logged for chatbot ${chatbot_id}: ${finalErrorCategory} - ${error_message}`);
+    console.log(`Error logged for chatbot ${chatbot_id}: ${error_category} - ${error_message}`);
     
     res.status(201).json({
       message: 'Error logged successfully',
