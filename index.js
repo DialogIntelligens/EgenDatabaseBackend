@@ -3463,3 +3463,268 @@ app.get('/api/error-statistics', authenticateToken, async (req, res) => {
   }
 });
 
+// Add this function after the existing helper functions
+async function saveContextChunks(conversationId, messageIndex, chunks) {
+  if (!chunks || chunks.length === 0) return;
+  
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Clear existing chunks for this message (in case of retry)
+    await client.query(
+      'DELETE FROM message_context_chunks WHERE conversation_id = $1 AND message_index = $2',
+      [conversationId, messageIndex]
+    );
+    
+    // Insert new chunks
+    for (const chunk of chunks) {
+      await client.query(
+        `INSERT INTO message_context_chunks 
+         (conversation_id, message_index, chunk_content, chunk_metadata, similarity_score)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          conversationId,
+          messageIndex,
+          chunk.pageContent || chunk.content || '',
+          JSON.stringify(chunk.metadata || {}),
+          chunk.score || null
+        ]
+      );
+    }
+    
+    await client.query('COMMIT');
+    console.log(`Saved ${chunks.length} context chunks for conversation ${conversationId}, message ${messageIndex}`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error saving context chunks:', error);
+  } finally {
+    client.release();
+  }
+}
+
+// Add this function to retrieve context chunks
+async function getContextChunks(conversationId, messageIndex) {
+  try {
+    const result = await pool.query(
+      `SELECT chunk_content, chunk_metadata, similarity_score 
+       FROM message_context_chunks 
+       WHERE conversation_id = $1 AND message_index = $2 
+       ORDER BY similarity_score DESC NULLS LAST`,
+      [conversationId, messageIndex]
+    );
+    return result.rows;
+  } catch (error) {
+    console.error('Error retrieving context chunks:', error);
+    return [];
+  }
+}
+
+// Modify the streamAnswer function to capture sourceDocuments
+const streamAnswer = async (apiUrl, bodyObject, retryCount = 0) => {
+  // ... existing code until the streaming while loop ...
+  
+  let currentAiText = "";
+  let currentAiTextWithMarkers = "";
+  let contextChunks = []; // Add this to store context chunks
+  
+  setIsLoading(true);
+
+  while (!done) {
+    try {
+      const { value, done: readerDone } = await reader.read();
+      done = readerDone;
+      if (value) {
+        chunkBuffer += decoder.decode(value, { stream: true });
+        const lines = chunkBuffer.split(/\r?\n/);
+        chunkBuffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (!trimmed.startsWith("data:")) continue;
+
+          const dataStr = trimmed.replace("data:", "").trim();
+          if (dataStr === "[DONE]") {
+            done = true;
+            break;
+          }
+
+          let json;
+          try {
+            json = JSON.parse(dataStr);
+          } catch (err) {
+            chunkBuffer = trimmed + "\n" + chunkBuffer;
+            continue;
+          }
+
+          if (json.event === "start") {
+            console.log("Conversation started");
+          } else if (json.event === "token") {
+            // ... existing token handling code ...
+          } else if (json.event === "sourceDocuments") {
+            // NEW: Capture context chunks from sourceDocuments event
+            console.log("Received sourceDocuments:", json.data);
+            contextChunks = json.data || [];
+          } else if (json.event === "end") {
+            console.log("Conversation ended");
+            done = true;
+            scrollToBottom();
+            resetInactivityTimer();
+            break;
+          } else if (json.event === "error") {
+            console.error("SSE error event:", json.data);
+            logError(json.data);
+            done = true;
+            break;
+          }
+        }
+      }
+    } catch (streamError) {
+      // ... existing error handling ...
+    }
+  }
+  
+  setIsLoading(false);
+
+  // ... existing code for handling buffered content ...
+
+  return { 
+    display: currentAiText, 
+    withMarkers: currentAiTextWithMarkers,
+    contextChunks: contextChunks // Return context chunks
+  };
+};
+
+// Add this endpoint after the existing conversation endpoints
+app.get('/conversation/:id/context-chunks/:messageIndex', authenticateToken, async (req, res) => {
+  const { id: conversationId, messageIndex } = req.params;
+  
+  try {
+    const chunks = await getContextChunks(conversationId, parseInt(messageIndex));
+    res.json(chunks);
+  } catch (error) {
+    console.error('Error retrieving context chunks:', error);
+    res.status(500).json({ error: 'Failed to retrieve context chunks' });
+  }
+});
+
+// Modify the sendMessage function to save context chunks
+// Find the sendMessage function and modify the part where it calls streamAnswer
+const sendMessage = async (question = null) => {
+  // ... existing code until the streamAnswer call ...
+  
+  try {
+    // ... existing code until the final API call ...
+    
+    const result = await streamAnswer(apiToUse, bodyObject);
+    const finalAIText = result.display;
+    let finalAITextWithMarkers = result.withMarkers;
+    const contextChunks = result.contextChunks || []; // Get context chunks
+
+    // ... existing code for text processing ...
+
+    const updatedConversationForDisplay = [
+      ...updatedConversation,
+      { text: displayText, isUser: false },
+    ];
+    
+    const updatedConversationForDB = [
+      ...updatedConversation,
+      { text: finalAITextWithMarkers, isUser: false },
+    ];
+
+    // ... existing code for conversation processing ...
+
+    // Run database operations in the background
+    (async () => {
+      try {
+        const { emne, score, lacking_info, fallback } = await getEmneAndScore(
+          conversationText
+        );
+
+        // Save conversation to database
+        const savedConversation = await saveConversationToDatabase(
+          updatedConversationForDB,
+          emne,
+          score,
+          customerRating,
+          lacking_info,
+          {
+            type: "chatbot_response",
+            besked: finalAITextWithMarkers.replace(/<[^>]*>/g, ""),
+          },
+          undefined,
+          false,
+          fallback
+        );
+
+        // Save context chunks if we have them and a conversation ID
+        if (contextChunks.length > 0 && savedConversation?.id) {
+          const messageIndex = updatedConversationForDB.length - 1; // Index of the AI response
+          await saveContextChunks(savedConversation.id, messageIndex, contextChunks);
+        }
+
+      } catch (error) {
+        console.error("Error in background database operations:", error);
+      }
+    })();
+
+    // ... rest of existing code ...
+  } catch (error) {
+    // ... existing error handling ...
+  }
+};
+
+// Modify the saveConversationToDatabase function to return the conversation ID
+async function saveConversationToDatabase(
+  conversationData,
+  emne,
+  score,
+  customerRating,
+  lackingInfo,
+  formData = {},
+  bugStatus = undefined,
+  isLivechat = false,
+  fallback = null
+) {
+  try {
+    const response = await fetch(
+      "https://egendatabasebackend.onrender.com/conversations",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          conversation_data: conversationData,
+          user_id: userId,
+          chatbot_id: chatbotID,
+          emne: emne,
+          score: score,
+          ...(customerRating !== null && { customer_rating: customerRating }),
+          lacking_info: lackingInfo,
+          ...(bugStatus && { bug_status: bugStatus }),
+          form_data: formData,
+          purchase_tracking_enabled: purchaseTrackingEnabled,
+          is_livechat: isLivechat,
+          fallback: fallback,
+        }),
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        `Failed to save conversation: ${errorData.error}. Details: ${errorData.details}`
+      );
+    }
+    const savedConversation = await response.json();
+    console.log("Conversation saved successfully:", savedConversation);
+    return savedConversation; // Return the saved conversation object
+  } catch (error) {
+    console.error("Error saving conversation to the database:", error);
+    logError(error);
+    return null;
+  }
+}
+
