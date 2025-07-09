@@ -3167,6 +3167,30 @@ app.post('/api/create-freshdesk-ticket', async (req, res) => {
   } catch (error) {
     console.error("Backend: Error creating Freshdesk ticket:", error);
     
+    // Extended logging: write the error details to the error_logs table so the dashboard can pick it up
+    try {
+      // Extract minimal request info for context (avoid storing full description HTML)
+      const { email: reqEmail, subject: reqSubject } = req.body || {};
+
+      const error_details = {
+        ...(error.context || {}),
+        requestMeta: {
+          email: reqEmail,
+          subject: reqSubject
+        }
+      };
+
+      const error_category = categorizeError(error.message || "Freshdesk error", error_details);
+
+      await pool.query(
+        `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [null, null, error_category, error.message || "Freshdesk ticket failure", JSON.stringify(error_details), error.stack || null]
+      );
+    } catch (logErr) {
+      console.error('Backend: Failed to log Freshdesk error to DB:', logErr);
+    }
+    
     // Return a structured error response
     res.status(500).json({
       error: 'Failed to create Freshdesk ticket',
