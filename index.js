@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
-import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
+import { generateStatisticsReport, generateProfessionalReport } from './reportGenerator.js'; // Import report generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
@@ -1890,7 +1890,7 @@ cron.schedule('0 * * * *', async () => {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations } = req.body;
+    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations, templateName } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
@@ -2193,11 +2193,52 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       }
     }
     
-    // Generate the PDF report
-    console.log("Generating PDF report...");
+    // Generate the PDF report using the new professional template system
+    console.log("Generating professional PDF report...");
     try {
-      const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
-      console.log("PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+      // Fetch conversations for the report if needed
+      let conversations = [];
+      if (includeTextAnalysis || includeGPTAnalysis) {
+        try {
+          let queryText = `
+            SELECT id, created_at, conversation_data, emne, score, customer_rating
+            FROM conversations
+            WHERE chatbot_id = ANY($1)
+          `;
+          let queryParams = [chatbotIds];
+          let paramIndex = 2;
+          
+          // Add date filters if provided
+          if (start_date && end_date) {
+            queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+            queryParams.push(start_date, end_date);
+          }
+          
+          // Order by most recent
+          queryText += ` ORDER BY created_at DESC LIMIT 100`;
+          
+          const result = await pool.query(queryText, queryParams);
+          conversations = result.rows;
+        } catch (convError) {
+          console.error('Error fetching conversations for report:', convError);
+        }
+      }
+      
+             // Use the new professional report generator
+       const pdfBuffer = await generateProfessionalReport({
+         statisticsData,
+         timePeriod,
+         conversations,
+         includeTextAnalysis: includeTextAnalysis || false,
+         includeGPTAnalysis: includeGPTAnalysis || false,
+         maxConversations: maxConversations || 25,
+         templateName: templateName || 'modern-report-template',
+         progressCallback: (step, progress) => {
+           console.log(`Report generation: ${step} (${progress}%)`);
+         }
+       });
+      
+      console.log("Professional PDF report generated successfully, size:", pdfBuffer.length, "bytes");
       
       // Set appropriate headers for PDF download
       res.setHeader('Content-Type', 'application/pdf');
@@ -2207,12 +2248,27 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       // Send the PDF buffer as the response
       res.send(pdfBuffer);
     } catch (pdfError) {
-      console.error('Error generating PDF report:', pdfError);
-      res.status(500).json({ 
-        error: 'Failed to generate PDF report', 
-        details: pdfError.message,
-        stack: pdfError.stack
-      });
+      console.error('Error generating professional PDF report:', pdfError);
+      
+      // Fallback to old system if new one fails
+      try {
+        console.log("Falling back to legacy report generation...");
+        const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
+        console.log("Fallback PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+        res.setHeader('Content-Length', pdfBuffer.length);
+        res.send(pdfBuffer);
+      } catch (fallbackError) {
+        console.error('Both report generation methods failed:', fallbackError);
+        res.status(500).json({ 
+          error: 'Failed to generate PDF report', 
+          details: pdfError.message,
+          fallbackError: fallbackError.message,
+          stack: pdfError.stack
+        });
+      }
     }
   } catch (error) {
     console.error('Error generating report:', error);

@@ -1,6 +1,9 @@
 import PDFDocument from 'pdfkit';
 import MarkdownIt from 'markdown-it';
 import { Readable } from 'stream';
+import TemplateProcessor from './templateProcessor.js';
+import { generateGPTAnalysis } from './gptAnalysis.js';
+import { performTextAnalysis } from './textAnalysis.js';
 
 // Initialize Markdown parser once
 const mdParser = new MarkdownIt({
@@ -707,4 +710,121 @@ function formatTimePeriod(timePeriod) {
   }
   
   return 'Custom Range';
+}
+
+/**
+ * Generate a professional PDF report using templates
+ * @param {Object} options - Report generation options
+ * @returns {Buffer} - PDF buffer
+ */
+export async function generateProfessionalReport({
+  statisticsData,
+  timePeriod,
+  conversations = [],
+  includeTextAnalysis = false,
+  includeGPTAnalysis = false,
+  maxConversations = 25,
+  progressCallback = null,
+  templateName = 'modern-report-template'
+}) {
+  try {
+    // Initialize progress
+    if (progressCallback) {
+      progressCallback('Initializing report generation...', 0);
+    }
+
+    // Create a copy of statistics data to avoid mutation
+    const reportData = { ...statisticsData };
+
+    // Add text analysis if requested
+    if (includeTextAnalysis && conversations.length > 0) {
+      if (progressCallback) {
+        progressCallback('Performing text analysis...', 20);
+      }
+      
+      try {
+        const textAnalysis = await performTextAnalysis(conversations);
+        reportData.textAnalysis = textAnalysis;
+      } catch (error) {
+        console.error('Text analysis failed:', error);
+        // Continue without text analysis
+      }
+    }
+
+    // Add GPT analysis if requested
+    if (includeGPTAnalysis) {
+      if (progressCallback) {
+        progressCallback('Generating AI insights...', 40);
+      }
+      
+      try {
+        // Prepare conversation contents for GPT analysis
+        const conversationContents = conversations.slice(0, maxConversations).map(conv => {
+          let conversationData = conv.conversation_data || [];
+          
+          // Parse conversation data if it's a string
+          if (typeof conversationData === 'string') {
+            try {
+              conversationData = JSON.parse(conversationData);
+            } catch (e) {
+              console.error('Error parsing conversation data:', e);
+              conversationData = [];
+            }
+          }
+          
+          return {
+            topic: conv.emne || 'Unknown',
+            score: conv.score || 'N/A',
+            rating: conv.customer_rating || null,
+            messages: Array.isArray(conversationData) ? conversationData.map(msg => ({
+              isUser: msg.isUser || msg.sender === 'user',
+              text: msg.text || msg.message || ''
+            })) : []
+          };
+        });
+        
+        const gptAnalysis = await generateGPTAnalysis(
+          reportData,
+          timePeriod,
+          conversationContents,
+          maxConversations,
+          progressCallback
+        );
+        
+        reportData.gptAnalysis = gptAnalysis;
+      } catch (error) {
+        console.error('GPT analysis failed:', error);
+        reportData.gptAnalysis = 'AI analysis could not be generated due to an error.';
+      }
+    }
+
+    // Generate the PDF using the template processor
+    if (progressCallback) {
+      progressCallback('Generating PDF report...', 80);
+    }
+    
+    const pdfBuffer = await TemplateProcessor.generateReport(
+      reportData,
+      timePeriod,
+      templateName
+    );
+
+    if (progressCallback) {
+      progressCallback('Report generation complete!', 100);
+    }
+
+    return pdfBuffer;
+
+  } catch (error) {
+    console.error('Error generating professional report:', error);
+    throw error;
+  }
+}
+
+/**
+ * Legacy function to maintain backward compatibility
+ * @deprecated Use generateProfessionalReport instead
+ */
+export async function generateReport(options) {
+  return generateProfessionalReport(options);
 }
