@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
+import { generateStatisticsReportTemplate } from './reportGeneratorTemplate.js'; // Import template-based generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
@@ -2193,10 +2194,10 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       }
     }
     
-    // Generate the PDF report
-    console.log("Generating PDF report...");
+    // Generate the PDF report using template-based generator
+    console.log("Generating PDF report with template...");
     try {
-      const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
+      const pdfBuffer = await generateStatisticsReportTemplate(statisticsData, timePeriod);
       console.log("PDF report generated successfully, size:", pdfBuffer.length, "bytes");
       
       // Set appropriate headers for PDF download
