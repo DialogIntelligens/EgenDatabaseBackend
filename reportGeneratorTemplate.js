@@ -19,9 +19,20 @@ const mdParser = new MarkdownIt({
  */
 export async function generateStatisticsReportTemplate(data, timePeriod) {
   try {
+    console.log('Starting template-based PDF generation...');
+    console.log('Current working directory:', process.cwd());
+    
     // Read the HTML template
     const templatePath = path.join(process.cwd(), 'reportTemplates', 'default.html');
+    console.log('Template path:', templatePath);
+    
+    // Check if template file exists
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Template file not found at: ${templatePath}`);
+    }
+    
     const templateSource = fs.readFileSync(templatePath, 'utf8');
+    console.log('Template loaded successfully, size:', templateSource.length);
     
     // Compile the template
     const template = Handlebars.compile(templateSource);
@@ -68,6 +79,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     const html = template(templateData);
     
     // Launch puppeteer with production-friendly settings
+    console.log('Launching puppeteer browser...');
     const browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -83,6 +95,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
         '--disable-features=VizDisplayCompositor'
       ]
     });
+    console.log('Puppeteer browser launched successfully');
     
     const page = await browser.newPage();
     
@@ -92,6 +105,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     });
     
     // Generate PDF
+    console.log('Generating PDF...');
     const pdfBuffer = await page.pdf({
       format: 'A4',
       margin: {
@@ -104,6 +118,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
       preferCSSPageSize: true
     });
     
+    console.log('PDF generated successfully, size:', pdfBuffer.length);
     await browser.close();
     
     return pdfBuffer;
