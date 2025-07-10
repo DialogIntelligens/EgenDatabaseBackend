@@ -67,7 +67,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     // Generate HTML
     const html = template(templateData);
     
-    // Launch puppeteer
+    // Launch puppeteer with production-friendly settings
     const browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -78,7 +78,9 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
         '--no-first-run',
         '--no-zygote',
         '--single-process',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
       ]
     });
     

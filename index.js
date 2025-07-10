@@ -2194,11 +2194,11 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       }
     }
     
-    // Generate the PDF report using template-based generator
+    // Generate the PDF report using template-based generator with fallback
     console.log("Generating PDF report with template...");
     try {
       const pdfBuffer = await generateStatisticsReportTemplate(statisticsData, timePeriod);
-      console.log("PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+      console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
       
       // Set appropriate headers for PDF download
       res.setHeader('Content-Type', 'application/pdf');
@@ -2208,12 +2208,29 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       // Send the PDF buffer as the response
       res.send(pdfBuffer);
     } catch (pdfError) {
-      console.error('Error generating PDF report:', pdfError);
-      res.status(500).json({ 
-        error: 'Failed to generate PDF report', 
-        details: pdfError.message,
-        stack: pdfError.stack
-      });
+      console.error('Error generating template-based PDF report:', pdfError);
+      console.log('Falling back to legacy PDF generator...');
+      
+      // Fallback to the original PDF generator
+      try {
+        const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
+        console.log("Legacy PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+        
+        // Set appropriate headers for PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+        res.setHeader('Content-Length', pdfBuffer.length);
+        
+        // Send the PDF buffer as the response
+        res.send(pdfBuffer);
+      } catch (legacyPdfError) {
+        console.error('Error generating legacy PDF report:', legacyPdfError);
+        res.status(500).json({ 
+          error: 'Failed to generate PDF report using both template and legacy methods', 
+          templateError: pdfError.message,
+          legacyError: legacyPdfError.message
+        });
+      }
     }
   } catch (error) {
     console.error('Error generating report:', error);
