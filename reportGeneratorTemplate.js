@@ -1,8 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
 import MarkdownIt from 'markdown-it';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Markdown parser
 const mdParser = new MarkdownIt({
@@ -23,7 +26,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     console.log('Current working directory:', process.cwd());
     
     // Read the HTML template
-    const templatePath = path.join(process.cwd(), 'reportTemplates', 'default.html');
+    const templatePath = path.join(__dirname, 'reportTemplates', 'default.html');
     console.log('Template path:', templatePath);
     
     // Check if template file exists
