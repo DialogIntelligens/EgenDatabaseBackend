@@ -2511,7 +2511,12 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment, last_modified
     `;
     
+    console.log('Executing user update query:', updateQuery);
+    console.log('Query params:', queryParams);
+    
     const result = await pool.query(updateQuery, queryParams);
+    
+    console.log('User update result:', result.rows[0]);
     
     res.status(200).json({ 
       message: 'User updated successfully',
