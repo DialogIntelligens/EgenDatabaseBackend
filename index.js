@@ -2528,61 +2528,7 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Add this endpoint to update a user's Pinecone indexes
-app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
-  // Only admins or the user themselves can update indexes
-  if (!req.user.isAdmin && req.user.userId != req.params.id) {
-    return res.status(403).json({ error: 'Forbidden: You can only modify your own indexes' });
-  }
 
-  const { id } = req.params;
-  const { pinecone_indexes } = req.body;
-  
-  // Validate input
-  if (!Array.isArray(pinecone_indexes)) {
-    return res.status(400).json({ 
-      error: 'pinecone_indexes must be an array'
-    });
-  }
-  
-  // Validate structure of each index object
-  for (const index of pinecone_indexes) {
-    if (!index.namespace || !index.index_name) {
-      return res.status(400).json({
-        error: 'Each index must have namespace and index_name properties'
-      });
-    }
-    // API_key is optional, so no validation needed for it
-  }
-  
-  try {
-    // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Convert the array to JSON string
-    const indexesJson = JSON.stringify(pinecone_indexes);
-    
-    // Update the user's indexes
-    const result = await pool.query(
-      'UPDATE users SET pinecone_indexes = $1 WHERE id = $2 RETURNING id, username',
-      [indexesJson, id]
-    );
-    
-    res.status(200).json({ 
-      message: 'Pinecone indexes updated successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username
-      } 
-    });
-  } catch (error) {
-    console.error('Error updating user indexes:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
 
 // Add this endpoint to reset a user's password (admin only)
 app.post('/reset-password/:id', authenticateToken, async (req, res) => {
@@ -3791,4 +3737,100 @@ async function saveConversationToDatabase(
     return null;
   }
 }
+
+// Add this endpoint to update a user's Pinecone API key
+app.put('/user-pinecone-api-key/:id', authenticateToken, async (req, res) => {
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user\'s Pinecone API key' });
+  }
+
+  const { pinecone_api_key } = req.body;
+  
+  // Validate input
+  if (!pinecone_api_key || typeof pinecone_api_key !== 'string' || pinecone_api_key.trim() === '') {
+    return res.status(400).json({ 
+      error: 'pinecone_api_key is required and must be a non-empty string'
+    });
+  }
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Update the user's Pinecone API key and last_modified timestamp
+    const result = await pool.query(
+      'UPDATE users SET pinecone_api_key = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
+      [pinecone_api_key.trim(), targetId]
+    );
+    
+    res.status(200).json({ 
+      message: 'Pinecone API key updated successfully',
+      user: {
+        id: result.rows[0].id,
+        username: result.rows[0].username
+      } 
+    });
+  } catch (error) {
+    console.error('Error updating Pinecone API key:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Add this endpoint to update a user's Pinecone indexes
+app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user\'s Pinecone indexes' });
+  }
+  const { pinecone_indexes } = req.body;
+  
+  // Validate input
+  if (!Array.isArray(pinecone_indexes)) {
+    return res.status(400).json({ 
+      error: 'pinecone_indexes must be an array'
+    });
+  }
+  
+  // Validate structure of each index object
+  for (const index of pinecone_indexes) {
+    if (!index.namespace || !index.index_name) {
+      return res.status(400).json({
+        error: 'Each index must have namespace and index_name properties'
+      });
+    }
+    // API_key is optional, so no validation needed for it
+  }
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Convert the array to JSON string
+    const indexesJson = JSON.stringify(pinecone_indexes);
+    
+    // Update the user's indexes and last_modified timestamp
+    const result = await pool.query(
+      'UPDATE users SET pinecone_indexes = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
+      [indexesJson, targetId]
+    );
+    
+    res.status(200).json({ 
+      message: 'Pinecone indexes updated successfully',
+      user: {
+        id: result.rows[0].id,
+        username: result.rows[0].username
+      } 
+    });
+  } catch (error) {
+    console.error('Error updating user indexes:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
 
