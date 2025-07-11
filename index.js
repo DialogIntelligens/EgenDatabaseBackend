@@ -2369,7 +2369,7 @@ app.get('/users', authenticateToken, async (req, res) => {
     // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
     let queryText = `
       SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified
       FROM users`;
     let queryParams = [];
 
@@ -2382,7 +2382,7 @@ app.get('/users', authenticateToken, async (req, res) => {
       queryParams.push(ids);
     }
 
-    queryText += ' ORDER BY id DESC';
+    queryText += ' ORDER BY last_modified DESC NULLS LAST';
 
     const result = await pool.query(queryText, queryParams);
     const users = result.rows.map(user => {
@@ -2497,6 +2497,9 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       paramIndex++;
     }
     
+    // Always update last_modified timestamp
+    updateFields.push(`last_modified = CURRENT_TIMESTAMP`);
+    
     // Add the ID as the last parameter
     queryParams.push(targetId);
     
@@ -2505,7 +2508,7 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       UPDATE users 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment
+      RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment, last_modified
     `;
     
     const result = await pool.query(updateQuery, queryParams);
@@ -2600,9 +2603,9 @@ app.post('/reset-password/:id', authenticateToken, async (req, res) => {
     // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     
-    // Update the user's password
+    // Update the user's password and last_modified timestamp
     const result = await pool.query(
-      'UPDATE users SET password = $1 WHERE id = $2 RETURNING id, username',
+      'UPDATE users SET password = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
       [hashedPassword, targetId]
     );
     
