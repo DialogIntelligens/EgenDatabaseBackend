@@ -198,7 +198,30 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   router.get('/overrides/:chatbot_id/:flow_key', async (req, res) => {
     try {
       const { rows } = await pool.query('SELECT * FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 ORDER BY section_key', [req.params.chatbot_id, req.params.flow_key]);
-      res.json(rows);
+      
+      // Parse module metadata from stored content
+      const processedRows = rows.map(row => {
+        try {
+          // Try to parse as JSON to check if it contains module metadata
+          const parsed = JSON.parse(row.content);
+          if (parsed.isModuleSection) {
+            return {
+              ...row,
+              content: parsed.content,
+              isModuleSection: parsed.isModuleSection,
+              moduleId: parsed.moduleId,
+              moduleName: parsed.moduleName,
+              originalModuleSectionKey: parsed.originalModuleSectionKey,
+              parentSectionKey: parsed.parentSectionKey
+            };
+          }
+        } catch (e) {
+          // Not JSON or doesn't contain module metadata, treat as regular content
+        }
+        return row;
+      });
+      
+      res.json(processedRows);
     } catch (err) {
       console.error('GET overrides error', err);
       res.status(500).json({ error: 'Server error', details: err.message });
@@ -206,16 +229,29 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   router.post('/overrides', authenticateToken, async (req, res) => {
-    const { chatbot_id, flow_key, section_key, action, content } = req.body;
+    const { chatbot_id, flow_key, section_key, action, content, isModuleSection, moduleId, moduleName, originalModuleSectionKey, parentSectionKey } = req.body;
     if (!chatbot_id || !flow_key || !section_key || !action) return res.status(400).json({ error: 'chatbot_id, flow_key, section_key, action required' });
     if (!['add', 'modify', 'remove'].includes(action)) return res.status(400).json({ error: 'invalid action' });
     try {
+      // Store module metadata as JSON in the content field alongside the actual content
+      let contentData = content;
+      if (isModuleSection) {
+        contentData = JSON.stringify({
+          content: content,
+          isModuleSection: true,
+          moduleId: moduleId,
+          moduleName: moduleName,
+          originalModuleSectionKey: originalModuleSectionKey,
+          parentSectionKey: parentSectionKey
+        });
+      }
+      
       await pool.query(
         `INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at)
          VALUES ($1,$2,$3,$4,$5,NOW())
          ON CONFLICT (chatbot_id, flow_key, section_key)
          DO UPDATE SET action=$4, content=$5, updated_at=NOW()`,
-        [chatbot_id, flow_key, section_key, action, content || null],
+        [chatbot_id, flow_key, section_key, action, contentData],
       );
       res.json({ message: 'saved' });
     } catch (err) {
@@ -355,12 +391,26 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   for (const ov of ovRows.rows) {
     const key = Number(ov.section_key);
     console.log(`Applying override: ${ov.action} for key ${key}`);
+    
+    let contentToUse = ov.content;
+    
+    // Check if this is module section data stored as JSON
+    try {
+      const parsed = JSON.parse(ov.content);
+      if (parsed.isModuleSection) {
+        contentToUse = parsed.content;
+        console.log(`Processing module section from ${parsed.moduleName}`);
+      }
+    } catch (e) {
+      // Not JSON, use content as-is
+    }
+    
     if (ov.action === 'remove') {
       map.delete(key);
     } else if (ov.action === 'modify') {
-      map.set(key, ov.content);
+      map.set(key, contentToUse);
     } else if (ov.action === 'add') {
-      map.set(key, ov.content);
+      map.set(key, contentToUse);
     }
   }
   
