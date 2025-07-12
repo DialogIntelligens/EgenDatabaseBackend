@@ -140,6 +140,51 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   /* =============================
+     TOPK SETTINGS
+  ============================= */
+  router.get('/topk/:chatbot_id', async (req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT * FROM flow_topk_settings WHERE chatbot_id=$1 ORDER BY flow_key', [req.params.chatbot_id]);
+      res.json(rows);
+    } catch (err) {
+      console.error('GET topk settings error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  router.post('/topk', authenticateToken, async (req, res) => {
+    const { chatbot_id, flow_key, top_k } = req.body;
+    if (!chatbot_id || !flow_key || top_k === undefined) return res.status(400).json({ error: 'chatbot_id, flow_key, top_k required' });
+    
+    // Validate top_k is a positive integer
+    const topKValue = parseInt(top_k);
+    if (isNaN(topKValue) || topKValue < 1) return res.status(400).json({ error: 'top_k must be a positive integer' });
+    
+    try {
+      await pool.query(
+        `INSERT INTO flow_topk_settings (chatbot_id, flow_key, top_k)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (chatbot_id, flow_key) DO UPDATE SET top_k=$3, updated_at=NOW()`,
+        [chatbot_id, flow_key, topKValue],
+      );
+      res.json({ message: 'topk setting saved' });
+    } catch (err) {
+      console.error('POST topk settings error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  router.delete('/topk/:chatbot_id/:flow_key', authenticateToken, async (req, res) => {
+    try {
+      await pool.query('DELETE FROM flow_topk_settings WHERE chatbot_id=$1 AND flow_key=$2', [req.params.chatbot_id, req.params.flow_key]);
+      res.json({ message: 'topk setting deleted' });
+    } catch (err) {
+      console.error('DELETE topk setting error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  /* =============================
      OVERRIDES
   ============================= */
   router.get('/overrides/:chatbot_id/:flow_key', async (req, res) => {

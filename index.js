@@ -2407,10 +2407,10 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Get full user details except password, including chatbot_filepath array and topK settings
+    // Get full user details except password, including chatbot_filepath array
     const result = await pool.query(`
       SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, topk_settings
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment
       FROM users
       WHERE id = $1
     `, [userId]);
@@ -2434,20 +2434,6 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
         user.pinecone_indexes = [];
       }
     }
-    
-    // Parse topk_settings if it's a string
-    if (typeof user.topk_settings === 'string') {
-      try {
-        user.topk_settings = JSON.parse(user.topk_settings);
-      } catch (e) {
-        console.error('Error parsing topk_settings:', e);
-        user.topk_settings = { main: 8, flow2: 8, flow3: 8, flow4: 8, apiFlow: 8 };
-      }
-    }
-    
-    // Ensure all flows have default topK values
-    const defaultTopKSettings = { main: 8, flow2: 8, flow3: 8, flow4: 8, apiFlow: 8 };
-    user.topk_settings = { ...defaultTopKSettings, ...user.topk_settings };
     
     res.json(user);
   } catch (error) {
@@ -3844,103 +3830,6 @@ app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating user indexes:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// Add this endpoint to update a user's topK settings
-app.put('/user-topk-settings/:id', authenticateToken, async (req, res) => {
-  const targetId = parseInt(req.params.id);
-  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
-    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user\'s topK settings' });
-  }
-  const { topk_settings } = req.body;
-  
-  // Validate input
-  if (!topk_settings || typeof topk_settings !== 'object') {
-    return res.status(400).json({ 
-      error: 'topk_settings must be an object'
-    });
-  }
-  
-  // Validate structure of topK settings object
-  const validFlows = ['main', 'flow2', 'flow3', 'flow4', 'apiFlow'];
-  for (const [flow, value] of Object.entries(topk_settings)) {
-    if (!validFlows.includes(flow)) {
-      return res.status(400).json({
-        error: `Invalid flow key: ${flow}. Valid flows are: ${validFlows.join(', ')}`
-      });
-    }
-    if (typeof value !== 'number' || value < 1 || value > 100) {
-      return res.status(400).json({
-        error: `topK value for ${flow} must be a number between 1 and 100`
-      });
-    }
-  }
-  
-  try {
-    // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Convert the object to JSON string
-    const topkJson = JSON.stringify(topk_settings);
-    
-    // Update the user's topK settings and last_modified timestamp
-    const result = await pool.query(
-      'UPDATE users SET topk_settings = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
-      [topkJson, targetId]
-    );
-    
-    res.status(200).json({ 
-      message: 'TopK settings updated successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username
-      } 
-    });
-  } catch (error) {
-    console.error('Error updating topK settings:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// Add this endpoint to get a user's topK settings
-app.get('/user-topk-settings/:id', authenticateToken, async (req, res) => {
-  const targetId = parseInt(req.params.id);
-  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
-    return res.status(403).json({ error: 'Forbidden: You do not have permission to view this user\'s topK settings' });
-  }
-  
-  try {
-    // Get user's topK settings
-    const result = await pool.query('SELECT topk_settings FROM users WHERE id = $1', [targetId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    let topkSettings = result.rows[0].topk_settings;
-    
-    // Parse topK settings if it's a string
-    if (typeof topkSettings === 'string') {
-      try {
-        topkSettings = JSON.parse(topkSettings);
-      } catch (e) {
-        console.error('Error parsing topK settings:', e);
-        topkSettings = { main: 8, flow2: 8, flow3: 8, flow4: 8, apiFlow: 8 };
-      }
-    }
-    
-    // Ensure all flows have default values
-    const defaultSettings = { main: 8, flow2: 8, flow3: 8, flow4: 8, apiFlow: 8 };
-    topkSettings = { ...defaultSettings, ...topkSettings };
-    
-    res.json(topkSettings);
-  } catch (error) {
-    console.error('Error fetching topK settings:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
