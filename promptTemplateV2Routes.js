@@ -2,102 +2,10 @@ import express from 'express';
 
 /**
  * Registers V2 prompt template routes under /prompt-template
- * Implements a generic template system with module support.
+ * Implements a generic template system.
  */
 export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   const router = express.Router();
-
-  /* =============================
-     MODULE CRUD ROUTES
-  ============================= */
-  router.get('/modules', async (_req, res) => {
-    try {
-      const { rows } = await pool.query(
-        'SELECT id, name, description, version, is_system_module, created_by, created_at, updated_at FROM prompt_modules ORDER BY name ASC',
-      );
-      res.json(rows);
-    } catch (err) {
-      console.error('GET modules error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
-
-  router.post('/modules', authenticateToken, async (req, res) => {
-    if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
-    const { name, description, content } = req.body;
-    if (!name || !content) return res.status(400).json({ error: 'name and content required' });
-    try {
-      const { rows } = await pool.query(
-        `INSERT INTO prompt_modules (name, description, content, created_by)
-         VALUES ($1,$2,$3,$4)
-         RETURNING id, version`,
-        [name, description || null, content, req.user.userId],
-      );
-      res.json({ id: rows[0].id, version: rows[0].version });
-    } catch (err) {
-      console.error('POST modules error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
-
-  router.get('/modules/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-      const { rows } = await pool.query('SELECT * FROM prompt_modules WHERE id=$1', [id]);
-      if (!rows.length) return res.status(404).json({ error: 'Module not found' });
-      res.json(rows[0]);
-    } catch (err) {
-      console.error('GET module error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
-
-  router.put('/modules/:id', authenticateToken, async (req, res) => {
-    if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
-    const { id } = req.params;
-    const { name, description, content } = req.body;
-    if (!content) return res.status(400).json({ error: 'content required' });
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const cur = await client.query('SELECT * FROM prompt_modules WHERE id=$1', [id]);
-      if (!cur.rows.length) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Module not found' });
-      }
-      const current = cur.rows[0];
-      const newVersion = (current.version || 0) + 1;
-      await client.query(
-        `INSERT INTO prompt_module_history (module_id, version, content, updated_at, modified_by)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [id, current.version, current.content, current.updated_at, req.user.userId],
-      );
-      await client.query(
-        `UPDATE prompt_modules SET name=$1, description=$2, content=$3, version=$4, updated_at=NOW()
-          WHERE id=$5`,
-        [name || current.name, description || current.description, content, newVersion, id],
-      );
-      await client.query('COMMIT');
-      res.json({ message: 'module updated', version: newVersion });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('PUT module error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    } finally {
-      client.release();
-    }
-  });
-
-  router.delete('/modules/:id', authenticateToken, async (req, res) => {
-    if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
-    try {
-      await pool.query('DELETE FROM prompt_modules WHERE id=$1', [req.params.id]);
-      res.json({ message: 'deleted' });
-    } catch (err) {
-      console.error('DELETE module error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
 
   /* =============================
      TEMPLATE CRUD ROUTES
@@ -105,7 +13,7 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   router.get('/templates', async (_req, res) => {
     try {
       const { rows } = await pool.query(
-        'SELECT id, name, description, version, is_system_template, created_by, created_at, updated_at FROM prompt_templates ORDER BY id DESC',
+        'SELECT id, name, description, version, is_system_template, created_by, created_at, updated_at, type FROM prompt_templates ORDER BY id DESC',
       );
       res.json(rows);
     } catch (err) {
@@ -116,14 +24,15 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 
   router.post('/templates', authenticateToken, async (req, res) => {
     if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
-    const { name, description, sections } = req.body;
+    const { name, description, sections, type } = req.body;
     if (!name || !Array.isArray(sections)) return res.status(400).json({ error: 'name and sections array required' });
+    const templateType = type || 'template'; // Default to 'template' if not specified
     try {
       const { rows } = await pool.query(
-        `INSERT INTO prompt_templates (name, description, sections, created_by)
-         VALUES ($1,$2,$3,$4)
+        `INSERT INTO prompt_templates (name, description, sections, created_by, type)
+         VALUES ($1,$2,$3,$4,$5)
          RETURNING id, version`,
-        [name, description || null, JSON.stringify(sections), req.user.userId],
+        [name, description || null, JSON.stringify(sections), req.user.userId, templateType],
       );
       res.json({ id: rows[0].id, version: rows[0].version });
     } catch (err) {
@@ -147,7 +56,7 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   router.put('/templates/:id', authenticateToken, async (req, res) => {
     if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
     const { id } = req.params;
-    const { name, description, sections } = req.body;
+    const { name, description, sections, type } = req.body;
     if (!Array.isArray(sections)) return res.status(400).json({ error: 'sections must be array' });
     const client = await pool.connect();
     try {
@@ -165,9 +74,16 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
         [id, current.version, JSON.stringify(current.sections), current.updated_at, req.user.userId],
       );
       await client.query(
-        `UPDATE prompt_templates SET name=$1, description=$2, sections=$3, version=$4, updated_at=NOW()
-          WHERE id=$5`,
-        [name || current.name, description || current.description, JSON.stringify(sections), newVersion, id],
+        `UPDATE prompt_templates SET name=$1, description=$2, sections=$3, version=$4, type=$5, updated_at=NOW()
+          WHERE id=$6`,
+        [
+          name || current.name, 
+          description || current.description, 
+          JSON.stringify(sections), 
+          newVersion, 
+          type || current.type || 'template',
+          id
+        ],
       );
       await client.query('COMMIT');
       res.json({ message: 'template updated', version: newVersion });
@@ -332,6 +248,22 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   /* =============================
+     MODULES
+  ============================= */
+  router.get('/modules', async (_req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, name, description, version, sections, created_by, created_at, updated_at FROM prompt_templates WHERE type=$1 ORDER BY name',
+        ['module']
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error('GET modules error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  /* =============================
      SYSTEM STATISTICS TEMPLATE
   ============================= */
   router.get('/statistics-template', async (_req, res) => {
@@ -348,35 +280,7 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   app.use('/prompt-template', router);
 }
 
-/* Helper to resolve module references in content */
-async function resolveModules(pool, content) {
-  if (!content || typeof content !== 'string') return content;
-  
-  // Find all module references in format {{module:module_name}}
-  const moduleRegex = /\{\{module:([^}]+)\}\}/g;
-  let resolvedContent = content;
-  let match;
-  
-  while ((match = moduleRegex.exec(content)) !== null) {
-    const moduleName = match[1].trim();
-    try {
-      const { rows } = await pool.query('SELECT content FROM prompt_modules WHERE name=$1', [moduleName]);
-      if (rows.length > 0) {
-        // Recursively resolve modules in case modules reference other modules
-        const moduleContent = await resolveModules(pool, rows[0].content);
-        resolvedContent = resolvedContent.replace(match[0], moduleContent);
-      } else {
-        console.warn(`Module '${moduleName}' not found, leaving reference as-is`);
-      }
-    } catch (err) {
-      console.error(`Error resolving module '${moduleName}':`, err);
-    }
-  }
-  
-  return resolvedContent;
-}
-
-/* Helper to build final prompt with module resolution */
+/* Helper to build final prompt */
 export async function buildPrompt(pool, chatbot_id, flow_key) {
   let templateSections = [];
   
@@ -463,13 +367,64 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   const finalSections = [...map.entries()].sort((a, b) => a[0] - b[0]);
   console.log(`Final prompt has ${finalSections.length} sections`);
   
-  // Resolve modules in each section and join
-  const resolvedSections = await Promise.all(
-    finalSections.map(async ([, content]) => {
-      const resolvedContent = await resolveModules(pool, content);
-      return resolvedContent.trim();
-    })
-  );
+  let finalPrompt = finalSections.map(([, c]) => c.trim()).join('\n\n');
   
-  return resolvedSections.join('\n\n');
+  // Resolve module references
+  finalPrompt = await resolveModuleReferences(pool, finalPrompt);
+  
+  return finalPrompt;
+}
+
+/* Helper to resolve module references in prompt text */
+async function resolveModuleReferences(pool, promptText) {
+  // Find all module references in the format {{module:id:name}}
+  const moduleRegex = /\{\{module:(\d+):([^}]+)\}\}/g;
+  let match;
+  const moduleReferences = [];
+  
+  while ((match = moduleRegex.exec(promptText)) !== null) {
+    moduleReferences.push({
+      fullMatch: match[0],
+      moduleId: parseInt(match[1]),
+      moduleName: match[2]
+    });
+  }
+  
+  if (moduleReferences.length === 0) {
+    return promptText;
+  }
+  
+  // Fetch all referenced modules
+  const moduleIds = [...new Set(moduleReferences.map(ref => ref.moduleId))];
+  const moduleQuery = 'SELECT id, sections FROM prompt_templates WHERE id = ANY($1) AND type = $2';
+  const { rows: modules } = await pool.query(moduleQuery, [moduleIds, 'module']);
+  
+  // Create a map of module ID to content
+  const moduleContentMap = {};
+  modules.forEach(module => {
+    if (module.sections && Array.isArray(module.sections)) {
+      // Join all sections of the module
+      const moduleContent = module.sections
+        .sort((a, b) => a.key - b.key)
+        .map(section => section.content.trim())
+        .filter(content => content.length > 0)
+        .join('\n\n');
+      moduleContentMap[module.id] = moduleContent;
+    }
+  });
+  
+  // Replace module references with actual content
+  let resolvedPrompt = promptText;
+  for (const ref of moduleReferences) {
+    const moduleContent = moduleContentMap[ref.moduleId];
+    if (moduleContent) {
+      resolvedPrompt = resolvedPrompt.replace(ref.fullMatch, moduleContent);
+      console.log(`Resolved module reference: ${ref.moduleName} (ID: ${ref.moduleId})`);
+    } else {
+      console.warn(`Module not found: ${ref.moduleName} (ID: ${ref.moduleId})`);
+      // Leave the reference as-is if module not found
+    }
+  }
+  
+  return resolvedPrompt;
 } 
