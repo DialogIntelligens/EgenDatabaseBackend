@@ -2366,20 +2366,34 @@ app.get('/users', authenticateToken, async (req, res) => {
   }
 
   try {
+    const { include_archived } = req.query;
+    
     // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
     let queryText = `
       SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified, archived
       FROM users`;
     let queryParams = [];
+
+    // Base condition for archived status
+    let whereConditions = [];
+    
+    // Only include archived users if explicitly requested
+    if (include_archived !== 'true') {
+      whereConditions.push('(archived IS NULL OR archived = FALSE)');
+    }
 
     if (req.user.isLimitedAdmin) {
       const ids = req.user.accessibleUserIds || [];
       if (ids.length === 0) {
         return res.json([]);
       }
-      queryText += ' WHERE id = ANY($1)';
+      whereConditions.push('id = ANY($1)');
       queryParams.push(ids);
+    }
+
+    if (whereConditions.length > 0) {
+      queryText += ' WHERE ' + whereConditions.join(' AND ');
     }
 
     queryText += ' ORDER BY last_modified DESC NULLS LAST';
@@ -2388,7 +2402,8 @@ app.get('/users', authenticateToken, async (req, res) => {
     const users = result.rows.map(user => {
       return {
         ...user,
-        chatbot_filepath: user.chatbot_filepath || []
+        chatbot_filepath: user.chatbot_filepath || [],
+        archived: user.archived || false
       };
     });
     res.json(users);
@@ -2569,6 +2584,87 @@ app.post('/reset-password/:id', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error resetting password:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Add this endpoint to archive/unarchive a user (admin only)
+app.patch('/users/:id/archive', authenticateToken, async (req, res) => {
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to archive this user' });
+  }
+
+  const { archived } = req.body;
+  
+  // Validate input
+  if (typeof archived !== 'boolean') {
+    return res.status(400).json({ 
+      error: 'archived field is required and must be a boolean'
+    });
+  }
+  
+  try {
+    // First check if the user exists
+    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Update the user's archived status and last_modified timestamp
+    const result = await pool.query(
+      'UPDATE users SET archived = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username, archived',
+      [archived, targetId]
+    );
+    
+    res.status(200).json({ 
+      message: `User ${archived ? 'archived' : 'unarchived'} successfully`,
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error archiving/unarchiving user:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Get archived users (admin only)
+app.get('/users/archived', authenticateToken, async (req, res) => {
+  // Require full or limited admin
+  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    // If full admin, fetch all archived users, otherwise only the ones in accessibleUserIds
+    let queryText = `
+      SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified, archived
+      FROM users
+      WHERE archived = TRUE`;
+    let queryParams = [];
+
+    if (req.user.isLimitedAdmin) {
+      const ids = req.user.accessibleUserIds || [];
+      if (ids.length === 0) {
+        return res.json([]);
+      }
+      queryText += ' AND id = ANY($1)';
+      queryParams.push(ids);
+    }
+
+    queryText += ' ORDER BY last_modified DESC NULLS LAST';
+
+    const result = await pool.query(queryText, queryParams);
+    const users = result.rows.map(user => {
+      return {
+        ...user,
+        chatbot_filepath: user.chatbot_filepath || [],
+        archived: user.archived || false
+      };
+    });
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching archived users:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
