@@ -193,6 +193,47 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   /* =============================
+     FLOW PINECONE API KEYS
+  ============================= */
+  router.get('/flow-api-keys/:chatbot_id', async (req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT * FROM flow_pinecone_api_keys WHERE chatbot_id=$1 ORDER BY flow_key', [req.params.chatbot_id]);
+      res.json(rows);
+    } catch (err) {
+      console.error('GET flow API keys error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  router.post('/flow-api-keys', authenticateToken, async (req, res) => {
+    const { chatbot_id, flow_key, pinecone_api_key } = req.body;
+    if (!chatbot_id || !flow_key || !pinecone_api_key) return res.status(400).json({ error: 'chatbot_id, flow_key, pinecone_api_key required' });
+    
+    try {
+      await pool.query(
+        `INSERT INTO flow_pinecone_api_keys (chatbot_id, flow_key, pinecone_api_key)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (chatbot_id, flow_key) DO UPDATE SET pinecone_api_key=$3, updated_at=NOW()`,
+        [chatbot_id, flow_key, pinecone_api_key],
+      );
+      res.json({ message: 'flow API key saved' });
+    } catch (err) {
+      console.error('POST flow API key error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  router.delete('/flow-api-keys/:chatbot_id/:flow_key', authenticateToken, async (req, res) => {
+    try {
+      await pool.query('DELETE FROM flow_pinecone_api_keys WHERE chatbot_id=$1 AND flow_key=$2', [req.params.chatbot_id, req.params.flow_key]);
+      res.json({ message: 'flow API key deleted' });
+    } catch (err) {
+      console.error('DELETE flow API key error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  /* =============================
      OVERRIDES
   ============================= */
   router.get('/overrides/:chatbot_id/:flow_key', async (req, res) => {
