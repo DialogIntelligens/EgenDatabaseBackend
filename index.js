@@ -2695,7 +2695,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
     const users = usersResult.rows;
     console.log(`Found ${users.length} users`);
 
-    // For each user, calculate their message statistics
+    // For each user, calculate their message statistics and tracking data
     const usersWithStats = await Promise.all(users.map(async (user) => {
       try {
         console.log(`Processing user: ${user.username} (ID: ${user.id})`);
@@ -2711,12 +2711,44 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           }
         }
         
+        // Get user tracking data in parallel
+        const [dashboardOpensResult, pageVisitsResult] = await Promise.all([
+          pool.query(`
+            SELECT 
+              COUNT(DISTINCT DATE(opened_at)) as total_dashboard_opens,
+              COUNT(DISTINCT session_id) as unique_sessions,
+              MAX(opened_at) as last_dashboard_open
+            FROM user_dashboard_opens 
+            WHERE user_id = $1
+          `, [user.id]),
+          pool.query(`
+            SELECT 
+              COUNT(*) as total_page_visits,
+              COUNT(DISTINCT page_name) as unique_pages_visited,
+              COUNT(DISTINCT DATE(visited_at)) as active_days,
+              array_agg(DISTINCT page_name ORDER BY page_name) as visited_pages
+            FROM user_page_visits 
+            WHERE user_id = $1
+          `, [user.id])
+        ]);
+
+        const trackingData = {
+          total_dashboard_opens: parseInt(dashboardOpensResult.rows[0]?.total_dashboard_opens) || 0,
+          unique_sessions: parseInt(dashboardOpensResult.rows[0]?.unique_sessions) || 0,
+          last_dashboard_open: dashboardOpensResult.rows[0]?.last_dashboard_open || null,
+          total_page_visits: parseInt(pageVisitsResult.rows[0]?.total_page_visits) || 0,
+          unique_pages_visited: parseInt(pageVisitsResult.rows[0]?.unique_pages_visited) || 0,
+          tracking_active_days: parseInt(pageVisitsResult.rows[0]?.active_days) || 0,
+          visited_pages: pageVisitsResult.rows[0]?.visited_pages?.filter(Boolean) || []
+        };
+        
         if (!Array.isArray(chatbotIds) || chatbotIds.length === 0) {
           console.log(`User ${user.username} has no chatbot IDs`);
           return {
             ...user,
             total_messages: 0,
-            monthly_payment: parseFloat(user.monthly_payment) || 0
+            monthly_payment: parseFloat(user.monthly_payment) || 0,
+            ...trackingData
           };
         }
 
@@ -2808,7 +2840,8 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           average_monthly_messages: Math.round(averageMonthlyMessages),
           last_month_messages: lastMonthMessages,
           days_active: daysActive,
-          monthly_payment: monthlyPayment
+          monthly_payment: monthlyPayment,
+          ...trackingData
         };
       } catch (error) {
         console.error(`Error calculating stats for user ${user.username}:`, error);
@@ -2816,7 +2849,14 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         return {
           ...user,
           total_messages: 0,
-          monthly_payment: parseFloat(user.monthly_payment) || 0
+          monthly_payment: parseFloat(user.monthly_payment) || 0,
+          total_dashboard_opens: 0,
+          unique_sessions: 0,
+          last_dashboard_open: null,
+          total_page_visits: 0,
+          unique_pages_visited: 0,
+          tracking_active_days: 0,
+          visited_pages: []
         };
       }
     }));
@@ -2843,6 +2883,121 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching revenue analytics:', error);
     console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// User Tracking Endpoints
+app.post('/track/dashboard-open', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { session_id, ip_address, user_agent } = req.body;
+
+  try {
+    // Insert dashboard open record (with unique constraint to prevent duplicate daily session counts)
+    await pool.query(`
+      INSERT INTO user_dashboard_opens (user_id, session_id, ip_address, user_agent)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, session_id, DATE(opened_at)) DO NOTHING
+    `, [userId, session_id, ip_address, user_agent]);
+
+    res.status(201).json({ message: 'Dashboard open tracked successfully' });
+  } catch (error) {
+    console.error('Error tracking dashboard open:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+app.post('/track/page-visit', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { page_name, session_id, duration, ip_address, user_agent } = req.body;
+
+  try {
+    // Insert page visit record
+    await pool.query(`
+      INSERT INTO user_page_visits (user_id, page_name, session_id, duration, ip_address, user_agent)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [userId, page_name, session_id, duration, ip_address, user_agent]);
+
+    res.status(201).json({ message: 'Page visit tracked successfully' });
+  } catch (error) {
+    console.error('Error tracking page visit:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Get user tracking statistics (Admin only)
+app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  }
+
+  try {
+    // Get dashboard opens stats for all users
+    const dashboardStats = await pool.query(`
+      SELECT 
+        u.id,
+        u.username,
+        COUNT(DISTINCT DATE(udo.opened_at)) as total_dashboard_opens,
+        COUNT(DISTINCT udo.session_id) as unique_sessions,
+        MAX(udo.opened_at) as last_dashboard_open
+      FROM users u
+      LEFT JOIN user_dashboard_opens udo ON u.id = udo.user_id
+      WHERE u.monthly_payment > 0
+      GROUP BY u.id, u.username
+      ORDER BY total_dashboard_opens DESC
+    `);
+
+    // Get page visit stats for all users
+    const pageVisitStats = await pool.query(`
+      SELECT 
+        u.id,
+        u.username,
+        COUNT(*) as total_page_visits,
+        COUNT(DISTINCT upv.page_name) as unique_pages_visited,
+        COUNT(DISTINCT DATE(upv.visited_at)) as active_days,
+        array_agg(DISTINCT upv.page_name) as visited_pages
+      FROM users u
+      LEFT JOIN user_page_visits upv ON u.id = upv.user_id
+      WHERE u.monthly_payment > 0
+      GROUP BY u.id, u.username
+      ORDER BY total_page_visits DESC
+    `);
+
+    // Get most popular pages
+    const popularPages = await pool.query(`
+      SELECT 
+        page_name,
+        COUNT(*) as visit_count,
+        COUNT(DISTINCT user_id) as unique_users
+      FROM user_page_visits upv
+      JOIN users u ON upv.user_id = u.id
+      WHERE u.monthly_payment > 0
+      GROUP BY page_name
+      ORDER BY visit_count DESC
+    `);
+
+    // Merge the stats
+    const userStats = dashboardStats.rows.map(user => {
+      const pageStats = pageVisitStats.rows.find(p => p.id === user.id) || {
+        total_page_visits: 0,
+        unique_pages_visited: 0,
+        active_days: 0,
+        visited_pages: []
+      };
+      
+      return {
+        ...user,
+        ...pageStats,
+        visited_pages: pageStats.visited_pages ? pageStats.visited_pages.filter(Boolean) : []
+      };
+    });
+
+    res.json({
+      users: userStats,
+      popular_pages: popularPages.rows
+    });
+  } catch (error) {
+    console.error('Error fetching user tracking stats:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
