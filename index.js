@@ -3942,25 +3942,28 @@ app.get('/unread-comments-count', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
     const userId = req.user.userId;
 
-    // Count all comments that don't have a view record for this user
+    // Count distinct conversations that have unread comments for this user
     // Only for conversations belonging to the user's chatbots
     const queryText = `
-      SELECT COUNT(cc.id) AS unread_count
-      FROM conversation_comments cc
-      INNER JOIN conversations c ON cc.conversation_id = c.id
+      SELECT COUNT(DISTINCT c.id) AS unread_conversations_count
+      FROM conversations c
       WHERE c.chatbot_id = ANY($1)
-      AND NOT EXISTS (
-        SELECT 1 FROM conversation_comment_views ccv
-        WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
+      AND EXISTS (
+        SELECT 1 FROM conversation_comments cc
+        WHERE cc.conversation_id = c.id
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_comment_views ccv
+          WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
+        )
       )
     `;
     
     const result = await pool.query(queryText, [chatbotIds, userId]);
-    const unreadCount = parseInt(result.rows[0]?.unread_count || 0);
+    const unreadConversationsCount = parseInt(result.rows[0]?.unread_conversations_count || 0);
     
-    res.json({ unread_comments_count: unreadCount });
+    res.json({ unread_comments_count: unreadConversationsCount });
   } catch (err) {
-    console.error('Error fetching unread comments count:', err);
+    console.error('Error fetching unread conversations count:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
