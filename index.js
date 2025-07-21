@@ -3930,3 +3930,38 @@ app.put('/user-indexes/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// GET total count of unread comments
+app.get('/unread-comments-count', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+    const userId = req.user.userId;
+
+    // Count all comments that don't have a view record for this user
+    // Only for conversations belonging to the user's chatbots
+    const queryText = `
+      SELECT COUNT(cc.id) AS unread_count
+      FROM conversation_comments cc
+      INNER JOIN conversations c ON cc.conversation_id = c.id
+      WHERE c.chatbot_id = ANY($1)
+      AND NOT EXISTS (
+        SELECT 1 FROM conversation_comment_views ccv
+        WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
+      )
+    `;
+    
+    const result = await pool.query(queryText, [chatbotIds, userId]);
+    const unreadCount = parseInt(result.rows[0]?.unread_count || 0);
+    
+    res.json({ unread_comments_count: unreadCount });
+  } catch (err) {
+    console.error('Error fetching unread comments count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
