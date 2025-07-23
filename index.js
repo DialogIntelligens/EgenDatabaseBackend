@@ -1274,7 +1274,8 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       bug_status,
       purchase_tracking_enabled,
       is_livechat = false,
-      fallback = null
+      fallback = null,
+      tags = null
     ) {
       const client = await pool.connect();
       try {
@@ -1291,19 +1292,20 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled),
                is_livechat = COALESCE($10, is_livechat),
                fallback = COALESCE($11, fallback),
+               tags = COALESCE($12, tags),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1332,7 +1334,8 @@ app.post('/conversations', async (req, res) => {
     bug_status,
     purchase_tracking_enabled,
     is_livechat,
-    fallback
+    fallback,
+    tags
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1361,7 +1364,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation with is_livechat and fallback parameters
+    // Call upsertConversation with is_livechat, fallback, and tags parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1373,7 +1376,8 @@ app.post('/conversations', async (req, res) => {
       bug_status,
       purchase_tracking_enabled,
       is_livechat || false,
-      fallback
+      fallback,
+      tags
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1650,7 +1654,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     let queryText = `
-      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed,
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags,
              COALESCE(SUM(p.amount), 0) as purchase_amount,
              CASE 
                WHEN EXISTS (
@@ -1800,13 +1804,13 @@ app.post('/update-conversations', async (req, res) => {
 
     for (let conversation of conversations.rows) {
       const conversationText = conversation.conversation_data;
-      const { emne, score, lacking_info, fallback } = await getEmneAndScore(conversationText, prediction_url);
+      const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, prediction_url);
 
       await pool.query(
         `UPDATE conversations
-         SET emne = $1, score = $2, lacking_info = $3, fallback = $4
-         WHERE id = $5`,
-        [emne, score, lacking_info, fallback, conversation.id]
+         SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+         WHERE id = $6`,
+        [emne, score, lacking_info, fallback, tags, conversation.id]
       );
     }
 
@@ -1836,16 +1840,18 @@ const getEmneAndScore = async (conversationText, prediction_url) => {
     const scoreMatch = text.match(/Happy\(([^)]+)\)/);
     const infoMatch = text.match(/info\(([^)]+)\)/i);
     const fallbackMatch = text.match(/fallback\(([^)]+)\)/i);
+    const tagsMatch = text.match(/tags\(([^)]+)\)/i);
 
     const emne = emneMatch ? emneMatch[1] : null;
     const score = scoreMatch ? scoreMatch[1] : null;
     const lacking_info = infoMatch && infoMatch[1].toLowerCase() === 'yes' ? true : false;
     const fallback = fallbackMatch ? fallbackMatch[1].toLowerCase() === 'yes' : null;
+    const tags = tagsMatch ? tagsMatch[1].split(',').map(tag => tag.trim()) : null;
 
-    return { emne, score, lacking_info, fallback };
+    return { emne, score, lacking_info, fallback, tags };
   } catch (error) {
     console.error('Error getting emne, score, and lacking_info:', error);
-    return { emne: null, score: null, lacking_info: false, fallback: null };
+    return { emne: null, score: null, lacking_info: false, fallback: null, tags: null };
   }
 };
 
@@ -2235,6 +2241,69 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report', details: error.message });
+  }
+});
+
+/* ================================
+   Tag Statistics Endpoint
+================================ */
+app.get('/tag-statistics', authenticateToken, async (req, res) => {
+  const { chatbot_id, emne, start_date, end_date } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+
+    let queryText = `
+      SELECT tags, COUNT(*) as count
+      FROM conversations
+      WHERE chatbot_id = ANY($1) AND tags IS NOT NULL AND array_length(tags, 1) > 0
+    `;
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+
+    if (emne && emne !== '') {
+      queryText += ` AND emne = $${paramIndex++}`;
+      queryParams.push(emne);
+    }
+
+    if (start_date && end_date) {
+      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    queryText += ` GROUP BY tags ORDER BY count DESC`;
+
+    const result = await pool.query(queryText, queryParams);
+    
+    // Process the results to flatten tags and count occurrences
+    const tagCounts = {};
+    result.rows.forEach(row => {
+      const tags = row.tags;
+      const count = parseInt(row.count);
+      
+      if (Array.isArray(tags)) {
+        tags.forEach(tag => {
+          if (tag && tag.trim()) {
+            const cleanTag = tag.trim();
+            tagCounts[cleanTag] = (tagCounts[cleanTag] || 0) + count;
+          }
+        });
+      }
+    });
+
+    // Convert to array format for frontend
+    const tagStatistics = Object.entries(tagCounts)
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json(tagStatistics);
+  } catch (err) {
+    console.error('Error retrieving tag statistics:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
