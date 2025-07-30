@@ -3472,7 +3472,8 @@ app.post('/api/create-freshdesk-ticket', async (req, res) => {
         }
       };
 
-      const error_category = categorizeError(error.message || "Freshdesk error", error_details);
+      // Explicitly categorize as FRESHDESK_ERROR since this is in the Freshdesk ticket creation endpoint
+      const error_category = 'FRESHDESK_ERROR';
 
       await pool.query(
         `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
@@ -3761,7 +3762,9 @@ registerPromptTemplateV2Routes(app, pool, authenticateToken);
 function categorizeError(errorMessage, errorDetails) {
   const message = errorMessage.toLowerCase();
   
-  if (message.includes('api') || message.includes('fetch') || message.includes('request')) {
+  if (message.includes('freshdesk') || message.includes('ticket creation') || message.includes('freshdesk ticket')) {
+    return 'FRESHDESK_ERROR';
+  } else if (message.includes('api') || message.includes('fetch') || message.includes('request')) {
     return 'API_ERROR';
   } else if (message.includes('database') || message.includes('sql') || message.includes('query')) {
     return 'DATABASE_ERROR';
@@ -3790,15 +3793,24 @@ app.post('/api/log-error', async (req, res) => {
       user_id, 
       error_message, 
       error_details, 
-      stack_trace 
+      stack_trace,
+      error_category: providedCategory
     } = req.body;
 
     if (!chatbot_id || !error_message) {
       return res.status(400).json({ error: 'chatbot_id and error_message are required' });
     }
 
-    // Automatically categorize the error
-    const error_category = categorizeError(error_message, error_details);
+    // Use provided category if valid, otherwise automatically categorize the error
+    const validCategories = [
+      'API_ERROR', 'DATABASE_ERROR', 'AUTHENTICATION_ERROR', 'VALIDATION_ERROR',
+      'NETWORK_ERROR', 'PARSING_ERROR', 'AI_SERVICE_ERROR', 'VECTOR_DATABASE_ERROR',
+      'FRESHDESK_ERROR', 'UNKNOWN_ERROR'
+    ];
+    
+    const error_category = validCategories.includes(providedCategory) 
+      ? providedCategory 
+      : categorizeError(error_message, error_details);
 
     // Insert error log
     const result = await pool.query(

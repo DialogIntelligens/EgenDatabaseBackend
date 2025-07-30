@@ -78,14 +78,20 @@ export async function createFreshdeskTicket(ticketData) {
   const MAX_RETRIES = 2;
   let lastError = null;
   
+  // Import AbortController once, outside the retry loop to avoid timing issues
+  const AbortController = globalThis.AbortController || (await import('abort-controller')).default;
+  
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    let timeoutId;
     try {
               const formData = await buildFormData();
       
-      // Add timeout to prevent hanging requests
-      const AbortController = globalThis.AbortController || (await import('abort-controller')).default;
+      // Add timeout to prevent hanging requests - use shorter timeout to avoid conflicts with frontend
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      timeoutId = setTimeout(() => {
+        console.log(`Backend: Aborting Freshdesk request due to timeout (attempt ${attempt + 1})`);
+        controller.abort();
+      }, 25000); // 25 second timeout (shorter than frontend's 30s)
       
       const response = await fetch(url, {
         method: "POST",
@@ -128,12 +134,17 @@ export async function createFreshdeskTicket(ticketData) {
       return result; // success – return created ticket
       
     } catch (err) {
+      // Ensure timeout is cleared even in error scenarios
+      if (typeof timeoutId !== 'undefined') {
+        clearTimeout(timeoutId);
+      }
       lastError = err;
       console.error(`Backend: Freshdesk ticket creation attempt ${attempt + 1} failed:`, err);
       
       // Check if it's a timeout or network error that should be retried
       if ((err.name === 'AbortError' || err.message.includes('network') || err.message.includes('fetch')) && attempt < MAX_RETRIES) {
-        console.warn(`Backend: Network/timeout error. Retrying (${attempt + 1}/${MAX_RETRIES})`);
+        const errorType = err.name === 'AbortError' ? 'Timeout' : 'Network';
+        console.warn(`Backend: ${errorType} error on attempt ${attempt + 1}. Retrying (${attempt + 1}/${MAX_RETRIES}). Error: ${err.message}`);
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
         continue;
       }
