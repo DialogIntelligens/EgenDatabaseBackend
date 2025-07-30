@@ -325,6 +325,96 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   /* =============================
+     ADD SECTION TO NEW PROMPTS ONLY
+  ============================= */
+  router.post('/add-section-new-only', authenticateToken, async (req, res) => {
+    if (!req.user?.isAdmin) return res.status(403).json({ error: 'Admins only' });
+    
+    const { template_id, section_key, content, insert_after_key } = req.body;
+    if (!template_id || section_key === undefined) {
+      return res.status(400).json({ error: 'template_id and section_key required' });
+    }
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Get current template
+      const templateResult = await client.query('SELECT * FROM prompt_templates WHERE id=$1', [template_id]);
+      if (!templateResult.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Template not found' });
+      }
+      
+      const template = templateResult.rows[0];
+      let sections = template.sections || [];
+      
+      // Create the new section
+      const newSection = { key: parseInt(section_key), content: content || '' };
+      
+      // Insert the section in the right position
+      if (insert_after_key !== null && insert_after_key !== undefined) {
+        const insertIndex = sections.findIndex(s => s.key === insert_after_key);
+        if (insertIndex >= 0) {
+          sections.splice(insertIndex + 1, 0, newSection);
+        } else {
+          sections.push(newSection);
+        }
+      } else {
+        sections.push(newSection);
+      }
+      
+      // Sort sections by key
+      sections.sort((a, b) => a.key - b.key);
+      
+      // Update template with new section
+      const newVersion = (template.version || 0) + 1;
+      await client.query(
+        `INSERT INTO prompt_template_history (template_id, version, sections, updated_at, modified_by)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [template_id, template.version, JSON.stringify(template.sections), template.updated_at, req.user.userId],
+      );
+      
+      await client.query(
+        `UPDATE prompt_templates SET sections=$1, version=$2, updated_at=NOW() WHERE id=$3`,
+        [JSON.stringify(sections), newVersion, template_id],
+      );
+      
+      // Find all existing assignments for this template
+      const assignmentsResult = await client.query(
+        'SELECT chatbot_id, flow_key FROM flow_template_assignments WHERE template_id=$1',
+        [template_id]
+      );
+      
+      // Create remove overrides for all existing assignments
+      for (const assignment of assignmentsResult.rows) {
+        await client.query(
+          `INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at)
+           VALUES ($1,$2,$3,$4,$5,NOW())
+           ON CONFLICT (chatbot_id, flow_key, section_key)
+           DO UPDATE SET action=$4, content=$5, updated_at=NOW()`,
+          [assignment.chatbot_id, assignment.flow_key, section_key, 'remove', ''],
+        );
+      }
+      
+      await client.query('COMMIT');
+      
+      res.json({ 
+        message: 'Section added to template with remove overrides for existing assignments',
+        affected_assignments: assignmentsResult.rows.length,
+        version: newVersion 
+      });
+      
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Add section new-only error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  /* =============================
      MODULES
   ============================= */
   router.get('/modules', async (_req, res) => {
