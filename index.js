@@ -3585,6 +3585,175 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
 
 /* ================================
+   Shopify Order Tracking Proxy
+================================ */
+
+/*
+  POST /api/shopify/orders
+  Body: { 
+    shopifyStore: string,
+    shopifyAccessToken: string,
+    shopifyApiVersion: string,
+    email?: string,
+    phone?: string,
+    order_number?: string,
+    name?: string
+  }
+  Proxies Shopify API calls to search for orders
+*/
+app.post('/api/shopify/orders', async (req, res) => {
+  try {
+    const { 
+      shopifyStore, 
+      shopifyAccessToken, 
+      shopifyApiVersion = '2025-01',
+      email,
+      phone,
+      order_number,
+      name
+    } = req.body;
+
+    if (!shopifyStore || !shopifyAccessToken) {
+      return res.status(400).json({ 
+        error: 'shopifyStore and shopifyAccessToken are required' 
+      });
+    }
+
+    // Build Shopify API URL
+    const baseUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders.json`;
+    
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.append('status', 'any');
+    queryParams.append('limit', '50');
+    
+    if (email) queryParams.append('email', email);
+    if (phone) queryParams.append('phone', phone);
+    if (order_number) queryParams.append('name', order_number);
+    
+    const shopifyUrl = `${baseUrl}?${queryParams.toString()}`;
+
+    console.log('Making Shopify API request to:', shopifyUrl.replace(shopifyAccessToken, '[HIDDEN]'));
+
+    // Make request to Shopify API
+    const response = await fetch(shopifyUrl, {
+      method: 'GET',
+      headers: {
+        'X-Shopify-Access-Token': shopifyAccessToken,
+        'Content-Type': 'application/json',
+        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Shopify API error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: 'Shopify API error', 
+        details: errorText,
+        status: response.status
+      });
+    }
+
+    const data = await response.json();
+    
+    // Transform the data to a more consistent format
+    const transformedOrders = data.orders ? data.orders.map(order => ({
+      id: order.id,
+      order_number: order.name || order.order_number,
+      email: order.email,
+      phone: order.phone || (order.billing_address && order.billing_address.phone),
+      total_price: order.total_price,
+      currency: order.currency,
+      financial_status: order.financial_status,
+      fulfillment_status: order.fulfillment_status,
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
+      line_items: order.line_items ? order.line_items.map(item => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        fulfillment_status: item.fulfillment_status
+      })) : [],
+      shipping_address: order.shipping_address,
+      billing_address: order.billing_address
+    })) : [];
+
+    return res.json({
+      success: true,
+      orders: transformedOrders,
+      total_count: data.orders ? data.orders.length : 0
+    });
+
+  } catch (error) {
+    console.error('Error in Shopify proxy:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error', 
+      details: error.message 
+    });
+  }
+});
+
+/*
+  GET /api/shopify/orders/:order_id
+  Query params: shopifyStore, shopifyAccessToken, shopifyApiVersion
+  Gets details for a specific order
+*/
+app.get('/api/shopify/orders/:order_id', async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const { 
+      shopifyStore, 
+      shopifyAccessToken, 
+      shopifyApiVersion = '2025-01'
+    } = req.query;
+
+    if (!shopifyStore || !shopifyAccessToken) {
+      return res.status(400).json({ 
+        error: 'shopifyStore and shopifyAccessToken are required' 
+      });
+    }
+
+    // Build Shopify API URL
+    const shopifyUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order_id}.json`;
+
+    console.log('Making Shopify API request for order:', order_id);
+
+    // Make request to Shopify API
+    const response = await fetch(shopifyUrl, {
+      method: 'GET',
+      headers: {
+        'X-Shopify-Access-Token': shopifyAccessToken,
+        'Content-Type': 'application/json',
+        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Shopify API error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: 'Shopify API error', 
+        details: errorText,
+        status: response.status
+      });
+    }
+
+    const data = await response.json();
+    return res.json(data);
+
+  } catch (error) {
+    console.error('Error in Shopify order details proxy:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error', 
+      details: error.message 
+    });
+  }
+});
+
+/* ================================
    Error Logging Endpoints
 ================================ */
 
