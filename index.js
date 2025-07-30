@@ -3492,98 +3492,6 @@ app.post('/api/create-freshdesk-ticket', async (req, res) => {
   }
 });
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
-/* ================================
-   Purchases (Chatbot conversion tracking)
-================================ */
-
-// Simple helper to validate purchase payloads
-function validatePurchasePayload(body) {
-  const { user_id, chatbot_id, amount } = body;
-  if (!user_id || user_id.toString().trim() === "") {
-    return "user_id is required";
-  }
-  if (!chatbot_id || chatbot_id.toString().trim() === "") {
-    return "chatbot_id is required";
-  }
-  if (amount === undefined || amount === null || isNaN(parseFloat(amount))) {
-    return "amount must be a valid number";
-  }
-  return null;
-}
-
-/*
-  POST /purchases
-  Body: { user_id: string, chatbot_id: string, amount: number }
-  Creates a purchase record attributed to a chatbot conversation.
-*/
-app.post('/purchases', async (req, res) => {
-  try {
-    const validationError = validatePurchasePayload(req.body);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
-    }
-
-    const { user_id, chatbot_id, amount } = req.body;
-
-    const result = await pool.query(
-      `INSERT INTO purchases (user_id, chatbot_id, amount)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [user_id, chatbot_id, parseFloat(amount)]
-    );
-
-    return res.status(201).json({ message: 'Purchase recorded', purchase: result.rows[0] });
-  } catch (err) {
-    console.error('Error recording purchase:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-/*
-  GET /purchases/:chatbot_id
-  Optional query params: user_id (filter by user), start_date, end_date
-  Returns list of purchases for a chatbot – useful for dashboard stats.
-*/
-app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.params;
-  const { user_id, start_date, end_date } = req.query;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    let queryText = `SELECT * FROM purchases WHERE chatbot_id = $1`;
-    const queryParams = [chatbot_id];
-    let idx = 2;
-
-    if (user_id) {
-      queryText += ` AND user_id = $${idx++}`;
-      queryParams.push(user_id);
-    }
-    if (start_date && end_date) {
-      queryText += ` AND created_at BETWEEN $${idx++} AND $${idx++}`;
-      queryParams.push(start_date, end_date);
-    }
-
-    queryText += ' ORDER BY created_at DESC';
-
-    const result = await pool.query(queryText, queryParams);
-    return res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching purchases:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// After Express app is initialised and authenticateToken is declared but before app.listen
-registerPromptTemplateV2Routes(app, pool, authenticateToken);
-
 /* ================================
    Shopify Order Tracking Proxy
 ================================ */
@@ -3752,6 +3660,98 @@ app.get('/api/shopify/orders/:order_id', async (req, res) => {
     });
   }
 });
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+/* ================================
+   Purchases (Chatbot conversion tracking)
+================================ */
+
+// Simple helper to validate purchase payloads
+function validatePurchasePayload(body) {
+  const { user_id, chatbot_id, amount } = body;
+  if (!user_id || user_id.toString().trim() === "") {
+    return "user_id is required";
+  }
+  if (!chatbot_id || chatbot_id.toString().trim() === "") {
+    return "chatbot_id is required";
+  }
+  if (amount === undefined || amount === null || isNaN(parseFloat(amount))) {
+    return "amount must be a valid number";
+  }
+  return null;
+}
+
+/*
+  POST /purchases
+  Body: { user_id: string, chatbot_id: string, amount: number }
+  Creates a purchase record attributed to a chatbot conversation.
+*/
+app.post('/purchases', async (req, res) => {
+  try {
+    const validationError = validatePurchasePayload(req.body);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const { user_id, chatbot_id, amount } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO purchases (user_id, chatbot_id, amount)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [user_id, chatbot_id, parseFloat(amount)]
+    );
+
+    return res.status(201).json({ message: 'Purchase recorded', purchase: result.rows[0] });
+  } catch (err) {
+    console.error('Error recording purchase:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+/*
+  GET /purchases/:chatbot_id
+  Optional query params: user_id (filter by user), start_date, end_date
+  Returns list of purchases for a chatbot – useful for dashboard stats.
+*/
+app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { user_id, start_date, end_date } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    let queryText = `SELECT * FROM purchases WHERE chatbot_id = $1`;
+    const queryParams = [chatbot_id];
+    let idx = 2;
+
+    if (user_id) {
+      queryText += ` AND user_id = $${idx++}`;
+      queryParams.push(user_id);
+    }
+    if (start_date && end_date) {
+      queryText += ` AND created_at BETWEEN $${idx++} AND $${idx++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    queryText += ' ORDER BY created_at DESC';
+
+    const result = await pool.query(queryText, queryParams);
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching purchases:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// After Express app is initialised and authenticateToken is declared but before app.listen
+registerPromptTemplateV2Routes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
