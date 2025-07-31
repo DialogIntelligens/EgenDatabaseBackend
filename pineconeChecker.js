@@ -106,6 +106,7 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace, debu
       try {
         const listParams = {
           limit: 100,
+          namespace: "",  // Use empty string for default namespace
           ...(paginationToken && { paginationToken })
         };
         
@@ -122,8 +123,10 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace, debu
           const vectorIds = listResponse.vectors.map(v => v.id);
           debugInfo.push(`📦 Fetching metadata for ${vectorIds.length} vectors...`);
           
-          debugInfo.push(`📞 Calling fetch with params: ${JSON.stringify({ vectorCount: vectorIds.length })}`);
-          const fetchResponse = await index.fetch(vectorIds);
+          // Use empty string for default namespace (where the vectors actually are)
+          const fetchParams = { namespace: "" };
+          debugInfo.push(`📞 Calling fetch with params: ${JSON.stringify({ vectorCount: vectorIds.length, ...fetchParams })}`);
+          const fetchResponse = await index.fetch(vectorIds, fetchParams);
           
           debugInfo.push(`📨 Fetch response received for ${Object.keys(fetchResponse.vectors || {}).length} vectors`);
           
