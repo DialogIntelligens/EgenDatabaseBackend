@@ -13,6 +13,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
+import { checkMissingChunks, getUserIndexes } from './pineconeChecker.js';
 
 const { Pool } = pg;
 
@@ -902,6 +903,72 @@ app.post('/pinecone-data/:data_id/mark-viewed', authenticateToken, async (req, r
   } catch (err) {
     console.error('Error marking data as viewed:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// New endpoint to check for missing chunks in Pinecone vs database
+app.post('/check-missing-chunks', authenticateToken, async (req, res) => {
+  const { userId, indexName, namespace } = req.body;
+  const requestingUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
+
+  // Validate required parameters
+  if (!indexName || !namespace) {
+    return res.status(400).json({ error: 'indexName and namespace are required' });
+  }
+
+  try {
+    // Determine which user's data to check
+    let targetUserId = requestingUserId;
+    
+    // If admin provided a userId, use that instead
+    if (isAdmin && userId) {
+      targetUserId = userId;
+    }
+
+    console.log(`Checking missing chunks for user ${targetUserId}, index: ${indexName}, namespace: ${namespace}`);
+    
+    const result = await checkMissingChunks(targetUserId, indexName, namespace);
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Error checking missing chunks:', error);
+    res.status(500).json({ 
+      error: 'Failed to check missing chunks', 
+      details: error.message 
+    });
+  }
+});
+
+// New endpoint to get available indexes for checking
+app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
+  const requestingUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
+  const targetUserId = isAdmin && req.query.userId ? parseInt(req.query.userId) : requestingUserId;
+
+  try {
+    const indexes = await getUserIndexes(targetUserId);
+    
+    // Return indexes with useful information for the checker
+    const indexInfo = indexes.map(index => ({
+      namespace: index.namespace,
+      index_name: index.index_name,
+      group: index.group || 'No group',
+      has_api_key: !!index.API_key
+    }));
+    
+    res.json({
+      userId: targetUserId,
+      indexes: indexInfo
+    });
+    
+  } catch (error) {
+    console.error('Error getting user indexes for checking:', error);
+    res.status(500).json({ 
+      error: 'Failed to get user indexes', 
+      details: error.message 
+    });
   }
 });
 
