@@ -1779,10 +1779,6 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
     }
-    if (tags && tags !== '') {
-      queryText += ` AND c.tags @> $${paramIndex++}::jsonb`;
-      queryParams.push(JSON.stringify([tags]));
-    }
     if (conversation_filter && conversation_filter.trim() !== '') {
       queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
       queryParams.push(`${conversation_filter}`);
