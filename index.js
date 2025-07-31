@@ -1849,8 +1849,8 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
 /* ================================
    update-conversations Endpoint
 ================================ */
-app.post('/update-conversations', async (req, res) => {
-  const { chatbot_id, prediction_url } = req.body;
+app.post('/update-conversations', authenticateToken, async (req, res) => {
+  const { chatbot_id, prediction_url, limit } = req.body;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1860,28 +1860,101 @@ app.post('/update-conversations', async (req, res) => {
   }
 
   try {
-    const conversations = await pool.query('SELECT * FROM conversations WHERE chatbot_id = $1', [
-      chatbot_id,
-    ]);
+    // Build query with optional limit for recent conversations
+    let query = 'SELECT * FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC';
+    let queryParams = [chatbot_id];
+    
+    if (limit && limit > 0) {
+      query += ' LIMIT $2';
+      queryParams.push(limit);
+    }
+    
+    const conversations = await pool.query(query, queryParams);
     if (conversations.rows.length === 0) {
       return res
         .status(404)
         .json({ error: 'No conversations found for the given chatbot_id' });
     }
 
-    for (let conversation of conversations.rows) {
-      const conversationText = conversation.conversation_data;
-      const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, prediction_url);
+    const totalConversations = conversations.rows.length;
+    let processedCount = 0;
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
 
-      await pool.query(
-        `UPDATE conversations
-         SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
-         WHERE id = $6`,
-        [emne, score, lacking_info, fallback, tags, conversation.id]
-      );
+    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id}`);
+
+    // Process conversations in batches to avoid overwhelming the API
+    const BATCH_SIZE = 10;
+    const batches = [];
+    for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
+      batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
     }
 
-    return res.status(200).json({ message: 'Conversations updated successfully' });
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} conversations)`);
+
+      // Process batch in parallel with limited concurrency
+      const batchPromises = batch.map(async (conversation) => {
+        try {
+          const conversationText = conversation.conversation_data;
+          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, prediction_url);
+
+          await pool.query(
+            `UPDATE conversations
+             SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+             WHERE id = $6`,
+            [emne, score, lacking_info, fallback, tags, conversation.id]
+          );
+
+          successCount++;
+          return { success: true, id: conversation.id };
+        } catch (error) {
+          errorCount++;
+          const errorDetails = {
+            conversationId: conversation.id,
+            error: error.message
+          };
+          errors.push(errorDetails);
+          console.error(`Error processing conversation ${conversation.id}:`, error);
+          return { success: false, id: conversation.id, error: error.message };
+        }
+      });
+
+      // Wait for batch to complete
+      await Promise.all(batchPromises);
+      processedCount += batch.length;
+
+      // Log progress
+      const progressPercent = Math.round((processedCount / totalConversations) * 100);
+      console.log(`Progress: ${processedCount}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
+
+      // Small delay between batches to be nice to the API
+      if (batchIndex < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    const response = {
+      message: 'Conversations update completed',
+      total: totalConversations,
+      processed: processedCount,
+      successful: successCount,
+      failed: errorCount
+    };
+
+    // Include error details if there were any failures
+    if (errors.length > 0) {
+      response.errors = errors.slice(0, 10); // Limit to first 10 errors to avoid large responses
+      if (errors.length > 10) {
+        response.note = `Showing first 10 errors. Total errors: ${errors.length}`;
+      }
+    }
+
+    console.log('Update conversations completed:', response);
+    return res.status(200).json(response);
+
   } catch (error) {
     console.error('Error updating conversations:', error);
     res
