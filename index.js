@@ -1547,7 +1547,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id, fejlstatus, customer_rating, emne } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne, tags } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -1590,6 +1590,10 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     if (emne && emne !== '') {
       queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
+    }
+    if (tags && tags !== '') {
+      queryText += ` AND c.tags @> $${paramIndex++}::jsonb`;
+      queryParams.push(JSON.stringify([tags]));
     }
     const result = await pool.query(queryText, queryParams);
     return res.json(result.rows);
@@ -1710,7 +1714,7 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1774,6 +1778,10 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     if (emne && emne !== '') {
       queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
+    }
+    if (tags && tags !== '') {
+      queryText += ` AND c.tags @> $${paramIndex++}::jsonb`;
+      queryParams.push(JSON.stringify([tags]));
     }
     if (conversation_filter && conversation_filter.trim() !== '') {
       queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
