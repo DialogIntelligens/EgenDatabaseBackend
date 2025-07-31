@@ -1,0 +1,211 @@
+import { Pinecone } from '@pinecone-database/pinecone';
+import pg from 'pg';
+
+const { Pool } = pg;
+
+// PostgreSQL pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost')
+    ? false
+    : { rejectUnauthorized: false }
+});
+
+// Helper function to get the API key for a specific index or fallback to user's default key
+async function getPineconeApiKeyForIndex(userId, indexName, namespace) {
+  try {
+    // Get user data
+    const userResult = await pool.query('SELECT pinecone_api_key, pinecone_indexes FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      throw new Error('User not found');
+    }
+    
+    const user = userResult.rows[0];
+    let pineconeIndexes = user.pinecone_indexes;
+    
+    // Parse indexes if it's a string
+    if (typeof pineconeIndexes === 'string') {
+      pineconeIndexes = JSON.parse(pineconeIndexes);
+    }
+    
+    // Check if pineconeIndexes is an array
+    if (Array.isArray(pineconeIndexes)) {
+      // Look for the matching index with the specified namespace and index_name
+      const matchedIndex = pineconeIndexes.find(index => 
+        index.namespace === namespace && 
+        index.index_name === indexName && 
+        index.API_key
+      );
+      
+      // If found a matching index with API_key, return that key
+      if (matchedIndex && matchedIndex.API_key) {
+        console.log(`Using index-specific API key for index: ${indexName}, namespace: ${namespace}`);
+        return matchedIndex.API_key;
+      }
+    }
+    
+    // Fallback to user's default API key
+    if (user.pinecone_api_key) {
+      console.log(`Using default user API key for index: ${indexName}, namespace: ${namespace}`);
+      return user.pinecone_api_key;
+    }
+    
+    throw new Error('No Pinecone API key found for this index or user');
+  } catch (error) {
+    console.error('Error getting Pinecone API key:', error);
+    throw error;
+  }
+}
+
+// Function to determine if a vector is from the scraper (should be ignored)
+function isScraperVector(vectorId, metadata) {
+  // Check if ID looks like a hash (scraper pattern)
+  const isHashId = vectorId.includes('#') || (vectorId.length > 32 && !vectorId.startsWith('vector-'));
+  
+  // Check for scraper-specific metadata fields
+  const hasScraperMetadata = metadata && (
+    metadata.checksum ||
+    metadata.chunkOverlap !== undefined ||
+    metadata.chunkSize !== undefined ||
+    metadata.chunk_id ||
+    metadata.item_id ||
+    metadata.last_seen_at ||
+    metadata.performChunking !== undefined ||
+    metadata.full_url ||
+    metadata.fake_urls !== undefined
+  );
+  
+  return isHashId || hasScraperMetadata;
+}
+
+// Function to get all vectors from a Pinecone index
+async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
+  try {
+    const index = pineconeClient.index(indexName);
+    const allVectors = [];
+    let paginationToken = undefined;
+    
+    console.log(`Fetching vectors from index: ${indexName}, namespace: ${namespace}`);
+    
+    do {
+      const listResponse = await index.listPaginated({
+        namespace: namespace,
+        limit: 100, // Maximum allowed by Pinecone
+        paginationToken: paginationToken
+      });
+      
+      if (listResponse.vectors && listResponse.vectors.length > 0) {
+        // Fetch full vector data including metadata
+        const fetchResponse = await index.fetch(listResponse.vectors.map(v => v.id), { 
+          namespace: namespace 
+        });
+        
+        Object.values(fetchResponse.vectors).forEach(vector => {
+          if (vector) {
+            allVectors.push({
+              id: vector.id,
+              metadata: vector.metadata || {}
+            });
+          }
+        });
+      }
+      
+      paginationToken = listResponse.pagination?.next;
+      console.log(`Fetched ${allVectors.length} vectors so far...`);
+      
+    } while (paginationToken);
+    
+    console.log(`Total vectors fetched: ${allVectors.length}`);
+    return allVectors;
+    
+  } catch (error) {
+    console.error('Error fetching vectors from Pinecone:', error);
+    throw error;
+  }
+}
+
+// Main function to check for missing chunks
+export async function checkMissingChunks(userId, indexName, namespace) {
+  try {
+    console.log(`Starting check for missing chunks - User: ${userId}, Index: ${indexName}, Namespace: ${namespace}`);
+    
+    // Get Pinecone API key
+    const pineconeApiKey = await getPineconeApiKeyForIndex(userId, indexName, namespace);
+    
+    // Initialize Pinecone client
+    const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+    
+    // Get all vectors from Pinecone
+    const allPineconeVectors = await getAllVectorsFromIndex(pineconeClient, indexName, namespace);
+    
+    // Filter out scraper vectors to get only dashboard-uploaded chunks
+    const dashboardVectors = allPineconeVectors.filter(vector => {
+      return !isScraperVector(vector.id, vector.metadata);
+    });
+    
+    console.log(`Found ${dashboardVectors.length} dashboard vectors out of ${allPineconeVectors.length} total vectors`);
+    
+    // Get all chunks from our database for this index/namespace
+    const dbResult = await pool.query(
+      `SELECT pinecone_vector_id, title, text, user_id, id as db_id
+       FROM pinecone_data 
+       WHERE pinecone_index_name = $1 AND namespace = $2`,
+      [indexName, namespace]
+    );
+    
+    const dbVectorIds = new Set(dbResult.rows.map(row => row.pinecone_vector_id));
+    console.log(`Found ${dbResult.rows.length} chunks in database`);
+    
+    // Find vectors that exist in Pinecone but not in our database
+    const missingChunks = dashboardVectors.filter(vector => {
+      return !dbVectorIds.has(vector.id);
+    });
+    
+    console.log(`Found ${missingChunks.length} missing chunks`);
+    
+    // Format the results
+    const result = {
+      summary: {
+        totalPineconeVectors: allPineconeVectors.length,
+        dashboardVectors: dashboardVectors.length,
+        scraperVectors: allPineconeVectors.length - dashboardVectors.length,
+        databaseChunks: dbResult.rows.length,
+        missingChunks: missingChunks.length
+      },
+      missingChunks: missingChunks.map(vector => ({
+        vectorId: vector.id,
+        title: vector.metadata.title || 'No title',
+        text: vector.metadata.text ? (vector.metadata.text.substring(0, 200) + '...') : 'No text',
+        userId: vector.metadata.userId,
+        group: vector.metadata.group || 'No group',
+        metadata: vector.metadata
+      }))
+    };
+    
+    return result;
+    
+  } catch (error) {
+    console.error('Error in checkMissingChunks:', error);
+    throw error;
+  }
+}
+
+// Function to get all available indexes for a user
+export async function getUserIndexes(userId) {
+  try {
+    const userResult = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      throw new Error('User not found');
+    }
+    
+    let pineconeIndexes = userResult.rows[0].pinecone_indexes;
+    if (typeof pineconeIndexes === 'string') {
+      pineconeIndexes = JSON.parse(pineconeIndexes);
+    }
+    
+    return Array.isArray(pineconeIndexes) ? pineconeIndexes : [];
+  } catch (error) {
+    console.error('Error getting user indexes:', error);
+    throw error;
+  }
+}
