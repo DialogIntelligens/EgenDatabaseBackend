@@ -1850,13 +1850,10 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
    update-conversations Endpoint
 ================================ */
 app.post('/update-conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, prediction_url, limit } = req.body;
+  const { chatbot_id, limit } = req.body;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-  if (!prediction_url) {
-    return res.status(400).json({ error: 'prediction_url is required' });
   }
 
   try {
@@ -1876,6 +1873,12 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
         .json({ error: 'No conversations found for the given chatbot_id' });
     }
 
+    // Get userId from the first conversation (all conversations for a chatbot should have the same user_id)
+    const userId = conversations.rows[0].user_id;
+    if (!userId) {
+      return res.status(400).json({ error: 'Could not determine user_id from conversations' });
+    }
+
     const totalConversations = conversations.rows.length;
     let processedCount = 0;
     let successCount = 0;
@@ -1883,7 +1886,7 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
     const errors = [];
 
     const limitInfo = limit ? ` (limited to ${limit} most recent)` : ' (all conversations)';
-    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id}${limitInfo}`);
+    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
 
     // Process conversations in batches to avoid overwhelming the API
     const BATCH_SIZE = 10;
@@ -1900,7 +1903,7 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
       const batchPromises = batch.map(async (conversation) => {
         try {
           const conversationText = conversation.conversation_data;
-          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, prediction_url);
+          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId);
 
           await pool.query(
             `UPDATE conversations
@@ -1964,16 +1967,76 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
   }
 });
 
-// Helper for prediction
-const getEmneAndScore = async (conversationText, prediction_url) => {
+// Helper for prediction using standard statistics API
+const getEmneAndScore = async (conversationText, userId) => {
   try {
-    const response = await fetch(prediction_url, {
+    // Use the standard statistics API endpoint
+    const statisticsAPI = "https://den-utrolige-snebold.onrender.com/api/v1/prediction/53e9c446-b2a3-41ca-8a01-8d48c05fcc7a";
+    
+    const bodyObject = { question: conversationText };
+    
+    // Get user's statistics settings from database
+    try {
+      const userSettingsResult = await pool.query(
+        'SELECT statestik_prompt, statestik_prompt_enabled FROM users WHERE id = $1',
+        [userId]
+      );
+      
+      if (userSettingsResult.rows.length > 0) {
+        const userSettings = userSettingsResult.rows[0];
+        
+        // Add override configuration if statistics prompt is enabled
+        if (userSettings.statestik_prompt_enabled && userSettings.statestik_prompt) {
+          bodyObject.overrideConfig = bodyObject.overrideConfig || {};
+          bodyObject.overrideConfig.vars = bodyObject.overrideConfig.vars || {};
+          bodyObject.overrideConfig.vars.statestik_prompt = userSettings.statestik_prompt;
+          console.log("Statistics prompt override added for user", userId);
+        }
+      }
+      
+      // Get topK setting for statistics flow
+      const topKResult = await pool.query(
+        'SELECT top_k FROM flow_top_k_settings WHERE user_id = $1 AND flow_key = $2',
+        [userId, 'statistics']
+      );
+      
+      if (topKResult.rows.length > 0) {
+        const topKValue = topKResult.rows[0].top_k;
+        bodyObject.overrideConfig = bodyObject.overrideConfig || {};
+        bodyObject.overrideConfig.topK = topKValue;
+        console.log(`Applied topK setting for statistics flow: ${topKValue}`);
+      }
+      
+      // Get flow-specific Pinecone API key for statistics flow
+      const apiKeyResult = await pool.query(
+        'SELECT pinecone_api_key FROM flow_pinecone_api_keys WHERE user_id = $1 AND flow_key = $2',
+        [userId, 'statistics']
+      );
+      
+      if (apiKeyResult.rows.length > 0) {
+        const apiKey = apiKeyResult.rows[0].pinecone_api_key;
+        bodyObject.overrideConfig = bodyObject.overrideConfig || {};
+        bodyObject.overrideConfig.pineconeApiKey = apiKey;
+        console.log(`Applied flow-specific API key for statistics flow: ${apiKey.substring(0, 20)}...`);
+      }
+      
+    } catch (settingsError) {
+      console.warn('Could not load user statistics settings:', settingsError);
+      // Continue without settings - use defaults
+    }
+
+    const response = await fetch(statisticsAPI, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ question: conversationText }),
+      body: JSON.stringify(bodyObject),
     });
+    
+    if (!response.ok) {
+      throw new Error(`Statistics API responded with status: ${response.status}`);
+    }
+    
     const result = await response.json();
     const text = result.text;
 
