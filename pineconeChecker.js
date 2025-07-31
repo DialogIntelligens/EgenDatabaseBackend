@@ -85,6 +85,7 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
     console.log('Note: In this system, "namespace" parameter is actually the Pinecone index name');
     
     // In your system, "namespace" is actually the Pinecone index name
+    // We connect to that index and then list all vectors without specifying a namespace
     const index = pineconeClient.index(namespace);
     
     // Test the connection first
@@ -108,11 +109,6 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           ...(paginationToken && { paginationToken })
         };
         
-        // Use indexName as the actual Pinecone namespace (if provided)
-        if (indexName && indexName !== '') {
-          listParams.namespace = indexName;
-        }
-        
         console.log('Calling listPaginated with params:', listParams);
         const listResponse = await index.listPaginated(listParams);
         
@@ -126,13 +122,8 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           const vectorIds = listResponse.vectors.map(v => v.id);
           console.log(`Fetching metadata for ${vectorIds.length} vectors...`);
           
-          const fetchParams = {};
-          if (indexName && indexName !== '') {
-            fetchParams.namespace = indexName;
-          }
-          
-          console.log('Calling fetch with params:', { vectorCount: vectorIds.length, ...fetchParams });
-          const fetchResponse = await index.fetch(vectorIds, fetchParams);
+          console.log('Calling fetch with params:', { vectorCount: vectorIds.length });
+          const fetchResponse = await index.fetch(vectorIds);
           
           console.log(`Fetch response received for ${Object.keys(fetchResponse.vectors || {}).length} vectors`);
           
