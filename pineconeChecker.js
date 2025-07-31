@@ -105,7 +105,6 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
       
       try {
         const listParams = {
-          prefix: 'vector-',
           limit: 100,
           ...(paginationToken && { paginationToken })
         };
@@ -182,17 +181,8 @@ export async function checkMissingChunks(userId, indexName, namespace) {
     const allPineconeVectors = await getAllVectorsFromIndex(pineconeClient, indexName, namespace);
     console.log(`Successfully fetched ${allPineconeVectors.length} vectors from Pinecone`);
     
-    // Filter out scraper vectors to get only dashboard-uploaded chunks
-    console.log('Filtering scraper vectors...');
-    const dashboardVectors = allPineconeVectors.filter(vector => {
-      const isScraper = isScraperVector(vector.id, vector.metadata);
-      if (isScraper) {
-        console.log(`Filtering out scraper vector: ${vector.id}`);
-      }
-      return !isScraper;
-    });
-    
-    console.log(`Found ${dashboardVectors.length} dashboard vectors out of ${allPineconeVectors.length} total vectors`);
+    // Use all vectors (no filtering)
+    console.log(`Found ${allPineconeVectors.length} total vectors in Pinecone`);
     
     // Get all chunks from our database for this index/namespace
     console.log('Querying database for existing chunks...');
@@ -208,7 +198,7 @@ export async function checkMissingChunks(userId, indexName, namespace) {
     
     // Find vectors that exist in Pinecone but not in our database
     console.log('Comparing Pinecone vectors with database records...');
-    const missingChunks = dashboardVectors.filter(vector => {
+    const missingChunks = allPineconeVectors.filter(vector => {
       const isInDatabase = dbVectorIds.has(vector.id);
       if (!isInDatabase) {
         console.log(`Found missing chunk: ${vector.id} - ${vector.metadata.title || 'No title'}`);
@@ -223,8 +213,6 @@ export async function checkMissingChunks(userId, indexName, namespace) {
     const result = {
       summary: {
         totalPineconeVectors: allPineconeVectors.length,
-        dashboardVectors: dashboardVectors.length,
-        scraperVectors: allPineconeVectors.length - dashboardVectors.length,
         databaseChunks: dbResult.rows.length,
         missingFromDatabase: missingChunks.length
       },
@@ -236,7 +224,7 @@ export async function checkMissingChunks(userId, indexName, namespace) {
         group: vector.metadata.group || 'No group',
         metadata: vector.metadata
       })),
-      note: `This check finds vectors that exist in Pinecone but are missing from your database. Scraper vectors are automatically filtered out.`
+      note: `This check finds all vectors that exist in Pinecone but are missing from your database.`
     };
     
     console.log('checkMissingChunks completed successfully');
