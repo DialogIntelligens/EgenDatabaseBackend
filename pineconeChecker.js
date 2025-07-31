@@ -126,11 +126,9 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace, debu
           debugInfo.push(`📝 Sample vector IDs: ${vectorIds.slice(0, 3).join(', ')}`);
           const fetchResponse = await index.fetch(vectorIds);
           
-          debugInfo.push(`📨 Fetch response received for ${Object.keys(fetchResponse.vectors || {}).length} vectors`);
-          debugInfo.push(`🔍 Fetch response keys: ${Object.keys(fetchResponse).join(', ')}`);
-          debugInfo.push(`🔍 Full fetch response: ${JSON.stringify(fetchResponse, null, 2)}`);
+          debugInfo.push(`📨 Fetch response received for ${Object.keys(fetchResponse.records || {}).length} vectors`);
           
-          Object.values(fetchResponse.vectors || {}).forEach(vector => {
+          Object.values(fetchResponse.records || {}).forEach(vector => {
             if (vector) {
               allVectors.push({
                 id: vector.id,
