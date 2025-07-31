@@ -91,7 +91,7 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
     // Test the connection first
     console.log('Testing index connection...');
     const indexStats = await index.describeIndexStats();
-    console.log('Index stats:', indexStats);
+    console.log('Index stats:', JSON.stringify(indexStats, null, 2));
     
     const allVectors = [];
     let paginationToken = undefined;
@@ -109,12 +109,18 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           ...(paginationToken && { paginationToken })
         };
         
+        // Add namespace (indexName) to match how vectors are stored
+        if (indexName && indexName !== '') {
+          listParams.namespace = indexName;
+        }
+        
         console.log('Calling listPaginated with params:', listParams);
         const listResponse = await index.listPaginated(listParams);
         
         console.log(`List response received:`, {
           vectorCount: listResponse.vectors?.length || 0,
-          hasPagination: !!listResponse.pagination
+          hasPagination: !!listResponse.pagination,
+          fullResponse: JSON.stringify(listResponse, null, 2)
         });
         
         if (listResponse.vectors && listResponse.vectors.length > 0) {
@@ -122,8 +128,13 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           const vectorIds = listResponse.vectors.map(v => v.id);
           console.log(`Fetching metadata for ${vectorIds.length} vectors...`);
           
-          console.log('Calling fetch with params:', { vectorCount: vectorIds.length });
-          const fetchResponse = await index.fetch(vectorIds);
+          const fetchParams = {};
+          if (indexName && indexName !== '') {
+            fetchParams.namespace = indexName;
+          }
+          
+          console.log('Calling fetch with params:', { vectorCount: vectorIds.length, ...fetchParams });
+          const fetchResponse = await index.fetch(vectorIds, fetchParams);
           
           console.log(`Fetch response received for ${Object.keys(fetchResponse.vectors || {}).length} vectors`);
           
@@ -164,7 +175,10 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
 // Main function to check for missing chunks - finds vectors in Pinecone that aren't in database
 export async function checkMissingChunks(userId, indexName, namespace) {
   try {
-    console.log(`Starting Pinecone-to-database check - User: ${userId}, Index: ${indexName}, Namespace: ${namespace}`);
+    console.log(`Starting Pinecone-to-database check with parameters:`);
+    console.log(`- userId: ${userId}`);
+    console.log(`- indexName (will be used as Pinecone namespace): ${indexName}`);
+    console.log(`- namespace (will be used as Pinecone index): ${namespace}`);
     
     // Get Pinecone API key
     console.log('Getting Pinecone API key...');
