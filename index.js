@@ -3582,7 +3582,7 @@ app.post('/api/shopify/orders', async (req, res) => {
     const { 
       shopifyStore, 
       shopifyAccessToken, 
-      shopifyApiVersion = '2025-01',
+      shopifyApiVersion = '2024-10',
       email,
       phone,
       order_number,
@@ -3602,6 +3602,7 @@ app.post('/api/shopify/orders', async (req, res) => {
     const queryParams = new URLSearchParams();
     queryParams.append('status', 'any');
     queryParams.append('limit', '50');
+    queryParams.append('fulfillment_status', 'any'); // Include all fulfillment statuses
     
     if (email) queryParams.append('email', email);
     if (phone) queryParams.append('phone', phone);
@@ -3633,28 +3634,82 @@ app.post('/api/shopify/orders', async (req, res) => {
 
     const data = await response.json();
     
-    // Transform the data to a more consistent format
-    const transformedOrders = data.orders ? data.orders.map(order => ({
-      id: order.id,
-      order_number: order.name || order.order_number,
-      email: order.email,
-      phone: order.phone || (order.billing_address && order.billing_address.phone),
-      total_price: order.total_price,
-      currency: order.currency,
-      financial_status: order.financial_status,
-      fulfillment_status: order.fulfillment_status,
-      created_at: order.created_at,
-      updated_at: order.updated_at,
-      customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
-      line_items: order.line_items ? order.line_items.map(item => ({
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        fulfillment_status: item.fulfillment_status
-      })) : [],
-      shipping_address: order.shipping_address,
-      billing_address: order.billing_address
+    // Transform the data and fetch fulfillment information for each order
+    const transformedOrders = data.orders ? await Promise.all(data.orders.map(async (order) => {
+      // Fetch fulfillments for this order
+      let fulfillments = [];
+      try {
+        const fulfillmentUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order.id}/fulfillments.json`;
+        const fulfillmentResponse = await fetch(fulfillmentUrl, {
+          method: 'GET',
+          headers: {
+            'X-Shopify-Access-Token': shopifyAccessToken,
+            'Content-Type': 'application/json',
+            'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+          }
+        });
+        
+        if (fulfillmentResponse.ok) {
+          const fulfillmentData = await fulfillmentResponse.json();
+          fulfillments = fulfillmentData.fulfillments || [];
+          console.log(`Fetched ${fulfillments.length} fulfillments for order ${order.id}`);
+        } else {
+          console.warn(`Failed to fetch fulfillments for order ${order.id}:`, fulfillmentResponse.status);
+        }
+      } catch (fulfillmentError) {
+        console.error(`Error fetching fulfillments for order ${order.id}:`, fulfillmentError);
+      }
+      
+      return {
+        id: order.id,
+        order_number: order.name || order.order_number,
+        email: order.email,
+        phone: order.phone || (order.billing_address && order.billing_address.phone),
+        total_price: order.total_price,
+        currency: order.currency,
+        financial_status: order.financial_status,
+        fulfillment_status: order.fulfillment_status,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
+        line_items: order.line_items ? order.line_items.map(item => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          fulfillment_status: item.fulfillment_status,
+          sku: item.sku,
+          product_id: item.product_id,
+          variant_id: item.variant_id
+        })) : [],
+        shipping_address: order.shipping_address,
+        billing_address: order.billing_address,
+        // Add fulfillment and tracking information
+        fulfillments: fulfillments.map(fulfillment => ({
+          id: fulfillment.id,
+          status: fulfillment.status,
+          tracking_company: fulfillment.tracking_company,
+          tracking_number: fulfillment.tracking_number,
+          tracking_url: fulfillment.tracking_url,
+          tracking_urls: fulfillment.tracking_urls || [],
+          created_at: fulfillment.created_at,
+          updated_at: fulfillment.updated_at,
+          shipment_status: fulfillment.shipment_status,
+          location_id: fulfillment.location_id,
+          line_items: fulfillment.line_items ? fulfillment.line_items.map(item => ({
+            id: item.id,
+            quantity: item.quantity
+          })) : []
+        })),
+        // Extract primary tracking info for easy access
+        primary_tracking: fulfillments.length > 0 ? {
+          tracking_number: fulfillments[0].tracking_number,
+          tracking_url: fulfillments[0].tracking_url,
+          tracking_company: fulfillments[0].tracking_company,
+          status: fulfillments[0].status,
+          shipment_status: fulfillments[0].shipment_status
+        } : null
+      };
     })) : [];
 
     return res.json({
@@ -3683,7 +3738,7 @@ app.get('/api/shopify/orders/:order_id', async (req, res) => {
     const { 
       shopifyStore, 
       shopifyAccessToken, 
-      shopifyApiVersion = '2025-01'
+      shopifyApiVersion = '2024-10'
     } = req.query;
 
     if (!shopifyStore || !shopifyAccessToken) {
