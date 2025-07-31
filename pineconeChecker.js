@@ -82,8 +82,10 @@ function isScraperVector(vectorId, metadata) {
 async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
   try {
     console.log(`Starting getAllVectorsFromIndex - indexName: ${indexName}, namespace: ${namespace}`);
+    console.log('Note: In this system, "namespace" parameter is actually the Pinecone index name');
     
-    const index = pineconeClient.index(indexName);
+    // In your system, "namespace" is actually the Pinecone index name
+    const index = pineconeClient.index(namespace);
     
     // Test the connection first
     console.log('Testing index connection...');
@@ -106,9 +108,9 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           ...(paginationToken && { paginationToken })
         };
         
-        // Only add namespace if it's not empty or undefined
-        if (namespace && namespace !== '') {
-          listParams.namespace = namespace;
+        // Use indexName as the actual Pinecone namespace (if provided)
+        if (indexName && indexName !== '') {
+          listParams.namespace = indexName;
         }
         
         console.log('Calling listPaginated with params:', listParams);
@@ -125,8 +127,8 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           console.log(`Fetching metadata for ${vectorIds.length} vectors...`);
           
           const fetchParams = {};
-          if (namespace && namespace !== '') {
-            fetchParams.namespace = namespace;
+          if (indexName && indexName !== '') {
+            fetchParams.namespace = indexName;
           }
           
           console.log('Calling fetch with params:', { vectorCount: vectorIds.length, ...fetchParams });
