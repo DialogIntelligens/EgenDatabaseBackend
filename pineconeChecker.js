@@ -91,7 +91,7 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
     // Test the connection first
     console.log('Testing index connection...');
     const indexStats = await index.describeIndexStats();
-    console.log('Index stats:', indexStats);
+    console.log('Index stats:', JSON.stringify(indexStats, null, 2));
     
     const allVectors = [];
     let paginationToken = undefined;
