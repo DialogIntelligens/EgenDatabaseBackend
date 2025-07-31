@@ -1903,7 +1903,7 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
       const batchPromises = batch.map(async (conversation) => {
         try {
           const conversationText = conversation.conversation_data;
-          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId);
+          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id);
 
           await pool.query(
             `UPDATE conversations
@@ -1968,31 +1968,32 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
 });
 
 // Helper for prediction using standard statistics API
-const getEmneAndScore = async (conversationText, userId) => {
+const getEmneAndScore = async (conversationText, userId, chatbotId) => {
   try {
     // Use the standard statistics API endpoint
     const statisticsAPI = "https://den-utrolige-snebold.onrender.com/api/v1/prediction/53e9c446-b2a3-41ca-8a01-8d48c05fcc7a";
     
     const bodyObject = { question: conversationText };
     
-    // Get user's statistics settings from database
+    // Get statistics prompt from prompt templates (same as chatbot)
     try {
-      const userSettingsResult = await pool.query(
-        'SELECT statestik_prompt, statestik_prompt_enabled FROM users WHERE id = $1',
-        [userId]
-      );
+      // Import and use the buildPrompt function to get the statistics prompt
+      const { buildPrompt } = await import('./promptTemplateV2Routes.js');
+      const statisticsPrompt = await buildPrompt(pool, chatbotId, 'statistics');
       
-      if (userSettingsResult.rows.length > 0) {
-        const userSettings = userSettingsResult.rows[0];
-        
-        // Add override configuration if statistics prompt is enabled
-        if (userSettings.statestik_prompt_enabled && userSettings.statestik_prompt) {
-          bodyObject.overrideConfig = bodyObject.overrideConfig || {};
-          bodyObject.overrideConfig.vars = bodyObject.overrideConfig.vars || {};
-          bodyObject.overrideConfig.vars.statestik_prompt = userSettings.statestik_prompt;
-          console.log("Statistics prompt override added for user", userId);
-        }
+      if (statisticsPrompt) {
+        bodyObject.overrideConfig = bodyObject.overrideConfig || {};
+        bodyObject.overrideConfig.vars = bodyObject.overrideConfig.vars || {};
+        bodyObject.overrideConfig.vars.statestik_prompt = statisticsPrompt;
+        console.log("Statistics prompt override added for user", userId, "chatbot", chatbotId);
       }
+    } catch (promptError) {
+      console.warn('Could not load statistics prompt:', promptError);
+      // Continue without custom prompt - use defaults
+    }
+
+    // Get other user settings that might exist
+    try {
       
       // Get topK setting for statistics flow
       const topKResult = await pool.query(
@@ -4631,4 +4632,5 @@ app.get('/unread-comments-count', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 

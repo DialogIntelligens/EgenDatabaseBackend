@@ -105,6 +105,7 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
       
       try {
         const listParams = {
+          prefix: 'vector-',
           limit: 100,
           ...(paginationToken && { paginationToken })
         };
