@@ -79,29 +79,29 @@ function isScraperVector(vectorId, metadata) {
 }
 
 // Function to get all vectors from a Pinecone index
-async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
+async function getAllVectorsFromIndex(pineconeClient, indexName, namespace, debugInfo = []) {
   try {
-    console.log(`Starting getAllVectorsFromIndex - indexName: ${indexName}, namespace: ${namespace}`);
-    console.log('Note: In this system, "namespace" parameter is actually the Pinecone index name');
+    debugInfo.push(`🔄 Starting getAllVectorsFromIndex - indexName: ${indexName}, namespace: ${namespace}`);
+    debugInfo.push('📝 Note: In this system, "namespace" parameter is actually the Pinecone index name');
     
     // In your system, "namespace" is actually the Pinecone index name
     // We connect to that index and then operations like listPaginated() work on that index directly
     const index = pineconeClient.index(namespace);
     
     // Test the connection first
-    console.log('Testing index connection...');
+    debugInfo.push('🔗 Testing index connection...');
     const indexStats = await index.describeIndexStats();
-    console.log('Index stats:', JSON.stringify(indexStats, null, 2));
+    debugInfo.push(`📊 Index stats: ${JSON.stringify(indexStats, null, 2)}`);
     
     const allVectors = [];
     let paginationToken = undefined;
     let pageCount = 0;
     
-    console.log(`Fetching vectors from index: ${indexName}, namespace: ${namespace}`);
+    debugInfo.push(`🔍 Fetching vectors from index: ${indexName}, namespace: ${namespace}`);
     
     do {
       pageCount++;
-      console.log(`Processing page ${pageCount}...`);
+      debugInfo.push(`📄 Processing page ${pageCount}...`);
       
       try {
         const listParams = {
@@ -109,23 +109,23 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
           ...(paginationToken && { paginationToken })
         };
         
-        console.log('Calling listPaginated with params:', listParams);
+        debugInfo.push(`📞 Calling listPaginated with params: ${JSON.stringify(listParams)}`);
         const listResponse = await index.listPaginated(listParams);
         
-        console.log(`List response received:`, {
+        debugInfo.push(`📨 List response received: ${JSON.stringify({
           vectorCount: listResponse.vectors?.length || 0,
           hasPagination: !!listResponse.pagination
-        });
+        })}`);
         
         if (listResponse.vectors && listResponse.vectors.length > 0) {
           // Fetch full vector data including metadata
           const vectorIds = listResponse.vectors.map(v => v.id);
-          console.log(`Fetching metadata for ${vectorIds.length} vectors...`);
+          debugInfo.push(`📦 Fetching metadata for ${vectorIds.length} vectors...`);
           
-          console.log('Calling fetch with params:', { vectorCount: vectorIds.length });
+          debugInfo.push(`📞 Calling fetch with params: ${JSON.stringify({ vectorCount: vectorIds.length })}`);
           const fetchResponse = await index.fetch(vectorIds);
           
-          console.log(`Fetch response received for ${Object.keys(fetchResponse.vectors || {}).length} vectors`);
+          debugInfo.push(`📨 Fetch response received for ${Object.keys(fetchResponse.vectors || {}).length} vectors`);
           
           Object.values(fetchResponse.vectors || {}).forEach(vector => {
             if (vector) {
@@ -138,16 +138,16 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
         }
         
         paginationToken = listResponse.pagination?.next;
-        console.log(`Page ${pageCount} complete. Total vectors: ${allVectors.length}, Next token: ${paginationToken ? 'exists' : 'none'}`);
+        debugInfo.push(`✅ Page ${pageCount} complete. Total vectors: ${allVectors.length}, Next token: ${paginationToken ? 'exists' : 'none'}`);
         
       } catch (pageError) {
-        console.error(`Error processing page ${pageCount}:`, pageError);
+        debugInfo.push(`❌ Error processing page ${pageCount}: ${pageError.message}`);
         throw pageError;
       }
       
     } while (paginationToken);
     
-    console.log(`getAllVectorsFromIndex complete: ${allVectors.length} total vectors fetched across ${pageCount} pages`);
+    debugInfo.push(`🎉 getAllVectorsFromIndex complete: ${allVectors.length} total vectors fetched across ${pageCount} pages`);
     return allVectors;
     
   } catch (error) {
@@ -163,29 +163,31 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
 
 // Main function to check for missing chunks - finds vectors in Pinecone that aren't in database
 export async function checkMissingChunks(userId, indexName, namespace) {
+  const debugInfo = [];
+  
   try {
-    console.log(`Starting Pinecone-to-database check - User: ${userId}, Index: ${indexName}, Namespace: ${namespace}`);
+    debugInfo.push(`🚀 Starting Pinecone-to-database check - User: ${userId}, Index: ${indexName}, Namespace: ${namespace}`);
     
     // Get Pinecone API key
-    console.log('Getting Pinecone API key...');
+    debugInfo.push('🔑 Getting Pinecone API key...');
     const pineconeApiKey = await getPineconeApiKeyForIndex(userId, indexName, namespace);
-    console.log('Pinecone API key retrieved successfully');
+    debugInfo.push('✅ Pinecone API key retrieved successfully');
     
     // Initialize Pinecone client
-    console.log('Initializing Pinecone client...');
+    debugInfo.push('🔧 Initializing Pinecone client...');
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    console.log('Pinecone client initialized successfully');
+    debugInfo.push('✅ Pinecone client initialized successfully');
     
     // Get all vectors from Pinecone
-    console.log('Fetching all vectors from Pinecone...');
-    const allPineconeVectors = await getAllVectorsFromIndex(pineconeClient, indexName, namespace);
-    console.log(`Successfully fetched ${allPineconeVectors.length} vectors from Pinecone`);
+    debugInfo.push('📥 Fetching all vectors from Pinecone...');
+    const allPineconeVectors = await getAllVectorsFromIndex(pineconeClient, indexName, namespace, debugInfo);
+    debugInfo.push(`✅ Successfully fetched ${allPineconeVectors.length} vectors from Pinecone`);
     
     // Use all vectors (no filtering)
-    console.log(`Found ${allPineconeVectors.length} total vectors in Pinecone`);
+    debugInfo.push(`📊 Found ${allPineconeVectors.length} total vectors in Pinecone`);
     
     // Get all chunks from our database for this index/namespace
-    console.log('Querying database for existing chunks...');
+    debugInfo.push('🗄️ Querying database for existing chunks...');
     const dbResult = await pool.query(
       `SELECT pinecone_vector_id, title, text, user_id, id as db_id, created_at
        FROM pinecone_data 
@@ -194,22 +196,22 @@ export async function checkMissingChunks(userId, indexName, namespace) {
     );
     
     const dbVectorIds = new Set(dbResult.rows.map(row => row.pinecone_vector_id));
-    console.log(`Found ${dbResult.rows.length} chunks in database`);
+    debugInfo.push(`📈 Found ${dbResult.rows.length} chunks in database`);
     
     // Find vectors that exist in Pinecone but not in our database
-    console.log('Comparing Pinecone vectors with database records...');
+    debugInfo.push('🔍 Comparing Pinecone vectors with database records...');
     const missingChunks = allPineconeVectors.filter(vector => {
       const isInDatabase = dbVectorIds.has(vector.id);
       if (!isInDatabase) {
-        console.log(`Found missing chunk: ${vector.id} - ${vector.metadata.title || 'No title'}`);
+        debugInfo.push(`🚨 Found missing chunk: ${vector.id} - ${vector.metadata.title || 'No title'}`);
       }
       return !isInDatabase;
     });
     
-    console.log(`Found ${missingChunks.length} vectors in Pinecone that are missing from database`);
+    debugInfo.push(`📊 Found ${missingChunks.length} vectors in Pinecone that are missing from database`);
     
     // Format the results
-    console.log('Formatting results...');
+    debugInfo.push('📋 Formatting results...');
     const result = {
       summary: {
         totalPineconeVectors: allPineconeVectors.length,
@@ -224,13 +226,15 @@ export async function checkMissingChunks(userId, indexName, namespace) {
         group: vector.metadata.group || 'No group',
         metadata: vector.metadata
       })),
-      note: `This check finds all vectors that exist in Pinecone but are missing from your database.`
+      note: `This check finds all vectors that exist in Pinecone but are missing from your database.`,
+      debugInfo: debugInfo
     };
     
-    console.log('checkMissingChunks completed successfully');
+    debugInfo.push('✅ checkMissingChunks completed successfully');
     return result;
     
   } catch (error) {
+    debugInfo.push(`❌ Error in checkMissingChunks: ${error.message}`);
     console.error('Error in checkMissingChunks:', {
       message: error.message,
       stack: error.stack,
@@ -238,7 +242,12 @@ export async function checkMissingChunks(userId, indexName, namespace) {
       indexName,
       namespace
     });
-    throw error;
+    
+    // Return error with debug info
+    return {
+      error: error.message,
+      debugInfo: debugInfo
+    };
   }
 }
 
