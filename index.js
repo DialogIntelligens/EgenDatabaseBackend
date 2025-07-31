@@ -1882,7 +1882,8 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
     let errorCount = 0;
     const errors = [];
 
-    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id}`);
+    const limitInfo = limit ? ` (limited to ${limit} most recent)` : ' (all conversations)';
+    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id}${limitInfo}`);
 
     // Process conversations in batches to avoid overwhelming the API
     const BATCH_SIZE = 10;
