@@ -78,132 +78,110 @@ function isScraperVector(vectorId, metadata) {
   return isHashId || hasScraperMetadata;
 }
 
-// Function to get all vectors from a Pinecone index using describe stats and sampling
+// Function to get all vectors from a Pinecone index
 async function getAllVectorsFromIndex(pineconeClient, indexName, namespace) {
   try {
     const index = pineconeClient.index(indexName);
+    const allVectors = [];
+    let paginationToken = undefined;
     
-    // For now, return a message indicating limitation
-    console.log(`Note: Full vector enumeration is not available in this SDK version.`);
-    console.log(`Using alternative approach to check for potential missing chunks...`);
+    console.log(`Fetching vectors from index: ${indexName}, namespace: ${namespace}`);
     
-    // Return empty array for now - this approach has limitations
-    return [];
+    do {
+      const listResponse = await index.listPaginated({
+        namespace: namespace,
+        limit: 100,
+        paginationToken: paginationToken
+      });
+      
+      if (listResponse.vectors && listResponse.vectors.length > 0) {
+        // Fetch full vector data including metadata
+        const vectorIds = listResponse.vectors.map(v => v.id);
+        const fetchResponse = await index.fetch(vectorIds, { 
+          namespace: namespace 
+        });
+        
+        Object.values(fetchResponse.vectors).forEach(vector => {
+          if (vector) {
+            allVectors.push({
+              id: vector.id,
+              metadata: vector.metadata || {}
+            });
+          }
+        });
+      }
+      
+      paginationToken = listResponse.pagination?.next;
+      console.log(`Fetched ${allVectors.length} vectors so far...`);
+      
+    } while (paginationToken);
+    
+    console.log(`Total vectors fetched: ${allVectors.length}`);
+    return allVectors;
     
   } catch (error) {
-    console.error('Error accessing Pinecone index:', error);
+    console.error('Error fetching vectors from Pinecone:', error);
     throw error;
   }
 }
 
-// Alternative approach: Check if database records exist in Pinecone
+// Main function to check for missing chunks - finds vectors in Pinecone that aren't in database
 export async function checkMissingChunks(userId, indexName, namespace) {
   try {
-    console.log(`Starting database-to-Pinecone check - User: ${userId}, Index: ${indexName}, Namespace: ${namespace}`);
+    console.log(`Starting Pinecone-to-database check - User: ${userId}, Index: ${indexName}, Namespace: ${namespace}`);
     
-    // Get all chunks from our database for this index/namespace
-    const dbResult = await pool.query(
-      `SELECT pinecone_vector_id, title, text, user_id, id as db_id, created_at
-       FROM pinecone_data 
-       WHERE pinecone_index_name = $1 AND namespace = $2
-       ORDER BY created_at DESC`,
-      [indexName, namespace]
-    );
-    
-    console.log(`Found ${dbResult.rows.length} chunks in database`);
-    
-    if (dbResult.rows.length === 0) {
-      return {
-        summary: {
-          databaseChunks: 0,
-          checkedVectors: 0,
-          existingInPinecone: 0,
-          missingFromPinecone: 0,
-          errors: 0
-        },
-        missingChunks: [],
-        note: "No chunks found in database for this index/namespace"
-      };
-    }
-
     // Get Pinecone API key
     const pineconeApiKey = await getPineconeApiKeyForIndex(userId, indexName, namespace);
     
     // Initialize Pinecone client
     const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-    const index = pineconeClient.index(indexName);
-
-    // Check each database record to see if it exists in Pinecone
-    const missingChunks = [];
-    let checkedCount = 0;
-    let existingCount = 0;
-    let errorCount = 0;
-
-    console.log(`Checking ${dbResult.rows.length} database records against Pinecone...`);
-
-    for (const row of dbResult.rows) {
-      try {
-        checkedCount++;
-        
-        // Try to fetch the vector from Pinecone
-        const fetchResult = await index.fetch([row.pinecone_vector_id], { 
-          namespace: namespace 
-        });
-        
-        if (fetchResult.vectors && fetchResult.vectors[row.pinecone_vector_id]) {
-          existingCount++;
-          console.log(`✓ Vector ${row.pinecone_vector_id} exists in Pinecone`);
-        } else {
-          // Vector is missing from Pinecone
-          console.log(`✗ Vector ${row.pinecone_vector_id} missing from Pinecone`);
-          missingChunks.push({
-            vectorId: row.pinecone_vector_id,
-            title: row.title || 'No title',
-            text: row.text ? (row.text.substring(0, 200) + '...') : 'No text',
-            userId: row.user_id,
-            dbId: row.db_id,
-            createdAt: row.created_at
-          });
-        }
-
-        // Add a small delay to avoid rate limiting
-        if (checkedCount % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          console.log(`Checked ${checkedCount}/${dbResult.rows.length} vectors...`);
-        }
-        
-      } catch (error) {
-        errorCount++;
-        console.error(`Error checking vector ${row.pinecone_vector_id}:`, error.message);
-        
-        // If it's a 404-type error, consider it missing
-        if (error.message.includes('not found') || error.message.includes('404')) {
-          missingChunks.push({
-            vectorId: row.pinecone_vector_id,
-            title: row.title || 'No title',
-            text: row.text ? (row.text.substring(0, 200) + '...') : 'No text',
-            userId: row.user_id,
-            dbId: row.db_id,
-            createdAt: row.created_at,
-            error: 'Vector not found in Pinecone'
-          });
-        }
-      }
-    }
     
-    console.log(`Check complete: ${existingCount} found, ${missingChunks.length} missing, ${errorCount} errors`);
+    // Get all vectors from Pinecone
+    const allPineconeVectors = await getAllVectorsFromIndex(pineconeClient, indexName, namespace);
+    
+    // Filter out scraper vectors to get only dashboard-uploaded chunks
+    const dashboardVectors = allPineconeVectors.filter(vector => {
+      return !isScraperVector(vector.id, vector.metadata);
+    });
+    
+    console.log(`Found ${dashboardVectors.length} dashboard vectors out of ${allPineconeVectors.length} total vectors`);
+    
+    // Get all chunks from our database for this index/namespace
+    const dbResult = await pool.query(
+      `SELECT pinecone_vector_id, title, text, user_id, id as db_id, created_at
+       FROM pinecone_data 
+       WHERE pinecone_index_name = $1 AND namespace = $2`,
+      [indexName, namespace]
+    );
+    
+    const dbVectorIds = new Set(dbResult.rows.map(row => row.pinecone_vector_id));
+    console.log(`Found ${dbResult.rows.length} chunks in database`);
+    
+    // Find vectors that exist in Pinecone but not in our database
+    const missingChunks = dashboardVectors.filter(vector => {
+      return !dbVectorIds.has(vector.id);
+    });
+    
+    console.log(`Found ${missingChunks.length} vectors in Pinecone that are missing from database`);
     
     // Format the results
     const result = {
       summary: {
+        totalPineconeVectors: allPineconeVectors.length,
+        dashboardVectors: dashboardVectors.length,
+        scraperVectors: allPineconeVectors.length - dashboardVectors.length,
         databaseChunks: dbResult.rows.length,
-        checkedVectors: checkedCount,
-        existingInPinecone: existingCount,
-        missingFromPinecone: missingChunks.length,
-        errors: errorCount
+        missingFromDatabase: missingChunks.length
       },
-      missingChunks: missingChunks,
-      note: `This check verifies that database records exist as vectors in Pinecone. It does not detect extra vectors in Pinecone that aren't in the database.`
+      missingChunks: missingChunks.map(vector => ({
+        vectorId: vector.id,
+        title: vector.metadata.title || 'No title',
+        text: vector.metadata.text ? (vector.metadata.text.substring(0, 200) + '...') : 'No text',
+        userId: vector.metadata.userId,
+        group: vector.metadata.group || 'No group',
+        metadata: vector.metadata
+      })),
+      note: `This check finds vectors that exist in Pinecone but are missing from your database. Scraper vectors are automatically filtered out.`
     };
     
     return result;
