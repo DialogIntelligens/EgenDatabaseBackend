@@ -4700,4 +4700,35 @@ app.get('/leads-count', authenticateToken, async (req, res) => {
   }
 });
 
+// GET total count of unread livechat messages
+app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+    const userId = req.user.userId;
+
+    // Count livechat conversations that are unread (viewed = false) for this user's chatbots
+    const queryText = `
+      SELECT COUNT(c.id) AS unread_livechat_count
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)
+      AND c.is_livechat = TRUE
+      AND (c.viewed = FALSE OR c.viewed IS NULL)
+    `;
+    
+    const result = await pool.query(queryText, [chatbotIds]);
+    const unreadLivechatCount = parseInt(result.rows[0]?.unread_livechat_count || 0);
+    
+    res.json({ unread_livechat_count: unreadLivechatCount });
+  } catch (err) {
+    console.error('Error fetching unread livechat count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 
