@@ -1375,6 +1375,23 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       try {
         await client.query('BEGIN');
 
+        // Check if this is a livechat conversation with a new user message
+        let shouldMarkAsUnread = false;
+        if (is_livechat && conversation_data) {
+          try {
+            const parsedData = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
+            if (Array.isArray(parsedData) && parsedData.length > 0) {
+              const lastMessage = parsedData[parsedData.length - 1];
+              // If last message is from user (not agent, not system), mark as unread
+              if (lastMessage && lastMessage.isUser === true) {
+                shouldMarkAsUnread = true;
+              }
+            }
+          } catch (parseError) {
+            console.error('Error parsing conversation data for unread check:', parseError);
+          }
+        }
+
         const updateResult = await client.query(
           `UPDATE conversations
            SET conversation_data = $3,
@@ -1388,19 +1405,20 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                fallback = COALESCE($11, fallback),
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
+               viewed = CASE WHEN $14 THEN FALSE ELSE viewed END,
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, viewed)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
