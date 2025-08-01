@@ -162,6 +162,114 @@ async function getAllVectorsFromIndex(pineconeClient, indexName, namespace, debu
   }
 }
 
+// Function to check all indexes for a user
+export async function checkAllIndexesMissingChunks(userId) {
+  const debugInfo = [];
+  
+  try {
+    debugInfo.push(`🚀 Starting comprehensive check for all indexes - User: ${userId}`);
+    
+    // Get all indexes for the user
+    debugInfo.push('📋 Fetching all user indexes...');
+    const indexesResult = await pool.query(
+      `SELECT DISTINCT pinecone_index_name as index_name, namespace 
+       FROM pinecone_data 
+       WHERE user_id = $1 
+       ORDER BY pinecone_index_name, namespace`,
+      [userId]
+    );
+    
+    const indexes = indexesResult.rows;
+    debugInfo.push(`✅ Found ${indexes.length} index/namespace combinations to check`);
+    
+    if (indexes.length === 0) {
+      return {
+        summary: {
+          totalIndexes: 0,
+          totalPineconeVectors: 0,
+          totalScraperVectors: 0,
+          totalNonScraperVectors: 0,
+          totalDatabaseChunks: 0,
+          totalMissingFromDatabase: 0
+        },
+        missingChunks: [],
+        note: 'No indexes found for this user.',
+        debugInfo: debugInfo
+      };
+    }
+    
+    const allResults = [];
+    let totalPineconeVectors = 0;
+    let totalScraperVectors = 0;
+    let totalNonScraperVectors = 0;
+    let totalDatabaseChunks = 0;
+    let totalMissingFromDatabase = 0;
+    
+    // Check each index/namespace combination
+    for (let i = 0; i < indexes.length; i++) {
+      const { index_name, namespace } = indexes[i];
+      debugInfo.push(`\n🔍 [${i + 1}/${indexes.length}] Checking index: ${index_name}, namespace: ${namespace}`);
+      
+      try {
+        const result = await checkMissingChunks(userId, index_name, namespace);
+        
+        if (result.summary) {
+          totalPineconeVectors += result.summary.totalPineconeVectors || 0;
+          totalScraperVectors += result.summary.scraperVectors || 0;
+          totalNonScraperVectors += result.summary.nonScraperVectors || 0;
+          totalDatabaseChunks += result.summary.databaseChunks || 0;
+          totalMissingFromDatabase += result.summary.missingFromDatabase || 0;
+          
+          // Add index info to missing chunks
+          const missingChunksWithIndex = (result.missingChunks || []).map(chunk => ({
+            ...chunk,
+            indexName: index_name,
+            namespace: namespace
+          }));
+          
+          allResults.push(...missingChunksWithIndex);
+          
+          debugInfo.push(`✅ Index ${index_name}/${namespace}: ${result.summary.missingFromDatabase || 0} missing chunks`);
+        }
+        
+      } catch (indexError) {
+        debugInfo.push(`❌ Error checking index ${index_name}/${namespace}: ${indexError.message}`);
+        // Continue with other indexes even if one fails
+      }
+    }
+    
+    debugInfo.push(`\n🎉 Comprehensive check complete!`);
+    debugInfo.push(`📊 Total results: ${totalMissingFromDatabase} missing chunks across ${indexes.length} indexes`);
+    
+    return {
+      summary: {
+        totalIndexes: indexes.length,
+        totalPineconeVectors,
+        totalScraperVectors,
+        totalNonScraperVectors,
+        totalDatabaseChunks,
+        totalMissingFromDatabase
+      },
+      missingChunks: allResults,
+      note: `Comprehensive check across ${indexes.length} indexes. This operation checked ${totalNonScraperVectors} non-scraper vectors against your database.`,
+      debugInfo: debugInfo
+    };
+    
+  } catch (error) {
+    debugInfo.push(`❌ Error in checkAllIndexesMissingChunks: ${error.message}`);
+    console.error('Error in checkAllIndexesMissingChunks:', {
+      message: error.message,
+      stack: error.stack,
+      userId
+    });
+    
+    return {
+      error: error.message,
+      debugInfo: debugInfo
+    };
+  }
+}
+
 // Main function to check for missing chunks - finds vectors in Pinecone that aren't in database
 export async function checkMissingChunks(userId, indexName, namespace) {
   const debugInfo = [];
