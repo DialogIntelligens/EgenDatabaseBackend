@@ -1416,10 +1416,20 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
             };
             existingArr.forEach(pushUnique);
             incomingArr.forEach(pushUnique);
-            merged.sort((a,b) => {
-              const ta = a.timestamp || 0;
-              const tb = b.timestamp || 0;
-              return ta - tb;
+            // Sort by timestamp, with fallbacks for missing timestamps
+            merged.sort((a, b) => {
+              const ta = a.timestamp || a.created_at || Date.now();
+              const tb = b.timestamp || b.created_at || Date.now();
+              
+              // Primary sort by timestamp
+              if (ta !== tb) {
+                return ta - tb;
+              }
+              
+              // Secondary sort by id for stability
+              const ida = a.id || '';
+              const idb = b.id || '';
+              return ida.localeCompare(idb);
             });
             conversationDataToSave = JSON.stringify(merged);
           }
