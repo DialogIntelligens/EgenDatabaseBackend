@@ -124,44 +124,179 @@ app.get('/livechat-messages', async (req, res) => {
   }
 });
 
-// GET endpoint for dashboard to fetch livechat conversations
-app.get('/livechat-conversations-list', authenticateToken, async (req, res) => {
-  const { chatbot_id, page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * limit;
+// GET endpoint for dashboard to fetch livechat conversations (replaces conversations-metadata for livechat)
+app.get('/livechat-conversations-metadata', authenticateToken, async (req, res) => {
+  const { chatbot_id, page_number = 0, page_size = 10, conversation_filter, emne, tags } = req.query;
+  const offset = page_number * page_size;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
 
   try {
-    // Get unique conversations with their latest message
-    const result = await pool.query(`
+    const chatbotIds = chatbot_id.split(',');
+    
+    let queryText = `
       SELECT 
+        ROW_NUMBER() OVER (ORDER BY MAX(lm.timestamp) DESC) as id,
         lm.user_id,
         lm.chatbot_id,
         COUNT(*) as message_count,
-        MAX(lm.timestamp) as last_message_time,
-        ARRAY_AGG(
+        MAX(lm.timestamp) as created_at,
+        STRING_AGG(DISTINCT lm.emne, ', ') FILTER (WHERE lm.emne IS NOT NULL) as emne,
+        AVG(lm.score) FILTER (WHERE lm.score IS NOT NULL) as score,
+        JSONB_AGG(
+          DISTINCT lm.tags
+        ) FILTER (WHERE lm.tags IS NOT NULL) as tags,
+        JSONB_AGG(
           json_build_object(
             'text', lm.text,
-            'is_user', lm.is_user,
-            'is_system', lm.is_system,
+            'isUser', lm.is_user,
+            'isSystem', lm.is_system,
             'timestamp', lm.timestamp,
-            'agent_name', lm.agent_name,
-            'emne', lm.emne,
-            'score', lm.score
+            'agentName', lm.agent_name,
+            'image', lm.image_data
           ) ORDER BY lm.timestamp ASC
-        ) as messages
+        ) as conversation_data,
+        FALSE as viewed,
+        0 as purchase_amount,
+        FALSE as has_unread_comments
       FROM livechat_messages lm
-      WHERE ($1::text IS NULL OR lm.chatbot_id = $1)
+      WHERE lm.chatbot_id = ANY($1)
+    `;
+    
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+
+    if (conversation_filter && conversation_filter.trim() !== '') {
+      queryText += ` AND lm.text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryParams.push(conversation_filter);
+    }
+
+    if (emne && emne !== '') {
+      queryText += ` AND lm.emne = $${paramIndex++}`;
+      queryParams.push(emne);
+    }
+
+    if (tags && tags !== '') {
+      queryText += ` AND lm.tags::text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryParams.push(tags);
+    }
+
+    queryText += ` 
       GROUP BY lm.user_id, lm.chatbot_id
       ORDER BY MAX(lm.timestamp) DESC
-      LIMIT $2 OFFSET $3`,
-      [chatbot_id === 'ALL' ? null : chatbot_id, limit, offset]
-    );
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    `;
+    queryParams.push(page_size, offset);
 
-    res.json({ conversations: result.rows });
+    const result = await pool.query(queryText, queryParams);
+    
+    // Format the response to match the expected format
+    const formattedResults = result.rows.map(row => ({
+      ...row,
+      id: `${row.user_id}_${row.chatbot_id}`, // Create a unique ID for the conversation
+      tags: row.tags && row.tags[0] ? row.tags[0] : null,
+      score: row.score ? Math.round(row.score) : null
+    }));
+
+    res.json(formattedResults);
   } catch (err) {
-    console.error('Error fetching livechat conversations:', err);
+    console.error('Error fetching livechat conversations metadata:', err);
     res.status(500).json({
       error: 'Database error',
       details: err.message
     });
+  }
+});
+
+// GET endpoint for livechat conversation count (replaces conversation-count for livechat)
+app.get('/livechat-conversation-count', authenticateToken, async (req, res) => {
+  const { chatbot_id, conversation_filter, emne, tags } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+    
+    let queryText = `
+      SELECT COUNT(DISTINCT (lm.user_id, lm.chatbot_id)) as conversation_count
+      FROM livechat_messages lm
+      WHERE lm.chatbot_id = ANY($1)
+    `;
+    
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+
+    if (conversation_filter && conversation_filter.trim() !== '') {
+      queryText += ` AND lm.text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryParams.push(conversation_filter);
+    }
+
+    if (emne && emne !== '') {
+      queryText += ` AND lm.emne = $${paramIndex++}`;
+      queryParams.push(emne);
+    }
+
+    if (tags && tags !== '') {
+      queryText += ` AND lm.tags::text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryParams.push(tags);
+    }
+
+    const result = await pool.query(queryText, queryParams);
+    res.json([{ conversation_count: parseInt(result.rows[0].conversation_count) }]);
+  } catch (err) {
+    console.error('Error fetching livechat conversation count:', err);
+    res.status(500).json({
+      error: 'Database error',
+      details: err.message
+    });
+  }
+});
+
+// GET single livechat conversation (replaces /conversation/:id for livechat)
+app.get('/livechat-conversation/:userId/:chatbotId', authenticateToken, async (req, res) => {
+  const { userId, chatbotId } = req.params;
+
+  try {
+    const result = await pool.query(`
+      SELECT 
+        $1 || '_' || $2 as id,
+        $1 as user_id,
+        $2 as chatbot_id,
+        COUNT(*) as message_count,
+        MAX(lm.timestamp) as created_at,
+        STRING_AGG(DISTINCT lm.emne, ', ') FILTER (WHERE lm.emne IS NOT NULL) as emne,
+        AVG(lm.score) FILTER (WHERE lm.score IS NOT NULL) as score,
+        JSONB_AGG(
+          json_build_object(
+            'text', lm.text,
+            'isUser', lm.is_user,
+            'isSystem', lm.is_system,
+            'timestamp', lm.timestamp,
+            'agentName', lm.agent_name,
+            'profilePicture', lm.agent_profile_picture,
+            'image', lm.image_data
+          ) ORDER BY lm.timestamp ASC
+        ) as conversation_data,
+        0 as purchase_amount
+      FROM livechat_messages lm
+      WHERE lm.user_id = $1 AND lm.chatbot_id = $2
+      GROUP BY lm.user_id, lm.chatbot_id
+    `, [userId, chatbotId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Livechat conversation not found' });
+    }
+
+    const conversation = result.rows[0];
+    conversation.score = conversation.score ? Math.round(conversation.score) : null;
+
+    res.json(conversation);
+  } catch (err) {
+    console.error('Error retrieving livechat conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
