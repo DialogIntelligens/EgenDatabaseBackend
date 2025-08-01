@@ -1408,7 +1408,23 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
             const merged = [];
             const pushUnique = (msg) => {
               if (!msg) return;
-              const idKey = msg.id ? msg.id : JSON.stringify(msg);
+              
+              // Create a reliable key for deduplication
+              let idKey;
+              if (msg.id) {
+                idKey = msg.id;
+              } else {
+                // For messages without ID, create a consistent key based on core properties
+                const coreProps = {
+                  text: msg.text,
+                  isUser: msg.isUser,
+                  timestamp: msg.timestamp,
+                  isSystem: msg.isSystem,
+                  agentName: msg.agentName
+                };
+                idKey = JSON.stringify(coreProps);
+              }
+              
               if (!idSet.has(idKey)) {
                 idSet.add(idKey);
                 merged.push(msg);
