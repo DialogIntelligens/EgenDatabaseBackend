@@ -1368,7 +1368,8 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       purchase_tracking_enabled,
       is_livechat = false,
       fallback = null,
-      tags = null
+      tags = null,
+      form_data = null
     ) {
       const client = await pool.connect();
       try {
@@ -1386,19 +1387,20 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                is_livechat = COALESCE($10, is_livechat),
                fallback = COALESCE($11, fallback),
                tags = COALESCE($12, tags),
+               form_data = COALESCE($13, form_data),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1428,7 +1430,8 @@ app.post('/conversations', async (req, res) => {
     purchase_tracking_enabled,
     is_livechat,
     fallback,
-    tags
+    tags,
+    form_data
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1457,7 +1460,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation with is_livechat, fallback, and tags parameters
+    // Call upsertConversation with is_livechat, fallback, tags, and form_data parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1470,7 +1473,8 @@ app.post('/conversations', async (req, res) => {
       purchase_tracking_enabled,
       is_livechat || false,
       fallback,
-      tags
+      tags,
+      form_data
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1604,6 +1608,8 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
           )
         )`;
         queryParams.push(userId);
+      } else if (fejlstatus === 'leads') {
+        queryText += ` AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')`;
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
@@ -1792,6 +1798,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
             WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
           )
         )`;
+      } else if (fejlstatus === 'leads') {
+        queryText += ` AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')`;
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
@@ -4659,6 +4667,35 @@ app.get('/unread-comments-count', authenticateToken, async (req, res) => {
     res.json({ unread_comments_count: unreadConversationsCount });
   } catch (err) {
     console.error('Error fetching unread conversations count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET total count of leads (contact form submissions)
+app.get('/leads-count', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+
+    // Count conversations that have form submissions (leads)
+    const queryText = `
+      SELECT COUNT(DISTINCT c.id) AS leads_count
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)
+      AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')
+    `;
+    
+    const result = await pool.query(queryText, [chatbotIds]);
+    const leadsCount = parseInt(result.rows[0]?.leads_count || 0);
+    
+    res.json({ leads_count: leadsCount });
+  } catch (err) {
+    console.error('Error fetching leads count:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
