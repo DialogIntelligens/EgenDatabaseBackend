@@ -1392,7 +1392,44 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
           }
         }
 
-        const updateResult = await client.query(
+        // Merge conversation data to prevent overwriting concurrent messages
+      let conversationDataToSave = conversation_data;
+      try {
+        const existingRes = await client.query(
+          'SELECT conversation_data FROM conversations WHERE user_id = $1 AND chatbot_id = $2',
+          [user_id, chatbot_id]
+        );
+        if (existingRes.rows.length) {
+          const existingRaw = existingRes.rows[0].conversation_data;
+          const existingArr = typeof existingRaw === 'string' ? JSON.parse(existingRaw) : existingRaw;
+          const incomingArr = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
+          if (Array.isArray(existingArr) && Array.isArray(incomingArr)) {
+            const idSet = new Set();
+            const merged = [];
+            const pushUnique = (msg) => {
+              if (!msg) return;
+              const idKey = msg.id ? msg.id : JSON.stringify(msg);
+              if (!idSet.has(idKey)) {
+                idSet.add(idKey);
+                merged.push(msg);
+              }
+            };
+            existingArr.forEach(pushUnique);
+            incomingArr.forEach(pushUnique);
+            merged.sort((a,b) => {
+              const ta = a.timestamp || 0;
+              const tb = b.timestamp || 0;
+              return ta - tb;
+            });
+            conversationDataToSave = JSON.stringify(merged);
+          }
+        }
+      } catch (mergeErr) {
+        console.error('Conversation merge error:', mergeErr);
+        conversationDataToSave = conversation_data;
+      }
+
+      const updateResult = await client.query(
           `UPDATE conversations
            SET conversation_data = $3,
                emne = COALESCE($4, emne),
@@ -1409,7 +1446,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
+          [user_id, chatbot_id, conversationDataToSave, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
         );
 
         if (updateResult.rows.length === 0) {
@@ -1418,7 +1455,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
              (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, viewed)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
+            [user_id, chatbot_id, conversationDataToSave, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
