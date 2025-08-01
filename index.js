@@ -1068,7 +1068,7 @@ app.post('/register', async (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    const result = await pool.query('SELECT *, agent_name, profile_picture, livechat_notification_sound FROM users WHERE username = $1', [username]);
+    const result = await pool.query('SELECT *, agent_name, profile_picture FROM users WHERE username = $1', [username]);
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
@@ -1124,8 +1124,7 @@ app.post('/login', async (req, res) => {
       company_info: user.company_info || '',
       livechat: user.livechat || false,
       agent_name: user.agent_name || 'Support Agent',
-      profile_picture: user.profile_picture || '',
-      livechat_notification_sound: user.livechat_notification_sound !== false // Default to true if null/undefined
+      profile_picture: user.profile_picture || ''
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -3490,35 +3489,6 @@ app.put('/update-profile-picture', authenticateToken, async (req, res) => {
   }
 });
 
-// New endpoint to update livechat notification sound setting
-app.put('/update-livechat-notification-sound', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { livechat_notification_sound } = req.body;
-
-  if (typeof livechat_notification_sound !== 'boolean') {
-    return res.status(400).json({ error: 'livechat_notification_sound is required and must be a boolean' });
-  }
-
-  try {
-    const result = await pool.query(
-      'UPDATE users SET livechat_notification_sound = $1 WHERE id = $2 RETURNING id, username, livechat_notification_sound',
-      [livechat_notification_sound, userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Notification sound setting updated successfully',
-      user: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating notification sound setting:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
 // Upload logo/image endpoint for profile pictures
 app.post('/upload-logo', authenticateToken, async (req, res) => {
   try {
@@ -4775,6 +4745,57 @@ app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
     res.json({ unread_livechat_count: unreadLivechatCount });
   } catch (err) {
     console.error('Error fetching unread livechat count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET user's livechat notification sound preference
+app.get('/livechat-notification-sound', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  try {
+    const result = await pool.query(
+      'SELECT livechat_notification_sound FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const soundEnabled = result.rows[0].livechat_notification_sound !== false; // Default to true if null
+    res.json({ livechat_notification_sound: soundEnabled });
+  } catch (err) {
+    console.error('Error fetching livechat notification sound preference:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// PUT update user's livechat notification sound preference
+app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { livechat_notification_sound } = req.body;
+  
+  if (typeof livechat_notification_sound !== 'boolean') {
+    return res.status(400).json({ error: 'livechat_notification_sound must be a boolean' });
+  }
+  
+  try {
+    const result = await pool.query(
+      'UPDATE users SET livechat_notification_sound = $2 WHERE id = $1 RETURNING livechat_notification_sound',
+      [userId, livechat_notification_sound]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ 
+      message: 'Livechat notification sound preference updated successfully',
+      livechat_notification_sound: result.rows[0].livechat_notification_sound 
+    });
+  } catch (err) {
+    console.error('Error updating livechat notification sound preference:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
