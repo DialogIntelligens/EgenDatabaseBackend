@@ -948,19 +948,15 @@ app.post('/check-missing-chunks-all', authenticateToken, async (req, res) => {
   const isAdmin = req.user.isAdmin === true;
 
   try {
-    // Determine which user's data to check
-    let targetUserId = requestingUserId;
-    
-    // If admin provided a userId, use that instead
-    if (isAdmin && userId) {
-      targetUserId = userId;
+    if (isAdmin) {
+      console.log(`Admin ${requestingUserId} is checking missing chunks for ALL indexes across ALL users`);
+      const result = await checkAllIndexesMissingChunks(requestingUserId, true);
+      res.json(result);
+    } else {
+      console.log(`User ${requestingUserId} is checking missing chunks for all their indexes`);
+      const result = await checkAllIndexesMissingChunks(requestingUserId, false);
+      res.json(result);
     }
-
-    console.log(`Checking missing chunks for ALL indexes for user ${targetUserId}`);
-    
-    const result = await checkAllIndexesMissingChunks(targetUserId);
-    
-    res.json(result);
     
   } catch (error) {
     console.error('Error checking missing chunks for all indexes:', error);
