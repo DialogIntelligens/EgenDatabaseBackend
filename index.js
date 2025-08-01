@@ -1418,8 +1418,11 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
             incomingArr.forEach(pushUnique);
             // Sort by timestamp, with fallbacks for missing timestamps
             merged.sort((a, b) => {
-              const ta = a.timestamp || a.created_at || Date.now();
-              const tb = b.timestamp || b.created_at || Date.now();
+              // Handle missing or invalid timestamps
+              const ta = (typeof a.timestamp === 'number' && a.timestamp > 0) ? a.timestamp : 
+                         (a.created_at ? new Date(a.created_at).getTime() : 0);
+              const tb = (typeof b.timestamp === 'number' && b.timestamp > 0) ? b.timestamp : 
+                         (b.created_at ? new Date(b.created_at).getTime() : 0);
               
               // Primary sort by timestamp
               if (ta !== tb) {
