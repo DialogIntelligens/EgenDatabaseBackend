@@ -13,7 +13,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
-import { checkMissingChunks, getUserIndexes } from './pineconeChecker.js';
+import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 
 const { Pool } = pg;
 
@@ -936,6 +936,36 @@ app.post('/check-missing-chunks', authenticateToken, async (req, res) => {
     console.error('Error checking missing chunks:', error);
     res.status(500).json({ 
       error: 'Failed to check missing chunks', 
+      details: error.message 
+    });
+  }
+});
+
+// New endpoint to check ALL indexes for missing chunks
+app.post('/check-missing-chunks-all', authenticateToken, async (req, res) => {
+  const { userId } = req.body;
+  const requestingUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
+
+  try {
+    // Determine which user's data to check
+    let targetUserId = requestingUserId;
+    
+    // If admin provided a userId, use that instead
+    if (isAdmin && userId) {
+      targetUserId = userId;
+    }
+
+    console.log(`Checking missing chunks for ALL indexes for user ${targetUserId}`);
+    
+    const result = await checkAllIndexesMissingChunks(targetUserId);
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Error checking missing chunks for all indexes:', error);
+    res.status(500).json({ 
+      error: 'Failed to check missing chunks for all indexes', 
       details: error.message 
     });
   }
