@@ -5317,6 +5317,102 @@ app.post('/migrate-conversation-to-atomic', async (req, res) => {
   }
 });
 
+// =========================================
+// TYPING INDICATOR ENDPOINTS
+// =========================================
+
+// POST set typing status
+app.post('/set-typing-status', async (req, res) => {
+  const { user_id, chatbot_id, is_typing, agent_name } = req.body;
+
+  if (!user_id || !chatbot_id || typeof is_typing !== 'boolean') {
+    return res.status(400).json({ 
+      error: 'Missing required fields: user_id, chatbot_id, is_typing' 
+    });
+  }
+
+  try {
+    if (is_typing) {
+      // Set or update typing status
+      await pool.query(`
+        INSERT INTO typing_status (user_id, chatbot_id, is_typing, agent_name, typing_start_time, last_updated)
+        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, chatbot_id)
+        DO UPDATE SET 
+          is_typing = EXCLUDED.is_typing,
+          agent_name = EXCLUDED.agent_name,
+          typing_start_time = CASE 
+            WHEN typing_status.is_typing = false THEN CURRENT_TIMESTAMP 
+            ELSE typing_status.typing_start_time 
+          END,
+          last_updated = CURRENT_TIMESTAMP
+      `, [user_id, chatbot_id, is_typing, agent_name]);
+    } else {
+      // Remove typing status when agent stops typing
+      await pool.query(`
+        DELETE FROM typing_status 
+        WHERE user_id = $1 AND chatbot_id = $2
+      `, [user_id, chatbot_id]);
+    }
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('Error setting typing status:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
+// GET typing status for a conversation
+app.get('/get-typing-status', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ 
+      error: 'Missing required parameters: user_id, chatbot_id' 
+    });
+  }
+
+  try {
+    // Clean up old typing status first (older than 30 seconds)
+    await pool.query(`
+      DELETE FROM typing_status 
+      WHERE last_updated < NOW() - INTERVAL '30 seconds'
+    `);
+
+    // Get current typing status
+    const result = await pool.query(`
+      SELECT agent_name, is_typing, typing_start_time, last_updated
+      FROM typing_status 
+      WHERE user_id = $1 AND chatbot_id = $2 AND is_typing = true
+    `, [user_id, chatbot_id]);
+
+    if (result.rows.length > 0) {
+      const typingData = result.rows[0];
+      res.json({
+        is_agent_typing: true,
+        agent_name: typingData.agent_name,
+        typing_start_time: typingData.typing_start_time,
+        last_updated: typingData.last_updated
+      });
+    } else {
+      res.json({
+        is_agent_typing: false
+      });
+    }
+
+  } catch (error) {
+    console.error('Error getting typing status:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
 // POST migrate conversation to atomic message system with provided conversation data
 app.post('/migrate-conversation-to-atomic-with-messages', async (req, res) => {
   const { user_id, chatbot_id, conversation_data } = req.body;
