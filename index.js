@@ -13,7 +13,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
-import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
+import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, deleteSpecificVectors } from './pineconeChecker.js';
 
 const { Pool } = pg;
 
@@ -993,6 +993,43 @@ app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
     console.error('Error getting user indexes for checking:', error);
     res.status(500).json({ 
       error: 'Failed to get user indexes', 
+      details: error.message 
+    });
+  }
+});
+
+// New endpoint to delete specific vectors from Pinecone
+app.post('/delete-specific-vectors', authenticateToken, async (req, res) => {
+  const { vectorsToDelete } = req.body;
+  const requestingUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
+
+  try {
+    if (!vectorsToDelete || !Array.isArray(vectorsToDelete) || vectorsToDelete.length === 0) {
+      return res.status(400).json({ 
+        error: 'vectorsToDelete must be a non-empty array' 
+      });
+    }
+
+    // Validate that each vector has required fields
+    for (const vector of vectorsToDelete) {
+      if (!vector.vectorId || !vector.namespace || !vector.indexName) {
+        return res.status(400).json({ 
+          error: 'Each vector must have vectorId, namespace, and indexName' 
+        });
+      }
+    }
+
+    console.log(`${isAdmin ? 'Admin' : 'User'} ${requestingUserId} is deleting ${vectorsToDelete.length} specific vectors`);
+    
+    const result = await deleteSpecificVectors(requestingUserId, vectorsToDelete, isAdmin);
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Error deleting specific vectors:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete specific vectors', 
       details: error.message 
     });
   }
