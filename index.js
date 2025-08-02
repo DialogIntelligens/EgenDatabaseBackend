@@ -1403,22 +1403,57 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
         }
       });
       
-      // Convert back to array and sort by timestamp
-      const mergedArray = Array.from(messageMap.values());
-      mergedArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      // Preserve original order instead of sorting by timestamp
+      // Start with current messages as the base to preserve conversation flow
+      const result = [...currentMessages.map(msg => {
+        const msgId = msg.messageId || `current_${currentMessages.indexOf(msg)}_${msg.text}_${msg.isUser}`;
+        return messageMap.get(msgId) || { ...msg, messageId: msgId, timestamp: msg.timestamp || Date.now() };
+      })];
+      
+      // Find new messages that aren't in current
+      const newMessagesToAdd = newMessages.filter(newMsg => {
+        return !currentMessages.some(currentMsg => {
+          const currentMsgId = currentMsg.messageId || `current_${currentMessages.indexOf(currentMsg)}_${currentMsg.text}_${currentMsg.isUser}`;
+          return currentMsgId === newMsg.messageId || (
+            currentMsg.text === newMsg.text && 
+            currentMsg.isUser === newMsg.isUser &&
+            Math.abs((currentMsg.timestamp || 0) - (newMsg.timestamp || Date.now())) < 15000
+          );
+        });
+      });
+      
+      // Insert new messages at appropriate positions
+      newMessagesToAdd.forEach(newMsg => {
+        let insertIndex = result.length; // Default to end
+        
+        // Find the best position based on timestamp context
+        for (let i = 0; i < result.length; i++) {
+          const currentMsg = result[i];
+          const nextMsg = result[i + 1];
+          
+          if (newMsg.timestamp && currentMsg.timestamp && newMsg.timestamp > currentMsg.timestamp) {
+            if (!nextMsg || !nextMsg.timestamp || newMsg.timestamp < nextMsg.timestamp) {
+              insertIndex = i + 1;
+              break;
+            }
+          }
+        }
+        
+        result.splice(insertIndex, 0, newMsg);
+      });
       
       // Ensure welcome message stays first
-      const welcomeIndex = mergedArray.findIndex(msg => 
-        !msg.isUser && (mergedArray.indexOf(msg) > 0) && 
-        (msg.text.includes('Velkommen') || msg.text.includes('Hej') || msg.text.includes('Welcome'))
+      const welcomeIndex = result.findIndex(msg => 
+        !msg.isUser && (result.indexOf(msg) > 0) && 
+        (msg.text.includes('Velkommen') || msg.text.includes('Hej') || msg.text.includes('Welcome') || msg.isWelcome || msg.messageId?.includes('welcome'))
       );
       
       if (welcomeIndex > 0) {
-        const welcomeMsg = mergedArray.splice(welcomeIndex, 1)[0];
-        mergedArray.unshift(welcomeMsg);
+        const welcomeMsg = result.splice(welcomeIndex, 1)[0];
+        result.unshift(welcomeMsg);
       }
       
-      return mergedArray;
+      return result;
     }
 
     // Helper upsert function
