@@ -5018,7 +5018,7 @@ app.get('/conversation-messages', async (req, res) => {
       SELECT * FROM get_conversation_messages($1, $2)
     `, [user_id, chatbot_id]);
 
-    // Convert to frontend format
+    // Convert to frontend format with all properties preserved
     const messages = result.rows.map(row => ({
       text: row.message_text,
       isUser: row.is_user,
@@ -5030,7 +5030,12 @@ app.get('/conversation-messages', async (req, res) => {
       messageType: row.message_type,
       sequenceNumber: row.sequence_number,
       createdAt: row.created_at,
-      metadata: row.metadata
+      metadata: row.metadata,
+      // Restore original properties from metadata
+      textWithMarkers: row.text_with_markers || row.message_text,
+      isError: row.is_error || false,
+      // Include any other properties stored in metadata
+      ...((row.metadata && row.metadata.originalProperties) || {})
     }));
 
     res.json({
@@ -5081,7 +5086,7 @@ app.post('/migrate-conversation-to-atomic', async (req, res) => {
       WHERE conversation_id = $1
     `, [conversation.id]);
 
-    // Insert each message atomically
+    // Insert each message atomically with better property handling
     for (let i = 0; i < conversationData.length; i++) {
       const msg = conversationData[i];
       
@@ -5095,16 +5100,23 @@ app.post('/migrate-conversation-to-atomic', async (req, res) => {
         conversation.id,
         user_id,
         chatbot_id,
-        msg.text || '',
-        msg.isUser || false,
-        msg.agentName || null,
-        msg.profilePicture || null,
-        msg.image || null,
+        msg.text || msg.content || '', // Handle both text and content properties
+        Boolean(msg.isUser),
+        msg.agentName || msg.agent_name || null,
+        msg.profilePicture || msg.profile_picture || null,
+        msg.image || msg.image_data || null,
         i + 1, // sequence_number starts from 1
-        msg.messageType || 'text',
-        msg.isSystem || false,
-        msg.isForm || false,
-        JSON.stringify(msg.metadata || {})
+        msg.messageType || msg.message_type || (msg.image ? 'image' : 'text'),
+        Boolean(msg.isSystem || msg.is_system),
+        Boolean(msg.isForm || msg.is_form),
+        JSON.stringify({
+          ...msg.metadata,
+          originalProperties: {
+            textWithMarkers: msg.textWithMarkers,
+            isError: msg.isError,
+            ...(msg.metadata || {})
+          }
+        })
       ]);
     }
 
@@ -5123,6 +5135,117 @@ app.post('/migrate-conversation-to-atomic', async (req, res) => {
 
   } catch (error) {
     console.error('Error migrating conversation:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
+// POST migrate conversation to atomic message system with provided conversation data
+app.post('/migrate-conversation-to-atomic-with-messages', async (req, res) => {
+  const { user_id, chatbot_id, conversation_data } = req.body;
+
+  if (!user_id || !chatbot_id || !conversation_data) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: user_id, chatbot_id, conversation_data' 
+    });
+  }
+
+  if (!Array.isArray(conversation_data)) {
+    return res.status(400).json({ error: 'conversation_data must be an array' });
+  }
+
+  try {
+    console.log('🔄 Starting migration with messages for user:', user_id, 'chatbot:', chatbot_id);
+    console.log('📊 Messages to migrate:', conversation_data.length);
+    console.log('📋 Message types:', conversation_data.map(msg => ({ 
+      isUser: msg.isUser, 
+      isSystem: msg.isSystem, 
+      hasTextWithMarkers: !!msg.textWithMarkers,
+      isError: msg.isError,
+      text: msg.text?.substring(0, 30) + "..."
+    })));
+    
+    // Get or create conversation
+    let convResult = await pool.query(`
+      SELECT id FROM conversations 
+      WHERE user_id = $1 AND chatbot_id = $2
+    `, [user_id, chatbot_id]);
+
+    let conversationId;
+    
+    if (convResult.rows.length === 0) {
+      // Create new conversation
+      const newConvResult = await pool.query(`
+        INSERT INTO conversations (
+          user_id, chatbot_id, conversation_data, is_livechat, uses_message_system
+        ) VALUES ($1, $2, $3, true, true) RETURNING id
+      `, [user_id, chatbot_id, JSON.stringify(conversation_data)]);
+      
+      conversationId = newConvResult.rows[0].id;
+    } else {
+      conversationId = convResult.rows[0].id;
+    }
+
+    // Clear existing messages for this conversation
+    await pool.query(`
+      DELETE FROM conversation_messages 
+      WHERE conversation_id = $1
+    `, [conversationId]);
+
+    // Insert each message atomically with comprehensive property handling
+    for (let i = 0; i < conversation_data.length; i++) {
+      const msg = conversation_data[i];
+      
+      await pool.query(`
+        INSERT INTO conversation_messages (
+          conversation_id, user_id, chatbot_id, message_text, is_user,
+          agent_name, profile_picture, image_data, sequence_number,
+          message_type, is_system, is_form, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `, [
+        conversationId,
+        user_id,
+        chatbot_id,
+        msg.text || msg.content || '', // Handle both text and content properties
+        Boolean(msg.isUser),
+        msg.agentName || msg.agent_name || null,
+        msg.profilePicture || msg.profile_picture || null,
+        msg.image || msg.image_data || null,
+        i + 1, // sequence_number starts from 1
+        msg.messageType || msg.message_type || (msg.image ? 'image' : 'text'),
+        Boolean(msg.isSystem || msg.is_system),
+        Boolean(msg.isForm || msg.is_form),
+        JSON.stringify({
+          textWithMarkers: msg.textWithMarkers,
+          isError: msg.isError,
+          ...(msg.metadata || {})
+        })
+      ]);
+    }
+
+    // Update conversation record
+    await pool.query(`
+      UPDATE conversations 
+      SET uses_message_system = true,
+          is_livechat = true,
+          conversation_data = $2
+      WHERE id = $1
+    `, [conversationId, JSON.stringify(conversation_data)]);
+
+    console.log('✅ Migration completed successfully. Conversation ID:', conversationId);
+    console.log('📊 Total messages migrated:', conversation_data.length);
+
+    res.json({
+      success: true,
+      message: 'Conversation migrated to atomic message system with provided data',
+      migrated_messages: conversation_data.length,
+      conversation_id: conversationId
+    });
+
+  } catch (error) {
+    console.error('Error migrating conversation with messages:', error);
     res.status(500).json({ 
       error: 'Database error', 
       details: error.message 
@@ -5169,7 +5292,12 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         image: row.image_data,
         messageType: row.message_type,
         sequenceNumber: row.sequence_number,
-        createdAt: row.created_at
+        createdAt: row.created_at,
+        // Restore original properties from metadata
+        textWithMarkers: row.text_with_markers || row.message_text,
+        isError: row.is_error || false,
+        // Include any other properties stored in metadata
+        ...((row.metadata && row.metadata.originalProperties) || {})
       }));
 
       res.json({ conversation_data: messages });
