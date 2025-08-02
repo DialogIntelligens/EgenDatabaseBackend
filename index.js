@@ -5228,7 +5228,7 @@ app.get('/agent-typing-status', async (req, res) => {
       WHERE user_id = $1 
         AND chatbot_id = $2 
         AND is_typing = true 
-        AND last_updated > NOW() - INTERVAL '10 seconds'
+        AND last_updated > NOW() - INTERVAL '15 seconds'
     `, [user_id, chatbot_id]);
 
     const isAgentTyping = result.rows.length > 0;
