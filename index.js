@@ -1360,100 +1360,97 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       if (!Array.isArray(currentMessages)) currentMessages = [];
       if (!Array.isArray(newMessages)) newMessages = [];
       
-      // Create a map for fast lookups
+      // Assign stable timestamps to preserve original order
+      const baseTime = Date.now() - Math.max(currentMessages.length, newMessages.length) * 2000;
+      
+      // Normalize current messages with stable timestamps
+      const normalizedCurrent = currentMessages.map((msg, index) => ({
+        ...msg,
+        messageId: msg.messageId || `current_${index}_${msg.text?.substring(0, 10)}_${msg.isUser}`,
+        timestamp: msg.timestamp || (baseTime + index * 1000),
+        originalOrder: index,
+        isCurrent: true
+      }));
+      
+      // Normalize new messages with stable timestamps 
+      const normalizedNew = newMessages.map((msg, index) => ({
+        ...msg,
+        messageId: msg.messageId || `new_${index}_${msg.text?.substring(0, 10)}_${msg.isUser}`,
+        timestamp: msg.timestamp || (baseTime + index * 1000 + 500), // Slight offset
+        originalOrder: index,
+        isNew: true
+      }));
+      
+      // Create maps for deduplication
       const messageMap = new Map();
+      const contentMap = new Map();
       
-      // Add all current messages with generated IDs if missing
-      currentMessages.forEach((msg, index) => {
-        const msgId = msg.messageId || `current_${index}_${msg.text}_${msg.isUser}`;
-        messageMap.set(msgId, { 
-          ...msg, 
-          messageId: msgId,
-          timestamp: msg.timestamp || Date.now() - (currentMessages.length - index) * 1000
-        });
-      });
+      // Process all messages, preferring current over new for duplicates
+      const allMessages = [...normalizedCurrent, ...normalizedNew];
       
-      // Add new messages, avoiding duplicates
-      newMessages.forEach((msg, index) => {
-        const msgId = msg.messageId || `new_${index}_${msg.text}_${msg.isUser}`;
+      allMessages.forEach(msg => {
+        const contentKey = `${msg.text}_${msg.isUser}_${msg.isSystem || false}`;
         
-        if (!messageMap.has(msgId)) {
-          // Check for content-based duplicates
-          const isDuplicate = Array.from(messageMap.values()).some(existingMsg => 
-            existingMsg.text === msg.text && 
-            existingMsg.isUser === msg.isUser &&
-            Math.abs((existingMsg.timestamp || 0) - (msg.timestamp || Date.now())) < 15000 // Within 15 seconds
-          );
+        if (contentMap.has(contentKey)) {
+          const existing = contentMap.get(contentKey);
           
-          if (!isDuplicate) {
-            messageMap.set(msgId, {
-              ...msg,
-              messageId: msgId,
-              timestamp: msg.timestamp || Date.now() - (newMessages.length - index) * 1000
-            });
-          }
-        } else {
-          // Message exists, merge properties
-          const existing = messageMap.get(msgId);
-          messageMap.set(msgId, {
-            ...existing,
-            ...msg,
-            messageId: msgId
-          });
-        }
-      });
-      
-      // Preserve original order instead of sorting by timestamp
-      // Start with current messages as the base to preserve conversation flow
-      const result = [...currentMessages.map(msg => {
-        const msgId = msg.messageId || `current_${currentMessages.indexOf(msg)}_${msg.text}_${msg.isUser}`;
-        return messageMap.get(msgId) || { ...msg, messageId: msgId, timestamp: msg.timestamp || Date.now() };
-      })];
-      
-      // Find new messages that aren't in current
-      const newMessagesToAdd = newMessages.filter(newMsg => {
-        return !currentMessages.some(currentMsg => {
-          const currentMsgId = currentMsg.messageId || `current_${currentMessages.indexOf(currentMsg)}_${currentMsg.text}_${currentMsg.isUser}`;
-          return currentMsgId === newMsg.messageId || (
-            currentMsg.text === newMsg.text && 
-            currentMsg.isUser === newMsg.isUser &&
-            Math.abs((currentMsg.timestamp || 0) - (newMsg.timestamp || Date.now())) < 15000
-          );
-        });
-      });
-      
-      // Insert new messages at appropriate positions
-      newMessagesToAdd.forEach(newMsg => {
-        let insertIndex = result.length; // Default to end
-        
-        // Find the best position based on timestamp context
-        for (let i = 0; i < result.length; i++) {
-          const currentMsg = result[i];
-          const nextMsg = result[i + 1];
-          
-          if (newMsg.timestamp && currentMsg.timestamp && newMsg.timestamp > currentMsg.timestamp) {
-            if (!nextMsg || !nextMsg.timestamp || newMsg.timestamp < nextMsg.timestamp) {
-              insertIndex = i + 1;
-              break;
+          // If messages are very close in time (< 30 seconds), treat as duplicate
+          if (Math.abs((existing.timestamp || 0) - (msg.timestamp || 0)) < 30000) {
+            // Prefer current message over new
+            if (msg.isCurrent && !existing.isCurrent) {
+              messageMap.set(existing.messageId, undefined);
+              messageMap.set(msg.messageId, msg);
+              contentMap.set(contentKey, msg);
             }
+            return;
           }
         }
         
-        result.splice(insertIndex, 0, newMsg);
+        // Not a duplicate, add the message
+        messageMap.set(msg.messageId, msg);
+        contentMap.set(contentKey, msg);
+      });
+      
+      // Convert back to array, removing undefined entries
+      const mergedArray = Array.from(messageMap.values()).filter(Boolean);
+      
+      // Sort by timestamp, then by original order for stability
+      mergedArray.sort((a, b) => {
+        const aTime = a.timestamp || 0;
+        const bTime = b.timestamp || 0;
+        
+        if (Math.abs(aTime - bTime) < 1000) {
+          // If timestamps are close, use original order
+          return (a.originalOrder || 0) - (b.originalOrder || 0);
+        }
+        
+        return aTime - bTime;
       });
       
       // Ensure welcome message stays first
-      const welcomeIndex = result.findIndex(msg => 
-        !msg.isUser && (result.indexOf(msg) > 0) && 
-        (msg.text.includes('Velkommen') || msg.text.includes('Hej') || msg.text.includes('Welcome') || msg.isWelcome || msg.messageId?.includes('welcome'))
+      const welcomeIndex = mergedArray.findIndex(msg => 
+        (msg.messageId?.includes('welcome')) ||
+        (!msg.isUser && !msg.isSystem && (
+          msg.text?.includes('Velkommen') || 
+          msg.text?.includes('Hej') || 
+          msg.text?.includes('Welcome') ||
+          msg.text?.includes('Hello')
+        ))
       );
       
       if (welcomeIndex > 0) {
-        const welcomeMsg = result.splice(welcomeIndex, 1)[0];
-        result.unshift(welcomeMsg);
+        const welcomeMsg = mergedArray.splice(welcomeIndex, 1)[0];
+        mergedArray.unshift(welcomeMsg);
       }
       
-      return result;
+      // Clean up temporary properties
+      return mergedArray.map(msg => {
+        const cleaned = { ...msg };
+        delete cleaned.isCurrent;
+        delete cleaned.isNew;
+        delete cleaned.originalOrder;
+        return cleaned;
+      });
     }
 
     // Helper upsert function
@@ -1474,7 +1471,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
     ) {
       const client = await pool.connect();
       try {
-        await client.query('BEGIN');
+  await client.query('BEGIN');
 
         // Check if this is a livechat conversation with a new user message
         let shouldMarkAsUnread = false;
@@ -1502,9 +1499,9 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
             const currentResult = await client.query(
               `SELECT conversation_data FROM conversations 
                WHERE user_id = $1 AND chatbot_id = $2`,
-              [user_id, chatbot_id]
-            );
-            
+      [user_id, chatbot_id]
+    );
+
             if (currentResult.rows.length > 0) {
               const currentData = currentResult.rows[0].conversation_data;
               let parsedCurrent = typeof currentData === 'string' ? JSON.parse(currentData) : currentData;
@@ -1536,7 +1533,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                viewed = CASE WHEN $14 THEN FALSE ELSE viewed END,
-               created_at = NOW()
+          created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
           [user_id, chatbot_id, finalConversationData, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
@@ -1550,15 +1547,15 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
              RETURNING *`,
             [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
           );
-          await client.query('COMMIT');
+    await client.query('COMMIT');
           return insertResult.rows[0];
         } else {
           await client.query('COMMIT');
           return updateResult.rows[0];
         }
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
       } finally {
         client.release();
       }
