@@ -13,7 +13,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
-import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, deleteSpecificVectors } from './pineconeChecker.js';
+import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 
 const { Pool } = pg;
 
@@ -1355,104 +1355,6 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
   }
 });
 
-    // Helper function to merge conversation messages to avoid race condition data loss
-    function mergeConversationMessages(currentMessages, newMessages) {
-      if (!Array.isArray(currentMessages)) currentMessages = [];
-      if (!Array.isArray(newMessages)) newMessages = [];
-      
-      // Assign stable timestamps to preserve original order
-      const baseTime = Date.now() - Math.max(currentMessages.length, newMessages.length) * 2000;
-      
-      // Normalize current messages with stable timestamps
-      const normalizedCurrent = currentMessages.map((msg, index) => ({
-        ...msg,
-        messageId: msg.messageId || `current_${index}_${msg.text?.substring(0, 10)}_${msg.isUser}`,
-        timestamp: msg.timestamp || (baseTime + index * 1000),
-        originalOrder: index,
-        isCurrent: true
-      }));
-      
-      // Normalize new messages with stable timestamps 
-      const normalizedNew = newMessages.map((msg, index) => ({
-        ...msg,
-        messageId: msg.messageId || `new_${index}_${msg.text?.substring(0, 10)}_${msg.isUser}`,
-        timestamp: msg.timestamp || (baseTime + index * 1000 + 500), // Slight offset
-        originalOrder: index,
-        isNew: true
-      }));
-      
-      // Create maps for deduplication
-      const messageMap = new Map();
-      const contentMap = new Map();
-      
-      // Process all messages, preferring current over new for duplicates
-      const allMessages = [...normalizedCurrent, ...normalizedNew];
-      
-      allMessages.forEach(msg => {
-        const contentKey = `${msg.text}_${msg.isUser}_${msg.isSystem || false}`;
-        
-        if (contentMap.has(contentKey)) {
-          const existing = contentMap.get(contentKey);
-          
-          // If messages are very close in time (< 30 seconds), treat as duplicate
-          if (Math.abs((existing.timestamp || 0) - (msg.timestamp || 0)) < 30000) {
-            // Prefer current message over new
-            if (msg.isCurrent && !existing.isCurrent) {
-              messageMap.set(existing.messageId, undefined);
-              messageMap.set(msg.messageId, msg);
-              contentMap.set(contentKey, msg);
-            }
-            return;
-          }
-        }
-        
-        // Not a duplicate, add the message
-        messageMap.set(msg.messageId, msg);
-        contentMap.set(contentKey, msg);
-      });
-      
-      // Convert back to array, removing undefined entries
-      const mergedArray = Array.from(messageMap.values()).filter(Boolean);
-      
-      // Sort by timestamp, then by original order for stability
-      mergedArray.sort((a, b) => {
-        const aTime = a.timestamp || 0;
-        const bTime = b.timestamp || 0;
-        
-        if (Math.abs(aTime - bTime) < 1000) {
-          // If timestamps are close, use original order
-          return (a.originalOrder || 0) - (b.originalOrder || 0);
-        }
-        
-        return aTime - bTime;
-      });
-      
-      // Ensure welcome message stays first
-      const welcomeIndex = mergedArray.findIndex(msg => 
-        (msg.messageId?.includes('welcome')) ||
-        (!msg.isUser && !msg.isSystem && (
-          msg.text?.includes('Velkommen') || 
-          msg.text?.includes('Hej') || 
-          msg.text?.includes('Welcome') ||
-          msg.text?.includes('Hello')
-        ))
-      );
-      
-      if (welcomeIndex > 0) {
-        const welcomeMsg = mergedArray.splice(welcomeIndex, 1)[0];
-        mergedArray.unshift(welcomeMsg);
-      }
-      
-      // Clean up temporary properties
-      return mergedArray.map(msg => {
-        const cleaned = { ...msg };
-        delete cleaned.isCurrent;
-        delete cleaned.isNew;
-        delete cleaned.originalOrder;
-        return cleaned;
-      });
-    }
-
     // Helper upsert function
     async function upsertConversation(
       user_id,
@@ -1471,7 +1373,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
     ) {
       const client = await pool.connect();
       try {
-  await client.query('BEGIN');
+        await client.query('BEGIN');
 
         // Check if this is a livechat conversation with a new user message
         let shouldMarkAsUnread = false;
@@ -1490,35 +1392,6 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
           }
         }
 
-        // For livechat conversations, try to merge conversation data intelligently
-        let finalConversationData = conversation_data;
-        
-        if (is_livechat && conversation_data) {
-          try {
-            // Get current conversation data
-            const currentResult = await client.query(
-              `SELECT conversation_data FROM conversations 
-               WHERE user_id = $1 AND chatbot_id = $2`,
-      [user_id, chatbot_id]
-    );
-
-            if (currentResult.rows.length > 0) {
-              const currentData = currentResult.rows[0].conversation_data;
-              let parsedCurrent = typeof currentData === 'string' ? JSON.parse(currentData) : currentData;
-              let parsedNew = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
-              
-              if (Array.isArray(parsedCurrent) && Array.isArray(parsedNew)) {
-                // Merge conversations to avoid losing messages
-                const mergedMessages = mergeConversationMessages(parsedCurrent, parsedNew);
-                finalConversationData = JSON.stringify(mergedMessages);
-              }
-            }
-          } catch (mergeError) {
-            console.error('Error merging conversation data:', mergeError);
-            // Fall back to using the new data as-is
-          }
-        }
-
         const updateResult = await client.query(
           `UPDATE conversations
            SET conversation_data = $3,
@@ -1533,10 +1406,10 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                viewed = CASE WHEN $14 THEN FALSE ELSE viewed END,
-          created_at = NOW()
+               created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, finalConversationData, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
         );
 
         if (updateResult.rows.length === 0) {
@@ -1547,15 +1420,15 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
              RETURNING *`,
             [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
           );
-    await client.query('COMMIT');
+          await client.query('COMMIT');
           return insertResult.rows[0];
         } else {
           await client.query('COMMIT');
           return updateResult.rows[0];
         }
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
       } finally {
         client.release();
       }
@@ -3671,7 +3544,7 @@ app.post('/upload-logo', authenticateToken, async (req, res) => {
 
 // Retrieve livechat conversation for widget polling
 app.get('/livechat-conversation', async (req, res) => {
-  const { user_id, chatbot_id, last_message_timestamp } = req.query;
+  const { user_id, chatbot_id, last_message_count } = req.query;
 
   if (!user_id || !chatbot_id) {
     return res.status(400).json({ error: 'user_id and chatbot_id are required' });
@@ -3679,7 +3552,7 @@ app.get('/livechat-conversation', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT conversation_data, created_at FROM conversations
+      `SELECT conversation_data, id FROM conversations
        WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
@@ -3690,7 +3563,7 @@ app.get('/livechat-conversation', async (req, res) => {
     }
 
     let data = result.rows[0].conversation_data;
-    const lastUpdated = result.rows[0].created_at;
+    const conversationId = result.rows[0].id;
     
     if (typeof data === 'string') {
       try {
@@ -3701,46 +3574,129 @@ app.get('/livechat-conversation', async (req, res) => {
       }
     }
 
-    // Add timestamps to messages if they don't have them
-    if (Array.isArray(data)) {
-      data = data.map((msg, index) => {
-        if (!msg.timestamp) {
-          // Estimate timestamp based on position and last update time
-          const estimatedTime = new Date(lastUpdated).getTime() - (data.length - index - 1) * 1000;
-          return {
-            ...msg,
-            timestamp: estimatedTime,
-            messageId: msg.messageId || `msg_${index}_${estimatedTime}`
-          };
-        }
-        return {
-          ...msg,
-          messageId: msg.messageId || `msg_${index}_${msg.timestamp}`
-        };
-      });
-    }
-
-    // If client provides last_message_timestamp, only return newer messages
-    if (last_message_timestamp && Array.isArray(data)) {
-      const clientLastTimestamp = parseInt(last_message_timestamp);
-      const newMessages = data.filter(msg => 
-        (msg.timestamp || 0) > clientLastTimestamp
-      );
-      
-      if (newMessages.length === 0) {
-        // No new messages
-        return res.json({ conversation_data: data, has_updates: false });
+    // If client provides last_message_count, only return if there are changes
+    if (last_message_count !== undefined) {
+      const clientMessageCount = parseInt(last_message_count);
+      if (Array.isArray(data) && data.length === clientMessageCount) {
+        return res.json({ conversation_data: data, no_changes: true });
       }
     }
 
     res.json({ 
       conversation_data: data, 
-      has_updates: true,
-      last_updated: lastUpdated 
+      conversation_id: conversationId,
+      message_count: Array.isArray(data) ? data.length : 0 
     });
   } catch (err) {
     console.error('Error fetching livechat conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Atomic message append for livechat conversations
+app.post('/append-livechat-message', async (req, res) => {
+  const { user_id, chatbot_id, message, client_message_id } = req.body;
+
+  if (!user_id || !chatbot_id || !message) {
+    return res.status(400).json({ error: 'user_id, chatbot_id, and message are required' });
+  }
+
+  if (!message.text && !message.image) {
+    return res.status(400).json({ error: 'Message must have text or image content' });
+  }
+
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Get current conversation with row locking to prevent race conditions
+    const conversationResult = await client.query(
+      `SELECT id, conversation_data, created_at FROM conversations
+       WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
+       ORDER BY created_at DESC 
+       LIMIT 1 FOR UPDATE`,
+      [user_id, chatbot_id]
+    );
+
+    if (conversationResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Livechat conversation not found' });
+    }
+
+    const conversation = conversationResult.rows[0];
+    let currentData = conversation.conversation_data;
+    
+    // Parse current conversation data
+    if (typeof currentData === 'string') {
+      try {
+        currentData = JSON.parse(currentData);
+      } catch (e) {
+        console.error('Error parsing conversation_data:', e);
+        currentData = [];
+      }
+    }
+
+    if (!Array.isArray(currentData)) {
+      currentData = [];
+    }
+
+    // Check for duplicate message using client_message_id
+    if (client_message_id) {
+      const isDuplicate = currentData.some(msg => 
+        msg.client_message_id === client_message_id ||
+        (msg.isUser === message.isUser && 
+         msg.text === message.text && 
+         Math.abs(new Date(msg.timestamp || 0) - new Date()) < 5000) // Within 5 seconds
+      );
+
+      if (isDuplicate) {
+        await client.query('COMMIT');
+        return res.json({ 
+          success: true, 
+          message: 'Message already exists',
+          conversation_data: currentData,
+          message_count: currentData.length 
+        });
+      }
+    }
+
+    // Add timestamp and client_message_id to the message
+    const messageWithMetadata = {
+      ...message,
+      timestamp: new Date().toISOString(),
+      client_message_id: client_message_id || `${Date.now()}-${Math.random()}`
+    };
+
+    // Append the new message
+    currentData.push(messageWithMetadata);
+
+    // Update the conversation with the new message
+    const updateResult = await client.query(
+      `UPDATE conversations 
+       SET conversation_data = $1, 
+           created_at = NOW(),
+           viewed = CASE WHEN $4 THEN FALSE ELSE viewed END
+       WHERE id = $2 
+       RETURNING conversation_data`,
+      [JSON.stringify(currentData), conversation.id, conversation.id, message.isUser]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true,
+      conversation_data: currentData,
+      message_count: currentData.length,
+      conversation_id: conversation.id
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error appending livechat message:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  } finally {
+    client.release();
   }
 });
 
