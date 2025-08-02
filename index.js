@@ -4927,316 +4927,61 @@ app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
   }
 });
 
-// ============================================
-// INDIVIDUAL MESSAGE SYSTEM (Race Condition Fix)
-// ============================================
+// New endpoint for appending livechat messages
+app.post('/add-livechat-message', async (req, res) => {
+  const { user_id, chatbot_id, new_message, is_user } = req.body;
 
-// Helper function to generate unique sequence number
-function generateSequenceNumber() {
-  const now = new Date();
-  return Math.floor(now.getTime() * 1000 + now.getMilliseconds());
-}
-
-// Helper function to convert conversation_data to individual messages
-async function migrateConversationToMessages(userId, chatbotId, conversationData) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    
-    // Check if messages already exist for this conversation
-    const existingCheck = await client.query(
-      'SELECT COUNT(*) as count FROM conversation_messages WHERE user_id = $1 AND chatbot_id = $2',
-      [userId, chatbotId]
-    );
-    
-    if (existingCheck.rows[0].count > 0) {
-      // Messages already migrated
-      await client.query('ROLLBACK');
-      return;
-    }
-    
-    // Convert conversation_data to individual messages
-    const messages = Array.isArray(conversationData) ? conversationData : [];
-    
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      const senderType = msg.isUser ? 'user' : (msg.isSystem ? 'system' : 'ai');
-      const sequenceNumber = generateSequenceNumber() + i; // Ensure ordering
-      
-      const metadata = {};
-      if (msg.image) metadata.image = msg.image;
-      if (msg.isForm) metadata.isForm = true;
-      if (msg.isError) metadata.isError = true;
-      if (msg.textWithMarkers) metadata.textWithMarkers = msg.textWithMarkers;
-      if (msg.agentName) metadata.agentName = msg.agentName;
-      if (msg.profilePicture) metadata.profilePicture = msg.profilePicture;
-      
-      await client.query(
-        `INSERT INTO conversation_messages 
-         (user_id, chatbot_id, message_text, sender_type, sender_name, sender_profile_picture, message_metadata, sequence_number) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          userId, 
-          chatbotId, 
-          msg.text || '', 
-          senderType,
-          msg.agentName || null,
-          msg.profilePicture || null,
-          JSON.stringify(metadata),
-          sequenceNumber
-        ]
-      );
-    }
-    
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error migrating conversation to messages:', error);
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-// Helper function to build conversation_data from individual messages
-async function buildConversationFromMessages(userId, chatbotId) {
-  const result = await pool.query(
-    `SELECT message_text, sender_type, sender_name, sender_profile_picture, message_metadata, created_at 
-     FROM conversation_messages 
-     WHERE user_id = $1 AND chatbot_id = $2 AND is_deleted = false 
-     ORDER BY sequence_number ASC`,
-    [userId, chatbotId]
-  );
-  
-  return result.rows.map(row => {
-    const metadata = typeof row.message_metadata === 'string' 
-      ? JSON.parse(row.message_metadata) 
-      : row.message_metadata;
-    
-    const message = {
-      text: row.message_text,
-      isUser: row.sender_type === 'user',
-      isSystem: row.sender_type === 'system',
-      ...metadata
-    };
-    
-    // Add agent info for livechat messages
-    if (row.sender_type === 'agent') {
-      message.agentName = row.sender_name;
-      message.profilePicture = row.sender_profile_picture;
-    }
-    
-    return message;
-  });
-}
-
-// POST endpoint to send individual messages atomically
-app.post('/conversation-message', async (req, res) => {
-  const { 
-    user_id, 
-    chatbot_id, 
-    message_text, 
-    sender_type, 
-    sender_id, 
-    sender_name, 
-    sender_profile_picture,
-    message_metadata = {} 
-  } = req.body;
-
-  // Validate required fields
-  if (!user_id || !chatbot_id || !message_text || !sender_type) {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id, message_text, sender_type' 
-    });
-  }
-
-  // Validate sender_type
-  if (!['user', 'agent', 'system', 'ai'].includes(sender_type)) {
-    return res.status(400).json({ 
-      error: 'sender_type must be one of: user, agent, system, ai' 
-    });
+  if (!user_id || !chatbot_id || !new_message) {
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    
-    // Generate unique sequence number
-    const sequenceNumber = generateSequenceNumber();
-    
-    // Insert the message atomically
-    const result = await client.query(
-      `INSERT INTO conversation_messages 
-       (user_id, chatbot_id, message_text, sender_type, sender_id, sender_name, sender_profile_picture, message_metadata, sequence_number) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-       RETURNING *`,
-      [
-        user_id, 
-        chatbot_id, 
-        message_text, 
-        sender_type, 
-        sender_id, 
-        sender_name, 
-        sender_profile_picture,
-        JSON.stringify(message_metadata),
-        sequenceNumber
-      ]
-    );
-    
-    // Update the main conversation record for livechat conversations
-    if (sender_type === 'user' || sender_type === 'agent') {
-      const conversationData = await buildConversationFromMessages(user_id, chatbot_id);
-      
-      // Mark as unread if it's a user message
-      const shouldMarkUnread = sender_type === 'user';
-      
-      await client.query(
-        `UPDATE conversations 
-         SET conversation_data = $3, 
-             is_livechat = true,
-             viewed = CASE WHEN $4 THEN FALSE ELSE viewed END,
-             created_at = NOW()
-         WHERE user_id = $1 AND chatbot_id = $2`,
-        [user_id, chatbot_id, JSON.stringify(conversationData), shouldMarkUnread]
-      );
-      
-      // If no conversation exists, create one
-      const conversationExists = await client.query(
-        'SELECT id FROM conversations WHERE user_id = $1 AND chatbot_id = $2',
-        [user_id, chatbot_id]
-      );
-      
-      if (conversationExists.rows.length === 0) {
-        await client.query(
-          `INSERT INTO conversations 
-           (user_id, chatbot_id, conversation_data, is_livechat, viewed) 
-           VALUES ($1, $2, $3, true, $4)`,
-          [user_id, chatbot_id, JSON.stringify(conversationData), !shouldMarkUnread]
-        );
-      }
-    }
-    
-    await client.query('COMMIT');
-    
-    res.status(201).json({
-      message: 'Message sent successfully',
-      data: result.rows[0]
-    });
-    
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error sending message:', error);
-    res.status(500).json({ 
-      error: 'Failed to send message', 
-      details: error.message 
-    });
-  } finally {
-    client.release();
-  }
-});
 
-// GET endpoint to retrieve messages for a conversation
-app.get('/conversation-messages', async (req, res) => {
-  const { user_id, chatbot_id, since_sequence, limit = 50 } = req.query;
-  
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: user_id, chatbot_id' 
-    });
-  }
-  
-  try {
-    let query = `
-      SELECT id, message_text, sender_type, sender_id, sender_name, sender_profile_picture, 
-             message_metadata, created_at, sequence_number
-      FROM conversation_messages 
-      WHERE user_id = $1 AND chatbot_id = $2 AND is_deleted = false
-    `;
-    const params = [user_id, chatbot_id];
-    
-    // Add since_sequence filter if provided
-    if (since_sequence) {
-      query += ` AND sequence_number > $${params.length + 1}`;
-      params.push(since_sequence);
-    }
-    
-    query += ` ORDER BY sequence_number ASC LIMIT $${params.length + 1}`;
-    params.push(parseInt(limit));
-    
-    const result = await pool.query(query, params);
-    
-    // Convert to frontend format
-    const messages = result.rows.map(row => {
-      const metadata = typeof row.message_metadata === 'string' 
-        ? JSON.parse(row.message_metadata) 
-        : row.message_metadata;
-      
-      return {
-        id: row.id,
-        text: row.message_text,
-        isUser: row.sender_type === 'user',
-        isSystem: row.sender_type === 'system',
-        agentName: row.sender_name,
-        profilePicture: row.sender_profile_picture,
-        created_at: row.created_at,
-        sequence_number: row.sequence_number,
-        ...metadata
-      };
-    });
-    
-    res.json({
-      messages,
-      has_more: result.rows.length === parseInt(limit)
-    });
-    
-  } catch (error) {
-    console.error('Error retrieving messages:', error);
-    res.status(500).json({ 
-      error: 'Failed to retrieve messages', 
-      details: error.message 
-    });
-  }
-});
-
-// Enhanced livechat-conversation endpoint with message migration
-app.get('/livechat-conversation', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
-  
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
-  }
-
-  try {
-    // First try to get from main conversations table
-    const conversationResult = await pool.query(
-      'SELECT conversation_data FROM conversations WHERE user_id = $1 AND chatbot_id = $2',
+    // Find or create the conversation
+    let convRes = await client.query(
+      'SELECT id, conversation_data FROM conversations WHERE user_id = $1 AND chatbot_id = $2 FOR UPDATE',
       [user_id, chatbot_id]
     );
-    
-    if (conversationResult.rows.length > 0) {
-      const conversationData = conversationResult.rows[0].conversation_data;
-      
-      // Migrate to individual messages if not already done
-      try {
-        await migrateConversationToMessages(user_id, chatbot_id, conversationData);
-      } catch (migrationError) {
-        console.warn('Migration warning (may already be migrated):', migrationError.message);
-      }
-      
-      // Get the latest messages from the messages table
-      const updatedData = await buildConversationFromMessages(user_id, chatbot_id);
-      
-      return res.json({
-        conversation_data: updatedData.length > 0 ? updatedData : conversationData
-      });
+
+    let convId;
+    let convData = [];
+    if (convRes.rows.length === 0) {
+      // Create new conversation if doesn't exist
+      const insertRes = await client.query(
+        'INSERT INTO conversations (user_id, chatbot_id, conversation_data, is_livechat) VALUES ($1, $2, $3, true) RETURNING id',
+        [user_id, chatbot_id, []]
+      );
+      convId = insertRes.rows[0].id;
     } else {
-      // No conversation exists, return empty
-      return res.json({ conversation_data: [] });
+      convId = convRes.rows[0].id;
+      convData = convRes.rows[0].conversation_data || [];
     }
-    
-  } catch (error) {
-    console.error('Error in livechat-conversation:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
+
+    // Append the new message
+    const messageWithMeta = {
+      ...new_message,
+      isUser: is_user,
+      timestamp: new Date().toISOString()
+    };
+    convData.push(messageWithMeta);
+
+    // Update the conversation
+    await client.query(
+      'UPDATE conversations SET conversation_data = $1, created_at = NOW() WHERE id = $2',
+      [convData, convId]
+    );
+
+    await client.query('COMMIT');
+    res.status(200).json({ success: true, conversation_id: convId });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error appending livechat message:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  } finally {
+    client.release();
   }
 });
 
