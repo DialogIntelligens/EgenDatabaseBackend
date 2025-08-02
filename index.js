@@ -5322,4 +5322,141 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
   }
 });
 
+// GET live chat statistics
+app.get('/livechat-statistics', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { chatbot_id, start_date, end_date } = req.query;
+
+  try {
+    // First check if user has livechat enabled
+    const userCheck = await pool.query(
+      'SELECT livechat FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].livechat) {
+      return res.json({
+        hasLivechatAccess: false,
+        message: 'User does not have livechat access'
+      });
+    }
+
+    // Determine which chatbots to query for
+    let chatbotIds = [];
+    if (chatbot_id && chatbot_id !== 'ALL') {
+      chatbotIds = [chatbot_id];
+    } else {
+      // Get all chatbots for this user
+      const userChatbots = await pool.query(
+        'SELECT DISTINCT chatbot_id FROM conversations WHERE chatbot_id IN (SELECT unnest(chatbot_ids) FROM users WHERE id = $1)',
+        [userId]
+      );
+      chatbotIds = userChatbots.rows.map(row => row.chatbot_id);
+    }
+
+    if (chatbotIds.length === 0) {
+      return res.json({
+        hasLivechatAccess: true,
+        totalLivechatConversations: 0,
+        livechatConversationsToday: 0,
+        livechatPercentage: '0.0%',
+        averageResponseTime: 'N/A',
+        dailyLivechatData: []
+      });
+    }
+
+    // Build date filter
+    let dateFilter = '';
+    let dateParams = [];
+    let paramIndex = 2; // Start from $2 since $1 is used for chatbot_ids
+
+    if (start_date) {
+      dateFilter += ` AND created_at >= $${paramIndex}`;
+      dateParams.push(start_date);
+      paramIndex++;
+    }
+    if (end_date) {
+      dateFilter += ` AND created_at <= $${paramIndex}`;
+      dateParams.push(end_date);
+      paramIndex++;
+    }
+
+    // Get overall statistics
+    const overallStatsQuery = `
+      SELECT 
+        COUNT(*) FILTER (WHERE is_livechat = true) as total_livechat_conversations,
+        COUNT(*) as total_conversations,
+        COUNT(*) FILTER (WHERE is_livechat = true AND created_at >= CURRENT_DATE) as livechat_conversations_today,
+        AVG(avg_response_time_seconds) FILTER (WHERE is_livechat = true AND avg_response_time_seconds IS NOT NULL) as avg_response_time_seconds
+      FROM conversations 
+      WHERE chatbot_id = ANY($1) ${dateFilter}
+    `;
+
+    const overallStatsResult = await pool.query(overallStatsQuery, [chatbotIds, ...dateParams]);
+    const stats = overallStatsResult.rows[0];
+
+    const totalLivechat = parseInt(stats.total_livechat_conversations) || 0;
+    const totalConversations = parseInt(stats.total_conversations) || 0;
+    const livechatToday = parseInt(stats.livechat_conversations_today) || 0;
+    const avgResponseTime = stats.avg_response_time_seconds ? Math.round(stats.avg_response_time_seconds) : null;
+
+    // Calculate livechat percentage
+    const livechatPercentage = totalConversations > 0 ? 
+      ((totalLivechat / totalConversations) * 100).toFixed(1) + '%' : '0.0%';
+
+    // Format average response time
+    let formattedResponseTime = 'N/A';
+    if (avgResponseTime !== null) {
+      if (avgResponseTime < 60) {
+        formattedResponseTime = `${avgResponseTime}s`;
+      } else if (avgResponseTime < 3600) {
+        const minutes = Math.floor(avgResponseTime / 60);
+        const seconds = avgResponseTime % 60;
+        formattedResponseTime = seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+      } else {
+        const hours = Math.floor(avgResponseTime / 3600);
+        const minutes = Math.floor((avgResponseTime % 3600) / 60);
+        formattedResponseTime = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+      }
+    }
+
+    // Get daily livechat conversation counts for charting
+    const dailyDataQuery = `
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) FILTER (WHERE is_livechat = true) as livechat_count,
+        COUNT(*) as total_count
+      FROM conversations 
+      WHERE chatbot_id = ANY($1) ${dateFilter}
+      GROUP BY DATE(created_at)
+      ORDER BY DATE(created_at)
+    `;
+
+    const dailyDataResult = await pool.query(dailyDataQuery, [chatbotIds, ...dateParams]);
+    const dailyLivechatData = dailyDataResult.rows.map(row => ({
+      date: row.date,
+      livechatCount: parseInt(row.livechat_count),
+      totalCount: parseInt(row.total_count),
+      percentage: row.total_count > 0 ? ((row.livechat_count / row.total_count) * 100).toFixed(1) : '0.0'
+    }));
+
+    res.json({
+      hasLivechatAccess: true,
+      totalLivechatConversations: totalLivechat,
+      livechatConversationsToday: livechatToday,
+      livechatPercentage: livechatPercentage,
+      averageResponseTime: formattedResponseTime,
+      averageResponseTimeSeconds: avgResponseTime,
+      dailyLivechatData: dailyLivechatData
+    });
+
+  } catch (error) {
+    console.error('Error fetching livechat statistics:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
 
