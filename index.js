@@ -5178,6 +5178,76 @@ app.post('/append-livechat-message', async (req, res) => {
   }
 });
 
+// Agent typing status endpoints
+app.post('/agent-typing-status', async (req, res) => {
+  const { user_id, chatbot_id, agent_name, profile_picture, is_typing } = req.body;
+
+  if (!user_id || !chatbot_id || !agent_name) {
+    return res.status(400).json({ 
+      error: 'Missing required parameters: user_id, chatbot_id, agent_name' 
+    });
+  }
+
+  try {
+    // Use upsert to handle concurrent updates
+    const result = await pool.query(`
+      INSERT INTO agent_typing_status (user_id, chatbot_id, agent_name, profile_picture, is_typing, last_updated)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (user_id, chatbot_id)
+      DO UPDATE SET 
+        agent_name = EXCLUDED.agent_name,
+        profile_picture = EXCLUDED.profile_picture,
+        is_typing = EXCLUDED.is_typing,
+        last_updated = NOW()
+      RETURNING *
+    `, [user_id, chatbot_id, agent_name, profile_picture || '', is_typing]);
+
+    res.json({ success: true, typing_status: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating agent typing status:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
+app.get('/agent-typing-status', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ 
+      error: 'Missing required parameters: user_id, chatbot_id' 
+    });
+  }
+
+  try {
+    // Get current typing status, excluding expired ones (older than 10 seconds)
+    const result = await pool.query(`
+      SELECT * FROM agent_typing_status 
+      WHERE user_id = $1 
+        AND chatbot_id = $2 
+        AND is_typing = true 
+        AND last_updated > NOW() - INTERVAL '10 seconds'
+    `, [user_id, chatbot_id]);
+
+    const isAgentTyping = result.rows.length > 0;
+    const agentInfo = isAgentTyping ? result.rows[0] : null;
+
+    res.json({ 
+      is_agent_typing: isAgentTyping,
+      agent_name: agentInfo?.agent_name || null,
+      profile_picture: agentInfo?.profile_picture || null
+    });
+  } catch (error) {
+    console.error('Error fetching agent typing status:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
 // GET conversation messages in atomic format
 app.get('/conversation-messages', async (req, res) => {
   const { user_id, chatbot_id } = req.query;
@@ -5310,104 +5380,6 @@ app.post('/migrate-conversation-to-atomic', async (req, res) => {
 
   } catch (error) {
     console.error('Error migrating conversation:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-// =========================================
-// TYPING INDICATOR ENDPOINTS
-// =========================================
-
-// POST set typing status
-app.post('/set-typing-status', async (req, res) => {
-  const { user_id, chatbot_id, is_typing, agent_name, profile_picture } = req.body;
-
-  if (!user_id || !chatbot_id || typeof is_typing !== 'boolean') {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id, is_typing' 
-    });
-  }
-
-  try {
-    if (is_typing) {
-      // Set or update typing status
-      await pool.query(`
-        INSERT INTO typing_status (user_id, chatbot_id, is_typing, agent_name, profile_picture, typing_start_time, last_updated)
-        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (user_id, chatbot_id)
-        DO UPDATE SET 
-          is_typing = EXCLUDED.is_typing,
-          agent_name = EXCLUDED.agent_name,
-          profile_picture = EXCLUDED.profile_picture,
-          typing_start_time = CASE 
-            WHEN typing_status.is_typing = false THEN CURRENT_TIMESTAMP 
-            ELSE typing_status.typing_start_time 
-          END,
-          last_updated = CURRENT_TIMESTAMP
-      `, [user_id, chatbot_id, is_typing, agent_name, profile_picture]);
-    } else {
-      // Remove typing status when agent stops typing
-      await pool.query(`
-        DELETE FROM typing_status 
-        WHERE user_id = $1 AND chatbot_id = $2
-      `, [user_id, chatbot_id]);
-    }
-
-    res.json({ success: true });
-
-  } catch (error) {
-    console.error('Error setting typing status:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-// GET typing status for a conversation
-app.get('/get-typing-status', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: user_id, chatbot_id' 
-    });
-  }
-
-  try {
-    // Clean up old typing status first (older than 30 seconds)
-    await pool.query(`
-      DELETE FROM typing_status 
-      WHERE last_updated < NOW() - INTERVAL '30 seconds'
-    `);
-
-    // Get current typing status
-    const result = await pool.query(`
-      SELECT agent_name, is_typing, typing_start_time, last_updated, profile_picture
-      FROM typing_status 
-      WHERE user_id = $1 AND chatbot_id = $2 AND is_typing = true
-    `, [user_id, chatbot_id]);
-
-    if (result.rows.length > 0) {
-      const typingData = result.rows[0];
-      res.json({
-        is_agent_typing: true,
-        agent_name: typingData.agent_name,
-        profile_picture: typingData.profile_picture,
-        typing_start_time: typingData.typing_start_time,
-        last_updated: typingData.last_updated
-      });
-    } else {
-      res.json({
-        is_agent_typing: false
-      });
-    }
-
-  } catch (error) {
-    console.error('Error getting typing status:', error);
     res.status(500).json({ 
       error: 'Database error', 
       details: error.message 
