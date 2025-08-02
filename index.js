@@ -1355,6 +1355,72 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
   }
 });
 
+    // Helper function to merge conversation messages to avoid race condition data loss
+    function mergeConversationMessages(currentMessages, newMessages) {
+      if (!Array.isArray(currentMessages)) currentMessages = [];
+      if (!Array.isArray(newMessages)) newMessages = [];
+      
+      // Create a map for fast lookups
+      const messageMap = new Map();
+      
+      // Add all current messages with generated IDs if missing
+      currentMessages.forEach((msg, index) => {
+        const msgId = msg.messageId || `current_${index}_${msg.text}_${msg.isUser}`;
+        messageMap.set(msgId, { 
+          ...msg, 
+          messageId: msgId,
+          timestamp: msg.timestamp || Date.now() - (currentMessages.length - index) * 1000
+        });
+      });
+      
+      // Add new messages, avoiding duplicates
+      newMessages.forEach((msg, index) => {
+        const msgId = msg.messageId || `new_${index}_${msg.text}_${msg.isUser}`;
+        
+        if (!messageMap.has(msgId)) {
+          // Check for content-based duplicates
+          const isDuplicate = Array.from(messageMap.values()).some(existingMsg => 
+            existingMsg.text === msg.text && 
+            existingMsg.isUser === msg.isUser &&
+            Math.abs((existingMsg.timestamp || 0) - (msg.timestamp || Date.now())) < 15000 // Within 15 seconds
+          );
+          
+          if (!isDuplicate) {
+            messageMap.set(msgId, {
+              ...msg,
+              messageId: msgId,
+              timestamp: msg.timestamp || Date.now() - (newMessages.length - index) * 1000
+            });
+          }
+        } else {
+          // Message exists, merge properties
+          const existing = messageMap.get(msgId);
+          messageMap.set(msgId, {
+            ...existing,
+            ...msg,
+            messageId: msgId
+          });
+        }
+      });
+      
+      // Convert back to array and sort by timestamp
+      const mergedArray = Array.from(messageMap.values());
+      mergedArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      
+      // Ensure welcome message stays first
+      const welcomeIndex = mergedArray.findIndex(msg => 
+        !msg.isUser && (mergedArray.indexOf(msg) > 0) && 
+        (msg.text.includes('Velkommen') || msg.text.includes('Hej') || msg.text.includes('Welcome'))
+      );
+      
+      if (welcomeIndex > 0) {
+        const welcomeMsg = mergedArray.splice(welcomeIndex, 1)[0];
+        mergedArray.unshift(welcomeMsg);
+      }
+      
+      return mergedArray;
+    }
+
     // Helper upsert function
     async function upsertConversation(
       user_id,
@@ -1392,57 +1458,36 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
           }
         }
 
-        // Merge conversation data to prevent overwriting concurrent messages
-      let conversationDataToSave = conversation_data;
-      try {
-        const existingRes = await client.query(
-          'SELECT conversation_data FROM conversations WHERE user_id = $1 AND chatbot_id = $2',
-          [user_id, chatbot_id]
-        );
-        if (existingRes.rows.length) {
-          const existingRaw = existingRes.rows[0].conversation_data;
-          const existingArr = typeof existingRaw === 'string' ? JSON.parse(existingRaw) : existingRaw;
-          const incomingArr = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
-          if (Array.isArray(existingArr) && Array.isArray(incomingArr)) {
-            const idSet = new Set();
-            const merged = [];
-            const pushUnique = (msg) => {
-              if (!msg) return;
-              const idKey = msg.id ? msg.id : JSON.stringify(msg);
-              if (!idSet.has(idKey)) {
-                idSet.add(idKey);
-                merged.push(msg);
-              }
-            };
-            existingArr.forEach(pushUnique);
-            incomingArr.forEach(pushUnique);
-            // Sort by timestamp, with fallbacks for missing timestamps
-            merged.sort((a, b) => {
-              // Handle missing or invalid timestamps
-              const ta = (typeof a.timestamp === 'number' && a.timestamp > 0) ? a.timestamp : 
-                         (a.created_at ? new Date(a.created_at).getTime() : 0);
-              const tb = (typeof b.timestamp === 'number' && b.timestamp > 0) ? b.timestamp : 
-                         (b.created_at ? new Date(b.created_at).getTime() : 0);
+        // For livechat conversations, try to merge conversation data intelligently
+        let finalConversationData = conversation_data;
+        
+        if (is_livechat && conversation_data) {
+          try {
+            // Get current conversation data
+            const currentResult = await client.query(
+              `SELECT conversation_data FROM conversations 
+               WHERE user_id = $1 AND chatbot_id = $2`,
+              [user_id, chatbot_id]
+            );
+            
+            if (currentResult.rows.length > 0) {
+              const currentData = currentResult.rows[0].conversation_data;
+              let parsedCurrent = typeof currentData === 'string' ? JSON.parse(currentData) : currentData;
+              let parsedNew = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
               
-              // Primary sort by timestamp
-              if (ta !== tb) {
-                return ta - tb;
+              if (Array.isArray(parsedCurrent) && Array.isArray(parsedNew)) {
+                // Merge conversations to avoid losing messages
+                const mergedMessages = mergeConversationMessages(parsedCurrent, parsedNew);
+                finalConversationData = JSON.stringify(mergedMessages);
               }
-              
-              // Secondary sort by id for stability
-              const ida = a.id || '';
-              const idb = b.id || '';
-              return ida.localeCompare(idb);
-            });
-            conversationDataToSave = JSON.stringify(merged);
+            }
+          } catch (mergeError) {
+            console.error('Error merging conversation data:', mergeError);
+            // Fall back to using the new data as-is
           }
         }
-      } catch (mergeErr) {
-        console.error('Conversation merge error:', mergeErr);
-        conversationDataToSave = conversation_data;
-      }
 
-      const updateResult = await client.query(
+        const updateResult = await client.query(
           `UPDATE conversations
            SET conversation_data = $3,
                emne = COALESCE($4, emne),
@@ -1459,7 +1504,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversationDataToSave, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
+          [user_id, chatbot_id, finalConversationData, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
         );
 
         if (updateResult.rows.length === 0) {
@@ -1468,7 +1513,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
              (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, viewed)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *`,
-            [user_id, chatbot_id, conversationDataToSave, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -3594,7 +3639,7 @@ app.post('/upload-logo', authenticateToken, async (req, res) => {
 
 // Retrieve livechat conversation for widget polling
 app.get('/livechat-conversation', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
+  const { user_id, chatbot_id, last_message_timestamp } = req.query;
 
   if (!user_id || !chatbot_id) {
     return res.status(400).json({ error: 'user_id and chatbot_id are required' });
@@ -3602,7 +3647,7 @@ app.get('/livechat-conversation', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT conversation_data FROM conversations
+      `SELECT conversation_data, created_at FROM conversations
        WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
        ORDER BY created_at DESC LIMIT 1`,
       [user_id, chatbot_id]
@@ -3613,15 +3658,54 @@ app.get('/livechat-conversation', async (req, res) => {
     }
 
     let data = result.rows[0].conversation_data;
+    const lastUpdated = result.rows[0].created_at;
+    
     if (typeof data === 'string') {
       try {
         data = JSON.parse(data);
       } catch (e) {
         console.error('Error parsing conversation_data JSON:', e);
+        data = [];
       }
     }
 
-    res.json({ conversation_data: data });
+    // Add timestamps to messages if they don't have them
+    if (Array.isArray(data)) {
+      data = data.map((msg, index) => {
+        if (!msg.timestamp) {
+          // Estimate timestamp based on position and last update time
+          const estimatedTime = new Date(lastUpdated).getTime() - (data.length - index - 1) * 1000;
+          return {
+            ...msg,
+            timestamp: estimatedTime,
+            messageId: msg.messageId || `msg_${index}_${estimatedTime}`
+          };
+        }
+        return {
+          ...msg,
+          messageId: msg.messageId || `msg_${index}_${msg.timestamp}`
+        };
+      });
+    }
+
+    // If client provides last_message_timestamp, only return newer messages
+    if (last_message_timestamp && Array.isArray(data)) {
+      const clientLastTimestamp = parseInt(last_message_timestamp);
+      const newMessages = data.filter(msg => 
+        (msg.timestamp || 0) > clientLastTimestamp
+      );
+      
+      if (newMessages.length === 0) {
+        // No new messages
+        return res.json({ conversation_data: data, has_updates: false });
+      }
+    }
+
+    res.json({ 
+      conversation_data: data, 
+      has_updates: true,
+      last_updated: lastUpdated 
+    });
   } catch (err) {
     console.error('Error fetching livechat conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
