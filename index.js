@@ -4927,61 +4927,270 @@ app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
   }
 });
 
-// New endpoint for appending livechat messages
-app.post('/add-livechat-message', async (req, res) => {
-  const { user_id, chatbot_id, new_message, is_user } = req.body;
+// =========================================
+// ATOMIC LIVECHAT MESSAGE ENDPOINTS
+// =========================================
 
-  if (!user_id || !chatbot_id || !new_message) {
-    return res.status(400).json({ error: 'Missing required fields' });
+// POST append single message atomically
+app.post('/append-livechat-message', async (req, res) => {
+  const {
+    user_id,
+    chatbot_id,
+    message_text,
+    is_user,
+    agent_name,
+    profile_picture,
+    image_data,
+    message_type = 'text',
+    is_system = false,
+    is_form = false,
+    metadata = {}
+  } = req.body;
+
+  if (!user_id || !chatbot_id || !message_text || typeof is_user !== 'boolean') {
+    return res.status(400).json({ 
+      error: 'Missing required fields: user_id, chatbot_id, message_text, is_user' 
+    });
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    const result = await pool.query(`
+      SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [
+      user_id,
+      chatbot_id, 
+      message_text,
+      is_user,
+      agent_name,
+      profile_picture,
+      image_data,
+      message_type,
+      is_system,
+      is_form,
+      JSON.stringify(metadata)
+    ]);
 
-    // Find or create the conversation
-    let convRes = await client.query(
-      'SELECT id, conversation_data FROM conversations WHERE user_id = $1 AND chatbot_id = $2 FOR UPDATE',
-      [user_id, chatbot_id]
-    );
-
-    let convId;
-    let convData = [];
-    if (convRes.rows.length === 0) {
-      // Create new conversation if doesn't exist
-      const insertRes = await client.query(
-        'INSERT INTO conversations (user_id, chatbot_id, conversation_data, is_livechat) VALUES ($1, $2, $3, true) RETURNING id',
-        [user_id, chatbot_id, []]
-      );
-      convId = insertRes.rows[0].id;
-    } else {
-      convId = convRes.rows[0].id;
-      convData = convRes.rows[0].conversation_data || [];
+    const messageResult = result.rows[0];
+    
+    if (!messageResult.success) {
+      return res.status(500).json({ 
+        error: 'Failed to append message',
+        details: messageResult.error_message 
+      });
     }
 
-    // Append the new message
-    const messageWithMeta = {
-      ...new_message,
-      isUser: is_user,
-      timestamp: new Date().toISOString()
-    };
-    convData.push(messageWithMeta);
+    // Mark conversation as using the new message system
+    await pool.query(`
+      UPDATE conversations 
+      SET uses_message_system = true,
+          is_livechat = true
+      WHERE id = $1
+    `, [messageResult.conversation_id]);
 
-    // Update the conversation
-    await client.query(
-      'UPDATE conversations SET conversation_data = $1, created_at = NOW() WHERE id = $2',
-      [convData, convId]
-    );
+    res.status(201).json({
+      success: true,
+      message_id: messageResult.message_id,
+      conversation_id: messageResult.conversation_id,
+      sequence_number: messageResult.sequence_number
+    });
 
-    await client.query('COMMIT');
-    res.status(200).json({ success: true, conversation_id: convId });
+  } catch (error) {
+    console.error('Error appending livechat message:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
 
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error appending livechat message:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  } finally {
-    client.release();
+// GET conversation messages in atomic format
+app.get('/conversation-messages', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ 
+      error: 'Missing required parameters: user_id, chatbot_id' 
+    });
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT * FROM get_conversation_messages($1, $2)
+    `, [user_id, chatbot_id]);
+
+    // Convert to frontend format
+    const messages = result.rows.map(row => ({
+      text: row.message_text,
+      isUser: row.is_user,
+      isSystem: row.is_system,
+      isForm: row.is_form,
+      agentName: row.agent_name,
+      profilePicture: row.profile_picture,
+      image: row.image_data,
+      messageType: row.message_type,
+      sequenceNumber: row.sequence_number,
+      createdAt: row.created_at,
+      metadata: row.metadata
+    }));
+
+    res.json({
+      conversation_data: messages,
+      message_count: messages.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching conversation messages:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
+// POST migrate conversation to atomic message system
+app.post('/migrate-conversation-to-atomic', async (req, res) => {
+  const { user_id, chatbot_id } = req.body;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: user_id, chatbot_id' 
+    });
+  }
+
+  try {
+    // Get existing conversation
+    const convResult = await pool.query(`
+      SELECT id, conversation_data FROM conversations 
+      WHERE user_id = $1 AND chatbot_id = $2
+    `, [user_id, chatbot_id]);
+
+    if (convResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const conversation = convResult.rows[0];
+    const conversationData = conversation.conversation_data;
+
+    if (!Array.isArray(conversationData)) {
+      return res.status(400).json({ error: 'Invalid conversation data format' });
+    }
+
+    // Clear existing messages for this conversation
+    await pool.query(`
+      DELETE FROM conversation_messages 
+      WHERE conversation_id = $1
+    `, [conversation.id]);
+
+    // Insert each message atomically
+    for (let i = 0; i < conversationData.length; i++) {
+      const msg = conversationData[i];
+      
+      await pool.query(`
+        INSERT INTO conversation_messages (
+          conversation_id, user_id, chatbot_id, message_text, is_user,
+          agent_name, profile_picture, image_data, sequence_number,
+          message_type, is_system, is_form, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `, [
+        conversation.id,
+        user_id,
+        chatbot_id,
+        msg.text || '',
+        msg.isUser || false,
+        msg.agentName || null,
+        msg.profilePicture || null,
+        msg.image || null,
+        i + 1, // sequence_number starts from 1
+        msg.messageType || 'text',
+        msg.isSystem || false,
+        msg.isForm || false,
+        JSON.stringify(msg.metadata || {})
+      ]);
+    }
+
+    // Mark as using message system
+    await pool.query(`
+      UPDATE conversations 
+      SET uses_message_system = true 
+      WHERE id = $1
+    `, [conversation.id]);
+
+    res.json({
+      success: true,
+      message: 'Conversation migrated to atomic message system',
+      migrated_messages: conversationData.length
+    });
+
+  } catch (error) {
+    console.error('Error migrating conversation:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
+  }
+});
+
+// GET livechat conversation with atomic message support
+app.get('/livechat-conversation-atomic', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ 
+      error: 'Missing required parameters: user_id, chatbot_id' 
+    });
+  }
+
+  try {
+    // Check if conversation exists and uses message system
+    const convCheck = await pool.query(`
+      SELECT id, uses_message_system FROM conversations 
+      WHERE user_id = $1 AND chatbot_id = $2
+    `, [user_id, chatbot_id]);
+
+    if (convCheck.rows.length === 0) {
+      return res.json({ conversation_data: [] });
+    }
+
+    const conversation = convCheck.rows[0];
+    
+    if (conversation.uses_message_system) {
+      // Use atomic message system
+      const result = await pool.query(`
+        SELECT * FROM get_conversation_messages($1, $2)
+      `, [user_id, chatbot_id]);
+
+      const messages = result.rows.map(row => ({
+        text: row.message_text,
+        isUser: row.is_user,
+        isSystem: row.is_system,
+        isForm: row.is_form,
+        agentName: row.agent_name,
+        profilePicture: row.profile_picture,
+        image: row.image_data,
+        messageType: row.message_type,
+        sequenceNumber: row.sequence_number,
+        createdAt: row.created_at
+      }));
+
+      res.json({ conversation_data: messages });
+    } else {
+      // Fall back to original system
+      const result = await pool.query(`
+        SELECT conversation_data FROM conversations 
+        WHERE user_id = $1 AND chatbot_id = $2
+      `, [user_id, chatbot_id]);
+
+      res.json({ 
+        conversation_data: result.rows[0]?.conversation_data || [] 
+      });
+    }
+
+  } catch (error) {
+    console.error('Error fetching atomic livechat conversation:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      details: error.message 
+    });
   }
 });
 
