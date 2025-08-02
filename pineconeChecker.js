@@ -366,6 +366,135 @@ export async function checkAllIndexesMissingChunks(requestingUserId, isAdmin = f
   }
 }
 
+// Function to delete specific vectors from Pinecone
+export async function deleteSpecificVectors(requestingUserId, vectorsToDelete, isAdmin = false) {
+  const debugInfo = [];
+  const results = {
+    successful: [],
+    failed: [],
+    summary: {
+      totalRequested: vectorsToDelete.length,
+      successful: 0,
+      failed: 0
+    }
+  };
+
+  try {
+    debugInfo.push(`🗑️ Starting bulk deletion of ${vectorsToDelete.length} specific vectors`);
+    debugInfo.push(`👤 Requested by: ${isAdmin ? 'Admin' : 'User'} ${requestingUserId}`);
+
+    // Group vectors by index/namespace for efficient deletion
+    const vectorsByIndex = {};
+    for (const vector of vectorsToDelete) {
+      const key = `${vector.namespace}`;
+      if (!vectorsByIndex[key]) {
+        vectorsByIndex[key] = {
+          namespace: vector.namespace,
+          indexName: vector.indexName,
+          ownerUserId: vector.ownerUserId,
+          vectors: []
+        };
+      }
+      vectorsByIndex[key].vectors.push(vector);
+    }
+
+    debugInfo.push(`📊 Vectors grouped into ${Object.keys(vectorsByIndex).length} indexes`);
+
+    // Process each index
+    for (const [key, group] of Object.entries(vectorsByIndex)) {
+      debugInfo.push(`\n🔄 Processing index: ${group.indexName} (${group.namespace})`);
+      debugInfo.push(`👥 Owner: User ${group.ownerUserId}, Vectors: ${group.vectors.length}`);
+
+      try {
+        // Check permissions - admin can delete any, users can only delete their own
+        if (!isAdmin && group.ownerUserId !== requestingUserId) {
+          debugInfo.push(`❌ Permission denied: User ${requestingUserId} cannot delete vectors owned by User ${group.ownerUserId}`);
+          for (const vector of group.vectors) {
+            results.failed.push({
+              ...vector,
+              error: 'Permission denied - not your vector'
+            });
+          }
+          continue;
+        }
+
+        // Get Pinecone API key for this user/index
+        debugInfo.push(`🔑 Getting Pinecone API key for User ${group.ownerUserId}...`);
+        const pineconeApiKey = await getPineconeApiKeyForIndex(group.ownerUserId, group.indexName, group.namespace);
+        
+        if (!pineconeApiKey) {
+          throw new Error(`No Pinecone API key found for User ${group.ownerUserId}`);
+        }
+
+        // Initialize Pinecone client
+        debugInfo.push(`🔧 Initializing Pinecone client for ${group.namespace}...`);
+        const { Pinecone } = await import('@pinecone-database/pinecone');
+        const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+        const index = pineconeClient.index(group.namespace);
+
+        // Extract vector IDs
+        const vectorIds = group.vectors.map(v => v.vectorId);
+        debugInfo.push(`🎯 Deleting ${vectorIds.length} vectors: ${vectorIds.slice(0, 3).join(', ')}${vectorIds.length > 3 ? '...' : ''}`);
+
+        // Delete vectors from Pinecone
+        const deleteResponse = await index.deleteMany(vectorIds);
+        debugInfo.push(`✅ Delete operation completed for ${group.indexName}`);
+
+        // Mark as successful
+        for (const vector of group.vectors) {
+          results.successful.push({
+            ...vector,
+            deletedAt: new Date().toISOString()
+          });
+        }
+
+        debugInfo.push(`🎉 Successfully deleted ${group.vectors.length} vectors from ${group.indexName}`);
+
+      } catch (indexError) {
+        debugInfo.push(`❌ Error processing index ${group.indexName}: ${indexError.message}`);
+        
+        // Mark all vectors in this index as failed
+        for (const vector of group.vectors) {
+          results.failed.push({
+            ...vector,
+            error: indexError.message
+          });
+        }
+      }
+    }
+
+    // Update summary
+    results.summary.successful = results.successful.length;
+    results.summary.failed = results.failed.length;
+
+    debugInfo.push(`\n🏁 Bulk deletion complete!`);
+    debugInfo.push(`✅ Successful: ${results.summary.successful}`);
+    debugInfo.push(`❌ Failed: ${results.summary.failed}`);
+
+    return {
+      ...results,
+      debugInfo: debugInfo
+    };
+
+  } catch (error) {
+    debugInfo.push(`❌ Error in deleteSpecificVectors: ${error.message}`);
+    console.error('Error in deleteSpecificVectors:', {
+      message: error.message,
+      stack: error.stack,
+      requestingUserId,
+      isAdmin
+    });
+    
+    return {
+      error: error.message,
+      debugInfo: debugInfo,
+      summary: results.summary,
+      successful: results.successful,
+      failed: results.failed
+    };
+  }
+}
+
 // Main function to check for missing chunks - finds vectors in Pinecone that aren't in database
 export async function checkMissingChunks(userId, indexName, namespace) {
   const debugInfo = [];
