@@ -5323,7 +5323,7 @@ app.post('/migrate-conversation-to-atomic', async (req, res) => {
 
 // POST set typing status
 app.post('/set-typing-status', async (req, res) => {
-  const { user_id, chatbot_id, is_typing, agent_name } = req.body;
+  const { user_id, chatbot_id, is_typing, agent_name, profile_picture } = req.body;
 
   if (!user_id || !chatbot_id || typeof is_typing !== 'boolean') {
     return res.status(400).json({ 
@@ -5335,18 +5335,19 @@ app.post('/set-typing-status', async (req, res) => {
     if (is_typing) {
       // Set or update typing status
       await pool.query(`
-        INSERT INTO typing_status (user_id, chatbot_id, is_typing, agent_name, typing_start_time, last_updated)
-        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO typing_status (user_id, chatbot_id, is_typing, agent_name, profile_picture, typing_start_time, last_updated)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (user_id, chatbot_id)
         DO UPDATE SET 
           is_typing = EXCLUDED.is_typing,
           agent_name = EXCLUDED.agent_name,
+          profile_picture = EXCLUDED.profile_picture,
           typing_start_time = CASE 
             WHEN typing_status.is_typing = false THEN CURRENT_TIMESTAMP 
             ELSE typing_status.typing_start_time 
           END,
           last_updated = CURRENT_TIMESTAMP
-      `, [user_id, chatbot_id, is_typing, agent_name]);
+      `, [user_id, chatbot_id, is_typing, agent_name, profile_picture]);
     } else {
       // Remove typing status when agent stops typing
       await pool.query(`
@@ -5385,7 +5386,7 @@ app.get('/get-typing-status', async (req, res) => {
 
     // Get current typing status
     const result = await pool.query(`
-      SELECT agent_name, is_typing, typing_start_time, last_updated
+      SELECT agent_name, is_typing, typing_start_time, last_updated, profile_picture
       FROM typing_status 
       WHERE user_id = $1 AND chatbot_id = $2 AND is_typing = true
     `, [user_id, chatbot_id]);
@@ -5395,6 +5396,7 @@ app.get('/get-typing-status', async (req, res) => {
       res.json({
         is_agent_typing: true,
         agent_name: typingData.agent_name,
+        profile_picture: typingData.profile_picture,
         typing_start_time: typingData.typing_start_time,
         last_updated: typingData.last_updated
       });
