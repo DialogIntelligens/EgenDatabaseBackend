@@ -5074,21 +5074,25 @@ app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
 // ATOMIC LIVECHAT MESSAGE ENDPOINTS
 // =========================================
 
-// POST append single message atomically
-app.post('/append-livechat-message', async (req, res) => {
-  const {
-    user_id,
-    chatbot_id,
-    message_text,
-    is_user,
-    agent_name,
-    profile_picture,
-    image_data,
-    message_type = 'text',
-    is_system = false,
-    is_form = false,
-    metadata = {}
-  } = req.body;
+ // POST append single message atomically
+ app.post('/append-livechat-message', async (req, res) => {
+   const {
+     user_id,
+     chatbot_id,
+     message_text,
+     is_user,
+     agent_name,
+     profile_picture,
+     image_data,
+     image_name,
+     image_mime,
+     image_size,
+     is_image,
+     message_type = 'text',
+     is_system = false,
+     is_form = false,
+     metadata = {}
+   } = req.body;
 
   if (!user_id || !chatbot_id || !message_text || typeof is_user !== 'boolean') {
     return res.status(400).json({ 
@@ -5096,22 +5100,33 @@ app.post('/append-livechat-message', async (req, res) => {
     });
   }
 
-  try {
-    const result = await pool.query(`
-      SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    `, [
-      user_id,
-      chatbot_id, 
-      message_text,
-      is_user,
-      agent_name,
-      profile_picture,
-      image_data,
-      message_type,
-      is_system,
-      is_form,
-      JSON.stringify(metadata)
-    ]);
+     try {
+     // Enhance metadata with file information
+     const enhancedMetadata = {
+       ...metadata,
+       fileInfo: image_data ? {
+         name: image_name,
+         mime: image_mime,
+         size: image_size,
+         isImage: is_image
+       } : null
+     };
+     
+     const result = await pool.query(`
+       SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     `, [
+       user_id,
+       chatbot_id, 
+       message_text,
+       is_user,
+       agent_name,
+       profile_picture,
+       image_data,
+       message_type,
+       is_system,
+       is_form,
+       JSON.stringify(enhancedMetadata)
+     ]);
 
     const messageResult = result.rows[0];
     
@@ -5264,24 +5279,38 @@ app.get('/conversation-messages', async (req, res) => {
     `, [user_id, chatbot_id]);
 
     // Convert to frontend format with all properties preserved
-    const messages = result.rows.map(row => ({
-      text: row.message_text,
-      isUser: row.is_user,
-      isSystem: row.is_system,
-      isForm: row.is_form,
-      agentName: row.agent_name,
-      profilePicture: row.profile_picture,
-      image: row.image_data,
-      messageType: row.message_type,
-      sequenceNumber: row.sequence_number,
-      createdAt: row.created_at,
-      metadata: row.metadata,
-      // Restore original properties from metadata
-      textWithMarkers: row.text_with_markers || row.message_text,
-      isError: row.is_error || false,
-      // Include any other properties stored in metadata
-      ...((row.metadata && row.metadata.originalProperties) || {})
-    }));
+    const messages = result.rows.map(row => {
+      // Reconstruct file object if file metadata exists
+      let imageData = row.image_data;
+      if (row.image_data && row.metadata && row.metadata.fileInfo) {
+        imageData = {
+          data: row.image_data,
+          name: row.metadata.fileInfo.name,
+          mime: row.metadata.fileInfo.mime,
+          size: row.metadata.fileInfo.size,
+          isImage: row.metadata.fileInfo.isImage
+        };
+      }
+      
+      return {
+        text: row.message_text,
+        isUser: row.is_user,
+        isSystem: row.is_system,
+        isForm: row.is_form,
+        agentName: row.agent_name,
+        profilePicture: row.profile_picture,
+        image: imageData,
+        messageType: row.message_type,
+        sequenceNumber: row.sequence_number,
+        createdAt: row.created_at,
+        metadata: row.metadata,
+        // Restore original properties from metadata
+        textWithMarkers: row.text_with_markers || row.message_text,
+        isError: row.is_error || false,
+        // Include any other properties stored in metadata
+        ...((row.metadata && row.metadata.originalProperties) || {})
+      };
+    });
 
     res.json({
       conversation_data: messages,
@@ -5527,23 +5556,37 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         SELECT * FROM get_conversation_messages($1, $2)
       `, [user_id, chatbot_id]);
 
-      const messages = result.rows.map(row => ({
-        text: row.message_text,
-        isUser: row.is_user,
-        isSystem: row.is_system,
-        isForm: row.is_form,
-        agentName: row.agent_name,
-        profilePicture: row.profile_picture,
-        image: row.image_data,
-        messageType: row.message_type,
-        sequenceNumber: row.sequence_number,
-        createdAt: row.created_at,
-        // Restore original properties from metadata
-        textWithMarkers: row.text_with_markers || row.message_text,
-        isError: row.is_error || false,
-        // Include any other properties stored in metadata
-        ...((row.metadata && row.metadata.originalProperties) || {})
-      }));
+      const messages = result.rows.map(row => {
+        // Reconstruct file object if file metadata exists  
+        let imageData = row.image_data;
+        if (row.image_data && row.metadata && row.metadata.fileInfo) {
+          imageData = {
+            data: row.image_data,
+            name: row.metadata.fileInfo.name,
+            mime: row.metadata.fileInfo.mime,
+            size: row.metadata.fileInfo.size,
+            isImage: row.metadata.fileInfo.isImage
+          };
+        }
+        
+        return {
+          text: row.message_text,
+          isUser: row.is_user,
+          isSystem: row.is_system,
+          isForm: row.is_form,
+          agentName: row.agent_name,
+          profilePicture: row.profile_picture,
+          image: imageData,
+          messageType: row.message_type,
+          sequenceNumber: row.sequence_number,
+          createdAt: row.created_at,
+          // Restore original properties from metadata
+          textWithMarkers: row.text_with_markers || row.message_text,
+          isError: row.is_error || false,
+          // Include any other properties stored in metadata
+          ...((row.metadata && row.metadata.originalProperties) || {})
+        };
+      });
 
       res.json({ conversation_data: messages });
     } else {
