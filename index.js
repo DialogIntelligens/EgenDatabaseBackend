@@ -1869,13 +1869,71 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
+
+    let conversation = result.rows[0];
+    
+    // If this is a livechat conversation, enrich with file metadata
+    if (conversation.is_livechat) {
+      try {
+        // Get file metadata from livechat_messages table
+        const livechatMessages = await pool.query(
+          `SELECT message_id, text, is_user, image_data, image_name, image_mime, timestamp
+           FROM livechat_messages 
+           WHERE user_id = $1 AND chatbot_id = $2 
+           ORDER BY timestamp ASC`,
+          [conversation.user_id, conversation.chatbot_id]
+        );
+
+        // Parse existing conversation data
+        let conversationData = [];
+        if (conversation.conversation_data) {
+          try {
+            conversationData = typeof conversation.conversation_data === 'string' 
+              ? JSON.parse(conversation.conversation_data) 
+              : conversation.conversation_data;
+          } catch (e) {
+            console.error('Error parsing conversation_data:', e);
+            conversationData = [];
+          }
+        }
+
+        // Enrich conversation data with file metadata
+        if (livechatMessages.rows.length > 0) {
+          const messageMap = new Map();
+          livechatMessages.rows.forEach(msg => {
+            messageMap.set(msg.text, {
+              fileName: msg.image_name,
+              fileMime: msg.image_mime
+            });
+          });
+
+          // Update conversation data with file metadata
+          conversationData = conversationData.map(msg => {
+            if (msg.image && msg.text && messageMap.has(msg.text)) {
+              const fileMetadata = messageMap.get(msg.text);
+              return {
+                ...msg,
+                fileName: fileMetadata.fileName,
+                fileMime: fileMetadata.fileMime
+              };
+            }
+            return msg;
+          });
+
+          conversation.conversation_data = conversationData;
+        }
+      } catch (error) {
+        console.error('Error enriching livechat conversation with file metadata:', error);
+        // Continue without enrichment if there's an error
+      }
+    }
     
     // Only mark the conversation as viewed if the user is not an admin
     if (!req.user.isAdmin) {
       await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
     }
     
-    res.json(result.rows[0]);
+    res.json(conversation);
   } catch (err) {
     console.error('Error retrieving conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
