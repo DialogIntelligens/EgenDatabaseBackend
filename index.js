@@ -1369,7 +1369,8 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       is_livechat = false,
       fallback = null,
       tags = null,
-      form_data = null
+      form_data = null,
+      is_flagged = false
     ) {
       const client = await pool.connect();
       try {
@@ -1405,20 +1406,21 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                fallback = COALESCE($11, fallback),
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
-               viewed = CASE WHEN $14 THEN FALSE ELSE viewed END,
+               is_flagged = COALESCE($14, is_flagged),
+               viewed = CASE WHEN $15 THEN FALSE ELSE viewed END,
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnread]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, viewed)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, viewed)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, shouldMarkAsUnread ? false : null]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnread ? false : null]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1775,7 +1777,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     let queryText = `
-      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags,
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged,
              COALESCE(SUM(p.amount), 0) as purchase_amount,
              CASE 
                WHEN EXISTS (
@@ -1818,6 +1820,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
         )`;
       } else if (fejlstatus === 'leads') {
         queryText += ` AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')`;
+      } else if (fejlstatus === 'flagged') {
+        queryText += ` AND c.is_flagged = TRUE`;
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
@@ -1956,6 +1960,39 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error marking conversation as unread:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// PATCH to flag/unflag conversation (only for livechat conversations)
+app.patch('/conversation/:id/flag', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { is_flagged } = req.body;
+  
+  try {
+    // First verify this is a livechat conversation
+    const checkResult = await pool.query(
+      'SELECT is_livechat FROM conversations WHERE id = $1',
+      [id]
+    );
+    
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    if (!checkResult.rows[0].is_livechat) {
+      return res.status(400).json({ error: 'Flagging is only available for livechat conversations' });
+    }
+    
+    // Update the flag status
+    const result = await pool.query(
+      'UPDATE conversations SET is_flagged = $1 WHERE id = $2 RETURNING *', 
+      [is_flagged, id]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating conversation flag:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
