@@ -2819,6 +2819,63 @@ app.get('/livechat-statistics', authenticateToken, async (req, res) => {
   }
 });
 
+/* ================================
+   Public Live Chat Response Time Endpoint
+================================ */
+app.get('/public/average-response-time/:chatbot_id', async (req, res) => {
+  const { chatbot_id } = req.params;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    // Get response time statistics from conversation_messages
+    const responseTimeQuery = `
+      SELECT 
+        AVG(cm.response_time_seconds) as avg_response_time,
+        COUNT(cm.response_time_seconds) as total_responses
+      FROM conversation_messages cm
+      JOIN conversations c ON cm.conversation_id = c.id
+      WHERE c.chatbot_id = $1
+        AND c.is_livechat = true 
+        AND cm.response_time_seconds IS NOT NULL
+        AND cm.agent_name IS NOT NULL
+    `;
+
+    const responseTimeResult = await pool.query(responseTimeQuery, [chatbot_id]);
+    
+    let avgResponseTime = null;
+    let hasResponseTimeData = false;
+    
+    if (responseTimeResult.rows.length > 0 && responseTimeResult.rows[0].avg_response_time) {
+      const avgSeconds = Math.round(responseTimeResult.rows[0].avg_response_time);
+      
+      if (avgSeconds < 60) {
+        avgResponseTime = `${avgSeconds}s`;
+      } else if (avgSeconds < 3600) {
+        const minutes = Math.round(avgSeconds / 60);
+        avgResponseTime = `${minutes}m`;
+      } else {
+        const hours = Math.round(avgSeconds / 3600);
+        avgResponseTime = `${hours}h`;
+      }
+      
+      hasResponseTimeData = true;
+    }
+
+    res.json({
+      avgResponseTime: avgResponseTime || 'N/A',
+      hasResponseTimeData,
+      totalResponses: responseTimeResult.rows[0]?.total_responses || 0
+    });
+
+  } catch (err) {
+    console.error('Error retrieving public average response time:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
