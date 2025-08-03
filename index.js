@@ -1480,7 +1480,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation with is_livechat, fallback, tags, and form_data parameters
+    // Call upsertConversation with is_livechat, fallback, tags, form_data, and is_flagged parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1494,7 +1494,8 @@ app.post('/conversations', async (req, res) => {
       is_livechat || false,
       fallback,
       tags,
-      form_data
+      form_data,
+      false // is_flagged - default to false
     );
     res.status(201).json(result);
   } catch (err) {
