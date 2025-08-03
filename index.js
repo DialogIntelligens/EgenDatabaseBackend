@@ -5394,6 +5394,9 @@ app.get('/conversation-messages', async (req, res) => {
       sequenceNumber: row.sequence_number,
       createdAt: row.created_at,
       metadata: row.metadata,
+      // Include file metadata from metadata field
+      fileName: row.metadata?.fileName,
+      fileMime: row.metadata?.fileMime,
       // Restore original properties from metadata
       textWithMarkers: row.text_with_markers || row.message_text,
       isError: row.is_error || false,
@@ -5656,6 +5659,9 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         messageType: row.message_type,
         sequenceNumber: row.sequence_number,
         createdAt: row.created_at,
+        // Include file metadata from metadata field
+        fileName: row.metadata?.fileName,
+        fileMime: row.metadata?.fileMime,
         // Restore original properties from metadata
         textWithMarkers: row.text_with_markers || row.message_text,
         isError: row.is_error || false,
