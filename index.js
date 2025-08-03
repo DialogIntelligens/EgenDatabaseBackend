@@ -1377,15 +1377,15 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
         await client.query('BEGIN');
 
         // Check if this is a livechat conversation with a new user message
-        let shouldClearViews = false;
+        let shouldMarkAsUnread = false;
         if (is_livechat && conversation_data) {
           try {
             const parsedData = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
             if (Array.isArray(parsedData) && parsedData.length > 0) {
               const lastMessage = parsedData[parsedData.length - 1];
-              // If last message is from user (not agent, not system), clear all agent views
+              // If last message is from user (not agent, not system), mark as unread
               if (lastMessage && lastMessage.isUser === true) {
-                shouldClearViews = true;
+                shouldMarkAsUnread = true;
               }
             }
           } catch (parseError) {
@@ -1407,33 +1407,21 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
+               viewed = CASE WHEN $15 THEN FALSE ELSE viewed END,
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnread]
         );
-
-        // If this is a livechat conversation and the last message is from a user,
-        // clear all agent views so all agents see it as unread
-        if (shouldClearViews && updateResult.rows.length > 0) {
-          await client.query(
-            'DELETE FROM conversation_views WHERE conversation_id = $1',
-            [updateResult.rows[0].id]
-          );
-        }
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, viewed)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnread ? false : null]
           );
-
-          // If this is a new livechat conversation and the last message is from a user,
-          // no need to create conversation views (it will be unread for all agents by default)
-
           await client.query('COMMIT');
           return insertResult.rows[0];
         } else {
@@ -1946,13 +1934,7 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
     
     // Only mark the conversation as viewed if the user is not an admin
     if (!req.user.isAdmin) {
-      // Mark as viewed for this specific user using per-user tracking
-      await pool.query(
-        `INSERT INTO conversation_views (user_id, conversation_id, viewed_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (user_id, conversation_id) DO UPDATE SET viewed_at = NOW()`,
-        [req.user.userId, id]
-      );
+      await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
     }
     
     res.json(conversation);
@@ -5161,7 +5143,7 @@ app.get('/leads-count', authenticateToken, async (req, res) => {
   }
 });
 
-// GET total count of unread livechat messages (per-user)
+// GET total count of unread livechat messages
 app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
   const { chatbot_id } = req.query;
   
@@ -5173,19 +5155,16 @@ app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
     const userId = req.user.userId;
 
-    // Count livechat conversations that this specific user hasn't viewed
+    // Count livechat conversations that are unread (viewed = false) for this user's chatbots
     const queryText = `
       SELECT COUNT(c.id) AS unread_livechat_count
       FROM conversations c
       WHERE c.chatbot_id = ANY($1)
       AND c.is_livechat = TRUE
-      AND NOT EXISTS (
-        SELECT 1 FROM conversation_views cv
-        WHERE cv.conversation_id = c.id AND cv.user_id = $2
-      )
+      AND (c.viewed = FALSE OR c.viewed IS NULL)
     `;
     
-    const result = await pool.query(queryText, [chatbotIds, userId]);
+    const result = await pool.query(queryText, [chatbotIds]);
     const unreadLivechatCount = parseInt(result.rows[0]?.unread_livechat_count || 0);
     
     res.json({ unread_livechat_count: unreadLivechatCount });
