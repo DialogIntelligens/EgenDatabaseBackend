@@ -1370,7 +1370,8 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       fallback = null,
       tags = null,
       form_data = null,
-      is_flagged = false
+      is_flagged = false,
+      is_resolved = false
     ) {
       const client = await pool.connect();
       try {
@@ -1378,14 +1379,16 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
 
         // Check if this is a livechat conversation with a new user message
         let shouldMarkAsUnread = false;
+        let shouldMarkAsUnresolved = false;
         if (is_livechat && conversation_data) {
           try {
             const parsedData = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
             if (Array.isArray(parsedData) && parsedData.length > 0) {
               const lastMessage = parsedData[parsedData.length - 1];
-              // If last message is from user (not agent, not system), mark as unread
+              // If last message is from user (not agent, not system), mark as unread and unresolved
               if (lastMessage && lastMessage.isUser === true) {
                 shouldMarkAsUnread = true;
+                shouldMarkAsUnresolved = true; // Automatically unresolve when user sends a message
               }
             }
           } catch (parseError) {
@@ -1407,20 +1410,21 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
-               viewed = CASE WHEN $15 THEN FALSE ELSE viewed END,
+               is_resolved = CASE WHEN $17 THEN FALSE ELSE COALESCE($15, is_resolved) END,
+               viewed = CASE WHEN $16 THEN FALSE ELSE viewed END,
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnread]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, viewed)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnread ? false : null]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1451,7 +1455,8 @@ app.post('/conversations', async (req, res) => {
     is_livechat,
     fallback,
     tags,
-    form_data
+    form_data,
+    is_resolved
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1480,7 +1485,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation with is_livechat, fallback, tags, form_data, and is_flagged parameters
+    // Call upsertConversation with is_livechat, fallback, tags, form_data, is_flagged, and is_resolved parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1495,7 +1500,8 @@ app.post('/conversations', async (req, res) => {
       fallback,
       tags,
       form_data,
-      false // is_flagged - default to false
+      false, // is_flagged - default to false
+      is_resolved || false // is_resolved - default to false
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1505,6 +1511,31 @@ app.post('/conversations', async (req, res) => {
       details: err.message,
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     });
+  }
+});
+
+// POST update conversation resolution status
+app.post('/update-conversation-resolution', authenticateToken, async (req, res) => {
+  const { conversation_id, is_resolved } = req.body;
+
+  if (!conversation_id || is_resolved === undefined) {
+    return res.status(400).json({ error: 'conversation_id and is_resolved are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE conversations SET is_resolved = $1 WHERE id = $2 RETURNING *',
+      [is_resolved, conversation_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating conversation resolution:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
@@ -1598,7 +1629,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id, fejlstatus, customer_rating, emne, tags } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne, tags, is_resolved } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -1647,6 +1678,13 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     if (tags && tags !== '') {
       queryText += ` AND c.tags @> $${paramIndex++}::jsonb`;
       queryParams.push(JSON.stringify([tags]));
+    }
+    if (is_resolved && is_resolved !== '') {
+      if (is_resolved === 'resolved') {
+        queryText += ` AND c.is_resolved = TRUE`;
+      } else if (is_resolved === 'unresolved') {
+        queryText += ` AND c.is_resolved = FALSE`;
+      }
     }
     const result = await pool.query(queryText, queryParams);
     return res.json(result.rows);
@@ -1767,7 +1805,7 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1839,6 +1877,13 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     if (conversation_filter && conversation_filter.trim() !== '') {
       queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
       queryParams.push(`${conversation_filter}`);
+    }
+    if (is_resolved && is_resolved !== '') {
+      if (is_resolved === 'resolved') {
+        queryText += ` AND c.is_resolved = TRUE`;
+      } else if (is_resolved === 'unresolved') {
+        queryText += ` AND c.is_resolved = FALSE`;
+      }
     }
 
     queryText += ` GROUP BY c.id `;
