@@ -13,7 +13,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
-import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, deleteSpecificVectors } from './pineconeChecker.js';
+import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 
 const { Pool } = pg;
 
@@ -993,43 +993,6 @@ app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
     console.error('Error getting user indexes for checking:', error);
     res.status(500).json({ 
       error: 'Failed to get user indexes', 
-      details: error.message 
-    });
-  }
-});
-
-// New endpoint to delete specific vectors from Pinecone
-app.post('/delete-specific-vectors', authenticateToken, async (req, res) => {
-  const { vectorsToDelete } = req.body;
-  const requestingUserId = req.user.userId;
-  const isAdmin = req.user.isAdmin === true;
-
-  try {
-    if (!vectorsToDelete || !Array.isArray(vectorsToDelete) || vectorsToDelete.length === 0) {
-      return res.status(400).json({ 
-        error: 'vectorsToDelete must be a non-empty array' 
-      });
-    }
-
-    // Validate that each vector has required fields
-    for (const vector of vectorsToDelete) {
-      if (!vector.vectorId || !vector.namespace || !vector.indexName) {
-        return res.status(400).json({ 
-          error: 'Each vector must have vectorId, namespace, and indexName' 
-        });
-      }
-    }
-
-    console.log(`${isAdmin ? 'Admin' : 'User'} ${requestingUserId} is deleting ${vectorsToDelete.length} specific vectors`);
-    
-    const result = await deleteSpecificVectors(requestingUserId, vectorsToDelete, isAdmin);
-    
-    res.json(result);
-    
-  } catch (error) {
-    console.error('Error deleting specific vectors:', error);
-    res.status(500).json({ 
-      error: 'Failed to delete specific vectors', 
       details: error.message 
     });
   }
@@ -2798,50 +2761,6 @@ app.get('/livechat-statistics', authenticateToken, async (req, res) => {
   }
 });
 
-/* ================================
-   Public Live Chat Response Time Endpoint
-================================ */
-app.get('/public/average-response-time/:chatbot_id', async (req, res) => {
-  const { chatbot_id } = req.params;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    // Get response time statistics from conversation_messages
-    const responseTimeQuery = `
-      SELECT 
-        AVG(cm.response_time_seconds) as avg_response_time,
-        COUNT(cm.response_time_seconds) as total_responses
-      FROM conversation_messages cm
-      JOIN conversations c ON cm.conversation_id = c.id
-      WHERE c.chatbot_id = $1
-        AND c.is_livechat = true 
-        AND cm.response_time_seconds IS NOT NULL
-        AND cm.agent_name IS NOT NULL
-    `;
-
-    const responseTimeResult = await pool.query(responseTimeQuery, [chatbot_id]);
-
-    const avgResponseTime = responseTimeResult.rows[0].avg_response_time 
-      ? Math.round(responseTimeResult.rows[0].avg_response_time)
-      : null;
-
-    const totalResponses = responseTimeResult.rows[0].total_responses || 0;
-
-    res.json({
-      avgResponseTime: avgResponseTime ? `${avgResponseTime}s` : 'N/A',
-      hasResponseTimeData: avgResponseTime !== null && totalResponses > 0,
-      totalResponses: totalResponses
-    });
-
-  } catch (err) {
-    console.error('Error retrieving public average response time:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -3875,6 +3794,9 @@ app.post('/livechat-message', async (req, res) => {
       ON CONFLICT (message_id) DO UPDATE SET
         text = EXCLUDED.text,
         timestamp = EXCLUDED.timestamp,
+        image_data = EXCLUDED.image_data,
+        image_name = EXCLUDED.image_name,
+        image_mime = EXCLUDED.image_mime,
         updated_at = NOW()
       RETURNING *`,
       [
@@ -5155,25 +5077,21 @@ app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
 // ATOMIC LIVECHAT MESSAGE ENDPOINTS
 // =========================================
 
- // POST append single message atomically
- app.post('/append-livechat-message', async (req, res) => {
-   const {
-     user_id,
-     chatbot_id,
-     message_text,
-     is_user,
-     agent_name,
-     profile_picture,
-     image_data,
-     image_name,
-     image_mime,
-     image_size,
-     is_image,
-     message_type = 'text',
-     is_system = false,
-     is_form = false,
-     metadata = {}
-   } = req.body;
+// POST append single message atomically
+app.post('/append-livechat-message', async (req, res) => {
+  const {
+    user_id,
+    chatbot_id,
+    message_text,
+    is_user,
+    agent_name,
+    profile_picture,
+    image_data,
+    message_type = 'text',
+    is_system = false,
+    is_form = false,
+    metadata = {}
+  } = req.body;
 
   if (!user_id || !chatbot_id || !message_text || typeof is_user !== 'boolean') {
     return res.status(400).json({ 
@@ -5181,33 +5099,22 @@ app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
     });
   }
 
-     try {
-     // Enhance metadata with file information
-     const enhancedMetadata = {
-       ...metadata,
-       fileInfo: image_data ? {
-         name: image_name,
-         mime: image_mime,
-         size: image_size,
-         isImage: is_image
-       } : null
-     };
-     
-     const result = await pool.query(`
-       SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     `, [
-       user_id,
-       chatbot_id, 
-       message_text,
-       is_user,
-       agent_name,
-       profile_picture,
-       image_data,
-       message_type,
-       is_system,
-       is_form,
-       JSON.stringify(enhancedMetadata)
-     ]);
+  try {
+    const result = await pool.query(`
+      SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [
+      user_id,
+      chatbot_id, 
+      message_text,
+      is_user,
+      agent_name,
+      profile_picture,
+      image_data,
+      message_type,
+      is_system,
+      is_form,
+      JSON.stringify(metadata)
+    ]);
 
     const messageResult = result.rows[0];
     
@@ -5360,38 +5267,24 @@ app.get('/conversation-messages', async (req, res) => {
     `, [user_id, chatbot_id]);
 
     // Convert to frontend format with all properties preserved
-    const messages = result.rows.map(row => {
-      // Reconstruct file object if file metadata exists
-      let imageData = row.image_data;
-      if (row.image_data && row.metadata && row.metadata.fileInfo) {
-        imageData = {
-          data: row.image_data,
-          name: row.metadata.fileInfo.name,
-          mime: row.metadata.fileInfo.mime,
-          size: row.metadata.fileInfo.size,
-          isImage: row.metadata.fileInfo.isImage
-        };
-      }
-      
-      return {
-        text: row.message_text,
-        isUser: row.is_user,
-        isSystem: row.is_system,
-        isForm: row.is_form,
-        agentName: row.agent_name,
-        profilePicture: row.profile_picture,
-        image: imageData,
-        messageType: row.message_type,
-        sequenceNumber: row.sequence_number,
-        createdAt: row.created_at,
-        metadata: row.metadata,
-        // Restore original properties from metadata
-        textWithMarkers: row.text_with_markers || row.message_text,
-        isError: row.is_error || false,
-        // Include any other properties stored in metadata
-        ...((row.metadata && row.metadata.originalProperties) || {})
-      };
-    });
+    const messages = result.rows.map(row => ({
+      text: row.message_text,
+      isUser: row.is_user,
+      isSystem: row.is_system,
+      isForm: row.is_form,
+      agentName: row.agent_name,
+      profilePicture: row.profile_picture,
+      image: row.image_data,
+      messageType: row.message_type,
+      sequenceNumber: row.sequence_number,
+      createdAt: row.created_at,
+      metadata: row.metadata,
+      // Restore original properties from metadata
+      textWithMarkers: row.text_with_markers || row.message_text,
+      isError: row.is_error || false,
+      // Include any other properties stored in metadata
+      ...((row.metadata && row.metadata.originalProperties) || {})
+    }));
 
     res.json({
       conversation_data: messages,
@@ -5637,37 +5530,23 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         SELECT * FROM get_conversation_messages($1, $2)
       `, [user_id, chatbot_id]);
 
-      const messages = result.rows.map(row => {
-        // Reconstruct file object if file metadata exists  
-        let imageData = row.image_data;
-        if (row.image_data && row.metadata && row.metadata.fileInfo) {
-          imageData = {
-            data: row.image_data,
-            name: row.metadata.fileInfo.name,
-            mime: row.metadata.fileInfo.mime,
-            size: row.metadata.fileInfo.size,
-            isImage: row.metadata.fileInfo.isImage
-          };
-        }
-        
-        return {
-          text: row.message_text,
-          isUser: row.is_user,
-          isSystem: row.is_system,
-          isForm: row.is_form,
-          agentName: row.agent_name,
-          profilePicture: row.profile_picture,
-          image: imageData,
-          messageType: row.message_type,
-          sequenceNumber: row.sequence_number,
-          createdAt: row.created_at,
-          // Restore original properties from metadata
-          textWithMarkers: row.text_with_markers || row.message_text,
-          isError: row.is_error || false,
-          // Include any other properties stored in metadata
-          ...((row.metadata && row.metadata.originalProperties) || {})
-        };
-      });
+      const messages = result.rows.map(row => ({
+        text: row.message_text,
+        isUser: row.is_user,
+        isSystem: row.is_system,
+        isForm: row.is_form,
+        agentName: row.agent_name,
+        profilePicture: row.profile_picture,
+        image: row.image_data,
+        messageType: row.message_type,
+        sequenceNumber: row.sequence_number,
+        createdAt: row.created_at,
+        // Restore original properties from metadata
+        textWithMarkers: row.text_with_markers || row.message_text,
+        isError: row.is_error || false,
+        // Include any other properties stored in metadata
+        ...((row.metadata && row.metadata.originalProperties) || {})
+      }));
 
       res.json({ conversation_data: messages });
     } else {
