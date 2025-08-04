@@ -101,8 +101,41 @@ async function migrateProfilePictureColumn() {
   }
 }
 
-// Run migration on startup
+// Database migration function to add separate read states for livechat vs conversations
+async function migrateSeparateReadStates() {
+  try {
+    // Check if viewed_in_livechat column exists
+    const columnCheck = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'conversations' AND column_name = 'viewed_in_livechat'
+    `);
+    
+    if (columnCheck.rows.length === 0) {
+      console.log('Adding viewed_in_livechat column to conversations table...');
+      await pool.query('ALTER TABLE conversations ADD COLUMN viewed_in_livechat BOOLEAN DEFAULT FALSE');
+      console.log('Successfully added viewed_in_livechat column');
+      
+      // Initialize existing livechat conversations
+      console.log('Initializing viewed_in_livechat for existing livechat conversations...');
+      await pool.query(`
+        UPDATE conversations 
+        SET viewed_in_livechat = viewed 
+        WHERE is_livechat = true
+      `);
+      console.log('Successfully initialized viewed_in_livechat for existing livechat conversations');
+    } else {
+      console.log('viewed_in_livechat column already exists');
+    }
+  } catch (error) {
+    console.error('Error migrating separate read states:', error);
+    // Don't exit the process, just log the error
+  }
+}
+
+// Run migrations on startup
 migrateProfilePictureColumn();
+migrateSeparateReadStates();
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -1805,7 +1838,7 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved, context } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1815,8 +1848,12 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
     const userId = req.user.userId;
 
+    // Determine which viewed field to use based on context
+    const viewedField = context === 'livechat' ? 'c.viewed_in_livechat' : 'c.viewed';
+
     let queryText = `
-      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged,
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, 
+             ${viewedField} as viewed, c.tags, c.is_flagged, c.is_livechat, c.is_resolved,
              COALESCE(SUM(p.amount), 0) as purchase_amount,
              CASE 
                WHEN EXISTS (
@@ -1878,6 +1915,10 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
       queryParams.push(`${conversation_filter}`);
     }
+    if (tags && tags !== '') {
+      queryText += ` AND c.tags @> $${paramIndex++}::jsonb`;
+      queryParams.push(JSON.stringify([tags]));
+    }
     if (is_resolved && is_resolved !== '') {
       if (is_resolved === 'resolved') {
         queryText += ` AND c.is_resolved = TRUE`;
@@ -1904,6 +1945,8 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
 // GET single conversation
 app.get('/conversation/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const { context } = req.query; // 'livechat' or 'conversations'
+  
   try {
     // Get the conversation with purchase data
     const result = await pool.query(
@@ -1980,7 +2023,16 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
     
     // Only mark the conversation as viewed if the user is not an admin
     if (!req.user.isAdmin) {
-      await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
+      if (context === 'livechat') {
+        // Mark as viewed in both general and livechat context
+        await pool.query(
+          'UPDATE conversations SET viewed = TRUE, viewed_in_livechat = TRUE WHERE id = $1', 
+          [id]
+        );
+      } else {
+        // Mark as viewed only in general conversations context (not in livechat)
+        await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
+      }
     }
     
     res.json(conversation);
