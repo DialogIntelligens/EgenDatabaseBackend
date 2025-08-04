@@ -5271,6 +5271,57 @@ app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
   }
 });
 
+// GET user's show user profile pictures preference
+app.get('/show-user-profile-pictures', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  try {
+    const result = await pool.query(
+      'SELECT show_user_profile_pictures FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const showPictures = result.rows[0].show_user_profile_pictures !== false; // Default to true if null
+    res.json({ show_user_profile_pictures: showPictures });
+  } catch (err) {
+    console.error('Error fetching show user profile pictures preference:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// PUT update user's show user profile pictures preference
+app.put('/show-user-profile-pictures', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { show_user_profile_pictures } = req.body;
+  
+  if (typeof show_user_profile_pictures !== 'boolean') {
+    return res.status(400).json({ error: 'show_user_profile_pictures must be a boolean' });
+  }
+  
+  try {
+    const result = await pool.query(
+      'UPDATE users SET show_user_profile_pictures = $2 WHERE id = $1 RETURNING show_user_profile_pictures',
+      [userId, show_user_profile_pictures]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ 
+      message: 'Show user profile pictures preference updated successfully',
+      show_user_profile_pictures: result.rows[0].show_user_profile_pictures 
+    });
+  } catch (err) {
+    console.error('Error updating show user profile pictures preference:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 // =========================================
 // ATOMIC LIVECHAT MESSAGE ENDPOINTS
 // =========================================
