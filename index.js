@@ -101,33 +101,8 @@ async function migrateProfilePictureColumn() {
   }
 }
 
-// Database migration function to add language_preference column
-async function migrateLanguagePreferenceColumn() {
-  try {
-    // Check if column exists
-    const columnCheck = await pool.query(`
-      SELECT data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'users' AND column_name = 'language_preference'
-    `);
-    
-    if (columnCheck.rows.length === 0) {
-      // Column doesn't exist, add it with default value 'danish'
-      console.log('Adding language_preference column with default "danish"...');
-      await pool.query(`ALTER TABLE users ADD COLUMN language_preference VARCHAR(10) DEFAULT 'danish'`);
-      console.log('Successfully added language_preference column');
-    } else {
-      console.log('language_preference column already exists');
-    }
-  } catch (error) {
-    console.error('Error migrating language_preference column:', error);
-    // Don't exit the process, just log the error
-  }
-}
-
-// Run migrations on startup
+// Run migration on startup
 migrateProfilePictureColumn();
-migrateLanguagePreferenceColumn();
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -1020,33 +995,6 @@ app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
       error: 'Failed to get user indexes', 
       details: error.message 
     });
-  }
-});
-
-// API endpoint to get user language preference by chatbot ID
-app.get('/user-language/:chatbot_id', async (req, res) => {
-  const chatbotId = req.params.chatbot_id;
-  
-  try {
-    // Find user that has this chatbot_id in their chatbot_ids array
-    const result = await pool.query(`
-      SELECT language_preference 
-      FROM users 
-      WHERE chatbot_ids @> $1::jsonb
-    `, [JSON.stringify([chatbotId])]);
-    
-    if (result.rows.length === 0) {
-      // If no user found, return default language
-      return res.json({ language_preference: 'danish' });
-    }
-    
-    const languagePreference = result.rows[0].language_preference || 'danish';
-    res.json({ language_preference: languagePreference });
-    
-  } catch (error) {
-    console.error('Error fetching user language preference:', error);
-    // Return default language on error
-    res.json({ language_preference: 'danish' });
   }
 });
 
@@ -3115,7 +3063,7 @@ app.get('/users', authenticateToken, async (req, res) => {
     // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
     let queryText = `
       SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified, archived, language_preference
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified, archived
       FROM users`;
     let queryParams = [];
 
@@ -3169,7 +3117,7 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
     // Get full user details except password, including chatbot_filepath array
     const result = await pool.query(`
       SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, language_preference
+             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment
       FROM users
       WHERE id = $1
     `, [userId]);
@@ -3208,15 +3156,14 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user' });
   }
 
-  const { chatbot_ids, chatbot_filepath, monthly_payment, language_preference } = req.body;
+  const { chatbot_ids, chatbot_filepath, monthly_payment } = req.body;
   
   // Validate input
   if ((!chatbot_ids || !Array.isArray(chatbot_ids)) && 
       (!chatbot_filepath || !Array.isArray(chatbot_filepath)) &&
-      (monthly_payment === undefined) &&
-      (language_preference === undefined)) {
+      (monthly_payment === undefined)) {
     return res.status(400).json({ 
-      error: 'No valid data provided. At least one of chatbot_ids, chatbot_filepath, monthly_payment, or language_preference must be provided.'
+      error: 'No valid data provided. At least one of chatbot_ids, chatbot_filepath, or monthly_payment must be provided.'
     });
   }
   
@@ -3224,13 +3171,6 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
   if (monthly_payment !== undefined && (isNaN(monthly_payment) || monthly_payment < 0)) {
     return res.status(400).json({ 
       error: 'monthly_payment must be a non-negative number.'
-    });
-  }
-  
-  // Validate language_preference if provided
-  if (language_preference !== undefined && !['danish', 'english'].includes(language_preference)) {
-    return res.status(400).json({ 
-      error: 'language_preference must be either "danish" or "english".'
     });
   }
   
@@ -3264,12 +3204,6 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       paramIndex++;
     }
     
-    if (language_preference !== undefined) {
-      updateFields.push(`language_preference = $${paramIndex}`);
-      queryParams.push(language_preference);
-      paramIndex++;
-    }
-    
     // Always update last_modified timestamp
     updateFields.push(`last_modified = CURRENT_TIMESTAMP`);
     
@@ -3281,7 +3215,7 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
       UPDATE users 
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment, last_modified, language_preference
+      RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment, last_modified
     `;
     
     console.log('Executing user update query:', updateQuery);
