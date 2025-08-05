@@ -3883,41 +3883,6 @@ app.post('/upload-logo', authenticateToken, async (req, res) => {
   }
 });
 
-// Retrieve livechat conversation for widget polling
-app.get('/livechat-conversation', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT conversation_data FROM conversations
-       WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
-       ORDER BY created_at DESC LIMIT 1`,
-      [user_id, chatbot_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-
-    let data = result.rows[0].conversation_data;
-    if (typeof data === 'string') {
-      try {
-        data = JSON.parse(data);
-      } catch (e) {
-        console.error('Error parsing conversation_data JSON:', e);
-      }
-    }
-
-    res.json({ conversation_data: data });
-  } catch (err) {
-    console.error('Error fetching livechat conversation:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
 
 /* ================================
    Support Status Endpoints
@@ -5552,95 +5517,7 @@ app.get('/conversation-messages', async (req, res) => {
   }
 });
 
-// POST migrate conversation to atomic message system
-app.post('/migrate-conversation-to-atomic', async (req, res) => {
-  const { user_id, chatbot_id } = req.body;
 
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id' 
-    });
-  }
-
-  try {
-    // Get existing conversation
-    const convResult = await pool.query(`
-      SELECT id, conversation_data FROM conversations 
-      WHERE user_id = $1 AND chatbot_id = $2
-    `, [user_id, chatbot_id]);
-
-    if (convResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-
-    const conversation = convResult.rows[0];
-    const conversationData = conversation.conversation_data;
-
-    if (!Array.isArray(conversationData)) {
-      return res.status(400).json({ error: 'Invalid conversation data format' });
-    }
-
-    // Clear existing messages for this conversation
-    await pool.query(`
-      DELETE FROM conversation_messages 
-      WHERE conversation_id = $1
-    `, [conversation.id]);
-
-    // Insert each message atomically with better property handling
-    for (let i = 0; i < conversationData.length; i++) {
-      const msg = conversationData[i];
-      
-      await pool.query(`
-        INSERT INTO conversation_messages (
-          conversation_id, user_id, chatbot_id, message_text, is_user,
-          agent_name, profile_picture, image_data, sequence_number,
-          message_type, is_system, is_form, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      `, [
-        conversation.id,
-        user_id,
-        chatbot_id,
-        msg.text || msg.content || '', // Handle both text and content properties
-        Boolean(msg.isUser),
-        msg.agentName || msg.agent_name || null,
-        msg.profilePicture || msg.profile_picture || null,
-        msg.image || msg.image_data || null,
-        i + 1, // sequence_number starts from 1
-        msg.messageType || msg.message_type || (msg.image ? 'image' : 'text'),
-        Boolean(msg.isSystem || msg.is_system),
-        Boolean(msg.isForm || msg.is_form),
-        JSON.stringify({
-          ...msg.metadata,
-          originalProperties: {
-            textWithMarkers: msg.textWithMarkers,
-            isError: msg.isError,
-            ...(msg.metadata || {})
-          }
-        })
-      ]);
-    }
-
-    // Mark as using message system
-    await pool.query(`
-      UPDATE conversations 
-      SET uses_message_system = true 
-      WHERE id = $1
-    `, [conversation.id]);
-
-    res.json({
-      success: true,
-      message: 'Conversation migrated to atomic message system',
-      migrated_messages: conversationData.length
-    });
-
-  } catch (error) {
-    console.error('Error migrating conversation:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
 
 // POST migrate conversation to atomic message system with provided conversation data
 app.post('/migrate-conversation-to-atomic-with-messages', async (req, res) => {
