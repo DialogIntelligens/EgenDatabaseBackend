@@ -1683,7 +1683,7 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
       if (is_resolved === 'resolved') {
         queryText += ` AND c.is_resolved = TRUE`;
       } else if (is_resolved === 'unresolved') {
-        queryText += ` AND c.is_resolved = FALSE`;
+        queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
       }
     }
     const result = await pool.query(queryText, queryParams);
@@ -1882,7 +1882,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       if (is_resolved === 'resolved') {
         queryText += ` AND c.is_resolved = TRUE`;
       } else if (is_resolved === 'unresolved') {
-        queryText += ` AND c.is_resolved = FALSE`;
+        queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
       }
     }
 
