@@ -1805,7 +1805,7 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved, is_livechat_page } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1828,7 +1828,19 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
                  )
                ) THEN TRUE
                ELSE FALSE
-             END as has_unread_comments
+             END as has_unread_comments,
+             CASE 
+               WHEN c.is_livechat = TRUE AND c.uses_message_system = TRUE THEN
+                 COALESCE(
+                   (SELECT cm.created_at FROM conversation_messages cm 
+                    WHERE cm.conversation_id = c.id 
+                    AND (cm.is_system = TRUE OR cm.agent_name IS NOT NULL)
+                    ORDER BY cm.sequence_number ASC 
+                    LIMIT 1),
+                   c.created_at
+                 )
+               ELSE c.created_at
+             END as sort_timestamp
       FROM conversations c
       LEFT JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
       WHERE c.chatbot_id = ANY($1)
@@ -1887,7 +1899,16 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     }
 
     queryText += ` GROUP BY c.id `;
-    queryText += ` ORDER BY c.created_at DESC `;
+    
+    // Use different sorting logic for livechat page
+    if (is_livechat_page === 'true') {
+      // For livechat page: sort by first live message timestamp (when livechat started)
+      queryText += ` ORDER BY sort_timestamp DESC `;
+    } else {
+      // For normal conversations page: sort by created_at (newest first)
+      queryText += ` ORDER BY c.created_at DESC `;
+    }
+    
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
 
