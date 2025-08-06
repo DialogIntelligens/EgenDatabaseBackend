@@ -1371,7 +1371,8 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       tags = null,
       form_data = null,
       is_flagged = false,
-      is_resolved = false
+      is_resolved = false,
+      livechat_email = null
     ) {
       const client = await pool.connect();
       try {
@@ -1410,21 +1411,22 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $17 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $16 THEN FALSE ELSE viewed END,
+               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
+               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
+               livechat_email = COALESCE($16, livechat_email),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1456,7 +1458,8 @@ app.post('/conversations', async (req, res) => {
     fallback,
     tags,
     form_data,
-    is_resolved
+    is_resolved,
+    livechat_email
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1501,7 +1504,8 @@ app.post('/conversations', async (req, res) => {
       tags,
       form_data,
       false, // is_flagged - default to false
-      is_resolved || false // is_resolved - default to false
+      is_resolved || false, // is_resolved - default to false
+      livechat_email
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1816,7 +1820,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     let queryText = `
-      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged,
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged, c.form_data, c.user_id, c.livechat_email,
              COALESCE(SUM(p.amount), 0) as purchase_amount,
              CASE 
                WHEN EXISTS (
