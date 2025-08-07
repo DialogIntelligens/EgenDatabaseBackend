@@ -1882,6 +1882,62 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
   }
 });
 
+// PATCH to flag/unflag conversation (only for livechat conversations)
+app.patch('/conversation/:id/flag', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { is_flagged } = req.body;
+  
+  try {
+    // First verify this is a livechat conversation
+    const checkResult = await pool.query(
+      'SELECT is_livechat FROM conversations WHERE id = $1',
+      [id]
+    );
+    
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    if (!checkResult.rows[0].is_livechat) {
+      return res.status(400).json({ error: 'Flagging is only available for livechat conversations' });
+    }
+    
+    // Update the flag status
+    const result = await pool.query(
+      'UPDATE conversations SET is_flagged = $1 WHERE id = $2 RETURNING *', 
+      [is_flagged, id]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating conversation flag:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// PATCH to toggle livechat status for any conversation
+app.patch('/conversation/:id/livechat', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { is_livechat } = req.body;
+  
+  try {
+    // Update the livechat status
+    const result = await pool.query(
+      'UPDATE conversations SET is_livechat = $1 WHERE id = $2 RETURNING *', 
+      [is_livechat, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating conversation livechat status:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 /* ================================
    update-conversations Endpoint
 ================================ */
