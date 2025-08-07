@@ -13,7 +13,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
-import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
+import { checkMissingChunks, getUserIndexes } from './pineconeChecker.js';
 
 const { Pool } = pg;
 
@@ -65,6 +65,41 @@ app.options('*', cors());
 // Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
 app.set('trust proxy', true);
 
+// Database migration function to create shopify_credentials table
+async function createShopifyCredentialsTable() {
+  try {
+    // Check if the table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'shopify_credentials'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Create the shopify_credentials table
+      await pool.query(`
+        CREATE TABLE shopify_credentials (
+          id SERIAL PRIMARY KEY,
+          user_id VARCHAR(255) UNIQUE NOT NULL,
+          shopify_access_token TEXT,
+          shopify_api_key VARCHAR(255),
+          shopify_secret_key VARCHAR(255),
+          shopify_store VARCHAR(255),
+          shopify_api_version VARCHAR(20) DEFAULT '2024-10',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      console.log('✅ Created shopify_credentials table');
+    } else {
+      console.log('✅ shopify_credentials table already exists');
+    }
+  } catch (error) {
+    console.error('❌ Error creating shopify_credentials table:', error);
+  }
+}
+
 // Database migration function to update profile_picture column
 async function migrateProfilePictureColumn() {
   try {
@@ -103,6 +138,7 @@ async function migrateProfilePictureColumn() {
 
 // Run migration on startup
 migrateProfilePictureColumn();
+createShopifyCredentialsTable();
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -941,32 +977,6 @@ app.post('/check-missing-chunks', authenticateToken, async (req, res) => {
   }
 });
 
-// New endpoint to check ALL indexes for missing chunks
-app.post('/check-missing-chunks-all', authenticateToken, async (req, res) => {
-  const { userId } = req.body;
-  const requestingUserId = req.user.userId;
-  const isAdmin = req.user.isAdmin === true;
-
-  try {
-    if (isAdmin) {
-      console.log(`Admin ${requestingUserId} is checking missing chunks for ALL indexes across ALL users`);
-      const result = await checkAllIndexesMissingChunks(requestingUserId, true);
-      res.json(result);
-    } else {
-      console.log(`User ${requestingUserId} is checking missing chunks for all their indexes`);
-      const result = await checkAllIndexesMissingChunks(requestingUserId, false);
-      res.json(result);
-    }
-    
-  } catch (error) {
-    console.error('Error checking missing chunks for all indexes:', error);
-    res.status(500).json({ 
-      error: 'Failed to check missing chunks for all indexes', 
-      details: error.message 
-    });
-  }
-});
-
 // New endpoint to get available indexes for checking
 app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
   const requestingUserId = req.user.userId;
@@ -1368,34 +1378,11 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       purchase_tracking_enabled,
       is_livechat = false,
       fallback = null,
-      tags = null,
-      form_data = null,
-      is_flagged = false,
-      is_resolved = false,
-      livechat_email = null
+      tags = null
     ) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-
-        // Check if this is a livechat conversation with a new user message
-        let shouldMarkAsUnread = false;
-        let shouldMarkAsUnresolved = false;
-        if (is_livechat && conversation_data) {
-          try {
-            const parsedData = typeof conversation_data === 'string' ? JSON.parse(conversation_data) : conversation_data;
-            if (Array.isArray(parsedData) && parsedData.length > 0) {
-              const lastMessage = parsedData[parsedData.length - 1];
-              // If last message is from user (not agent, not system), mark as unread and unresolved
-              if (lastMessage && lastMessage.isUser === true) {
-                shouldMarkAsUnread = true;
-                shouldMarkAsUnresolved = true; // Automatically unresolve when user sends a message
-              }
-            }
-          } catch (parseError) {
-            console.error('Error parsing conversation data for unread check:', parseError);
-          }
-        }
 
         const updateResult = await client.query(
           `UPDATE conversations
@@ -1409,24 +1396,19 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                is_livechat = COALESCE($10, is_livechat),
                fallback = COALESCE($11, fallback),
                tags = COALESCE($12, tags),
-               form_data = COALESCE($13, form_data),
-               is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
-               livechat_email = COALESCE($16, livechat_email),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1456,10 +1438,7 @@ app.post('/conversations', async (req, res) => {
     purchase_tracking_enabled,
     is_livechat,
     fallback,
-    tags,
-    form_data,
-    is_resolved,
-    livechat_email
+    tags
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1488,7 +1467,7 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
-    // Call upsertConversation with is_livechat, fallback, tags, form_data, is_flagged, and is_resolved parameters
+    // Call upsertConversation with is_livechat, fallback, and tags parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1501,11 +1480,7 @@ app.post('/conversations', async (req, res) => {
       purchase_tracking_enabled,
       is_livechat || false,
       fallback,
-      tags,
-      form_data,
-      false, // is_flagged - default to false
-      is_resolved || false, // is_resolved - default to false
-      livechat_email
+      tags
     );
     res.status(201).json(result);
   } catch (err) {
@@ -1515,31 +1490,6 @@ app.post('/conversations', async (req, res) => {
       details: err.message,
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     });
-  }
-});
-
-// POST update conversation resolution status
-app.post('/update-conversation-resolution', authenticateToken, async (req, res) => {
-  const { conversation_id, is_resolved } = req.body;
-
-  if (!conversation_id || is_resolved === undefined) {
-    return res.status(400).json({ error: 'conversation_id and is_resolved are required' });
-  }
-
-  try {
-    const result = await pool.query(
-      'UPDATE conversations SET is_resolved = $1 WHERE id = $2 RETURNING *',
-      [is_resolved, conversation_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating conversation resolution:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
@@ -1633,7 +1583,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id, fejlstatus, customer_rating, emne, tags, is_resolved } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -1664,8 +1614,6 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
           )
         )`;
         queryParams.push(userId);
-      } else if (fejlstatus === 'leads') {
-        queryText += ` AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')`;
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
@@ -1678,17 +1626,6 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
     if (emne && emne !== '') {
       queryText += ` AND c.emne = $${paramIndex++}`;
       queryParams.push(emne);
-    }
-    if (tags && tags !== '') {
-      queryText += ` AND c.tags @> $${paramIndex++}::jsonb`;
-      queryParams.push(JSON.stringify([tags]));
-    }
-    if (is_resolved && is_resolved !== '') {
-      if (is_resolved === 'resolved') {
-        queryText += ` AND c.is_resolved = TRUE`;
-      } else if (is_resolved === 'unresolved') {
-        queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
-      }
     }
     const result = await pool.query(queryText, queryParams);
     return res.json(result.rows);
@@ -1809,7 +1746,7 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved, is_livechat_page } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1820,7 +1757,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     let queryText = `
-      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged, c.form_data, c.user_id, c.livechat_email,
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags,
              COALESCE(SUM(p.amount), 0) as purchase_amount,
              CASE 
                WHEN EXISTS (
@@ -1832,19 +1769,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
                  )
                ) THEN TRUE
                ELSE FALSE
-             END as has_unread_comments,
-             CASE 
-               WHEN c.is_livechat = TRUE AND c.uses_message_system = TRUE THEN
-                 COALESCE(
-                   (SELECT cm.created_at FROM conversation_messages cm 
-                    WHERE cm.conversation_id = c.id 
-                    AND (cm.is_system = TRUE OR cm.agent_name IS NOT NULL)
-                    ORDER BY cm.sequence_number ASC 
-                    LIMIT 1),
-                   c.created_at
-                 )
-               ELSE c.created_at
-             END as sort_timestamp
+             END as has_unread_comments
       FROM conversations c
       LEFT JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
       WHERE c.chatbot_id = ANY($1)
@@ -1873,10 +1798,6 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
             WHERE ccv.comment_id = cc.id AND ccv.user_id = $2
           )
         )`;
-      } else if (fejlstatus === 'leads') {
-        queryText += ` AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')`;
-      } else if (fejlstatus === 'flagged') {
-        queryText += ` AND c.is_flagged = TRUE`;
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
@@ -1894,25 +1815,9 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
       queryParams.push(`${conversation_filter}`);
     }
-    if (is_resolved && is_resolved !== '') {
-      if (is_resolved === 'resolved') {
-        queryText += ` AND c.is_resolved = TRUE`;
-      } else if (is_resolved === 'unresolved') {
-        queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
-      }
-    }
 
     queryText += ` GROUP BY c.id `;
-    
-    // Use different sorting logic for livechat page
-    if (is_livechat_page === 'true') {
-      // For livechat page: sort by first live message timestamp (when livechat started)
-      queryText += ` ORDER BY sort_timestamp DESC `;
-    } else {
-      // For normal conversations page: sort by created_at (newest first)
-      queryText += ` ORDER BY c.created_at DESC `;
-    }
-    
+    queryText += ` ORDER BY c.created_at DESC `;
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
     queryParams.push(page_size, page_number * page_size);
 
@@ -1944,71 +1849,13 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
-
-    let conversation = result.rows[0];
-    
-    // If this is a livechat conversation, enrich with file metadata
-    if (conversation.is_livechat) {
-      try {
-        // Get file metadata from livechat_messages table
-        const livechatMessages = await pool.query(
-          `SELECT message_id, text, is_user, image_data, image_name, image_mime, timestamp
-           FROM livechat_messages 
-           WHERE user_id = $1 AND chatbot_id = $2 
-           ORDER BY timestamp ASC`,
-          [conversation.user_id, conversation.chatbot_id]
-        );
-
-        // Parse existing conversation data
-        let conversationData = [];
-        if (conversation.conversation_data) {
-          try {
-            conversationData = typeof conversation.conversation_data === 'string' 
-              ? JSON.parse(conversation.conversation_data) 
-              : conversation.conversation_data;
-          } catch (e) {
-            console.error('Error parsing conversation_data:', e);
-            conversationData = [];
-          }
-        }
-
-        // Enrich conversation data with file metadata
-        if (livechatMessages.rows.length > 0) {
-          const messageMap = new Map();
-          livechatMessages.rows.forEach(msg => {
-            messageMap.set(msg.text, {
-              fileName: msg.image_name,
-              fileMime: msg.image_mime
-            });
-          });
-
-          // Update conversation data with file metadata
-          conversationData = conversationData.map(msg => {
-            if (msg.image && msg.text && messageMap.has(msg.text)) {
-              const fileMetadata = messageMap.get(msg.text);
-              return {
-                ...msg,
-                fileName: fileMetadata.fileName,
-                fileMime: fileMetadata.fileMime
-              };
-            }
-            return msg;
-          });
-
-          conversation.conversation_data = conversationData;
-        }
-      } catch (error) {
-        console.error('Error enriching livechat conversation with file metadata:', error);
-        // Continue without enrichment if there's an error
-      }
-    }
     
     // Only mark the conversation as viewed if the user is not an admin
     if (!req.user.isAdmin) {
       await pool.query('UPDATE conversations SET viewed = TRUE WHERE id = $1', [id]);
     }
     
-    res.json(conversation);
+    res.json(result.rows[0]);
   } catch (err) {
     console.error('Error retrieving conversation:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
@@ -2035,152 +1882,42 @@ app.patch('/conversation/:id/mark-unread', authenticateToken, async (req, res) =
   }
 });
 
-// PATCH to flag/unflag conversation (only for livechat conversations)
-app.patch('/conversation/:id/flag', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { is_flagged } = req.body;
-  
-  try {
-    // First verify this is a livechat conversation
-    const checkResult = await pool.query(
-      'SELECT is_livechat FROM conversations WHERE id = $1',
-      [id]
-    );
-    
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-    
-    if (!checkResult.rows[0].is_livechat) {
-      return res.status(400).json({ error: 'Flagging is only available for livechat conversations' });
-    }
-    
-    // Update the flag status
-    const result = await pool.query(
-      'UPDATE conversations SET is_flagged = $1 WHERE id = $2 RETURNING *', 
-      [is_flagged, id]
-    );
-    
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating conversation flag:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
 /* ================================
    update-conversations Endpoint
 ================================ */
-app.post('/update-conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, limit } = req.body;
+app.post('/update-conversations', async (req, res) => {
+  const { chatbot_id, prediction_url } = req.body;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
+  if (!prediction_url) {
+    return res.status(400).json({ error: 'prediction_url is required' });
+  }
 
   try {
-    // Build query with optional limit for recent conversations
-    let query = 'SELECT * FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC';
-    let queryParams = [chatbot_id];
-    
-    if (limit && limit > 0) {
-      query += ' LIMIT $2';
-      queryParams.push(limit);
-    }
-    
-    const conversations = await pool.query(query, queryParams);
+    const conversations = await pool.query('SELECT * FROM conversations WHERE chatbot_id = $1', [
+      chatbot_id,
+    ]);
     if (conversations.rows.length === 0) {
       return res
         .status(404)
         .json({ error: 'No conversations found for the given chatbot_id' });
     }
 
-    // Get userId from the first conversation (all conversations for a chatbot should have the same user_id)
-    const userId = conversations.rows[0].user_id;
-    if (!userId) {
-      return res.status(400).json({ error: 'Could not determine user_id from conversations' });
+    for (let conversation of conversations.rows) {
+      const conversationText = conversation.conversation_data;
+      const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, prediction_url);
+
+      await pool.query(
+        `UPDATE conversations
+         SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+         WHERE id = $6`,
+        [emne, score, lacking_info, fallback, tags, conversation.id]
+      );
     }
 
-    const totalConversations = conversations.rows.length;
-    let processedCount = 0;
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
-
-    const limitInfo = limit ? ` (limited to ${limit} most recent)` : ' (all conversations)';
-    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
-
-    // Process conversations in batches to avoid overwhelming the API
-    const BATCH_SIZE = 10;
-    const batches = [];
-    for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
-      batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
-    }
-
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-      const batch = batches[batchIndex];
-      console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} conversations)`);
-
-      // Process batch in parallel with limited concurrency
-      const batchPromises = batch.map(async (conversation) => {
-        try {
-          const conversationText = conversation.conversation_data;
-          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id);
-
-          await pool.query(
-            `UPDATE conversations
-             SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
-             WHERE id = $6`,
-            [emne, score, lacking_info, fallback, tags, conversation.id]
-          );
-
-          successCount++;
-          return { success: true, id: conversation.id };
-        } catch (error) {
-          errorCount++;
-          const errorDetails = {
-            conversationId: conversation.id,
-            error: error.message
-          };
-          errors.push(errorDetails);
-          console.error(`Error processing conversation ${conversation.id}:`, error);
-          return { success: false, id: conversation.id, error: error.message };
-        }
-      });
-
-      // Wait for batch to complete
-      await Promise.all(batchPromises);
-      processedCount += batch.length;
-
-      // Log progress
-      const progressPercent = Math.round((processedCount / totalConversations) * 100);
-      console.log(`Progress: ${processedCount}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
-
-      // Small delay between batches to be nice to the API
-      if (batchIndex < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-
-    const response = {
-      message: 'Conversations update completed',
-      total: totalConversations,
-      processed: processedCount,
-      successful: successCount,
-      failed: errorCount
-    };
-
-    // Include error details if there were any failures
-    if (errors.length > 0) {
-      response.errors = errors.slice(0, 10); // Limit to first 10 errors to avoid large responses
-      if (errors.length > 10) {
-        response.note = `Showing first 10 errors. Total errors: ${errors.length}`;
-      }
-    }
-
-    console.log('Update conversations completed:', response);
-    return res.status(200).json(response);
-
+    return res.status(200).json({ message: 'Conversations updated successfully' });
   } catch (error) {
     console.error('Error updating conversations:', error);
     res
@@ -2189,77 +1926,16 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
   }
 });
 
-// Helper for prediction using standard statistics API
-const getEmneAndScore = async (conversationText, userId, chatbotId) => {
+// Helper for prediction
+const getEmneAndScore = async (conversationText, prediction_url) => {
   try {
-    // Use the standard statistics API endpoint
-    const statisticsAPI = "https://den-utrolige-snebold.onrender.com/api/v1/prediction/53e9c446-b2a3-41ca-8a01-8d48c05fcc7a";
-    
-    const bodyObject = { question: conversationText };
-    
-    // Get statistics prompt from prompt templates (same as chatbot)
-    try {
-      // Import and use the buildPrompt function to get the statistics prompt
-      const { buildPrompt } = await import('./promptTemplateV2Routes.js');
-      const statisticsPrompt = await buildPrompt(pool, chatbotId, 'statistics');
-      
-      if (statisticsPrompt) {
-        bodyObject.overrideConfig = bodyObject.overrideConfig || {};
-        bodyObject.overrideConfig.vars = bodyObject.overrideConfig.vars || {};
-        bodyObject.overrideConfig.vars.statestik_prompt = statisticsPrompt;
-        console.log("Statistics prompt override added for user", userId, "chatbot", chatbotId);
-      }
-    } catch (promptError) {
-      console.warn('Could not load statistics prompt:', promptError);
-      // Continue without custom prompt - use defaults
-    }
-
-    // Get other user settings that might exist
-    try {
-      
-      // Get topK setting for statistics flow
-      const topKResult = await pool.query(
-        'SELECT top_k FROM flow_top_k_settings WHERE user_id = $1 AND flow_key = $2',
-        [userId, 'statistics']
-      );
-      
-      if (topKResult.rows.length > 0) {
-        const topKValue = topKResult.rows[0].top_k;
-        bodyObject.overrideConfig = bodyObject.overrideConfig || {};
-        bodyObject.overrideConfig.topK = topKValue;
-        console.log(`Applied topK setting for statistics flow: ${topKValue}`);
-      }
-      
-      // Get flow-specific Pinecone API key for statistics flow
-      const apiKeyResult = await pool.query(
-        'SELECT pinecone_api_key FROM flow_pinecone_api_keys WHERE user_id = $1 AND flow_key = $2',
-        [userId, 'statistics']
-      );
-      
-      if (apiKeyResult.rows.length > 0) {
-        const apiKey = apiKeyResult.rows[0].pinecone_api_key;
-        bodyObject.overrideConfig = bodyObject.overrideConfig || {};
-        bodyObject.overrideConfig.pineconeApiKey = apiKey;
-        console.log(`Applied flow-specific API key for statistics flow: ${apiKey.substring(0, 20)}...`);
-      }
-      
-    } catch (settingsError) {
-      console.warn('Could not load user statistics settings:', settingsError);
-      // Continue without settings - use defaults
-    }
-
-    const response = await fetch(statisticsAPI, {
+    const response = await fetch(prediction_url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(bodyObject),
+      body: JSON.stringify({ question: conversationText }),
     });
-    
-    if (!response.ok) {
-      throw new Error(`Statistics API responded with status: ${response.status}`);
-    }
-    
     const result = await response.json();
     const text = result.text;
 
@@ -2781,206 +2457,6 @@ app.post('/analyze-conversations', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error analyzing conversations:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
-  }
-});
-
-/* ================================
-   Live Chat Statistics Endpoint
-================================ */
-app.get('/livechat-statistics', authenticateToken, async (req, res) => {
-  const { chatbot_id, start_date, end_date } = req.query;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    // Check if the user has livechat access
-    const userCheck = await pool.query(
-      'SELECT livechat FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-
-    if (userCheck.rows.length === 0 || !userCheck.rows[0].livechat) {
-      return res.status(403).json({ error: 'User does not have livechat access' });
-    }
-
-    const chatbotIds = chatbot_id.split(',');
-
-    // Build base query for livechat conversations
-    let queryText = `
-      SELECT *
-      FROM conversations c
-      WHERE c.chatbot_id = ANY($1) AND c.is_livechat = true
-    `;
-    let queryParams = [chatbotIds];
-    let paramIndex = 2;
-
-    // Add date filters if provided
-    if (start_date && end_date) {
-      queryText += ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      queryParams.push(start_date, end_date);
-    }
-
-    queryText += ` ORDER BY c.created_at DESC`;
-
-    const conversationsResult = await pool.query(queryText, queryParams);
-
-    // Get response time statistics from conversation_messages
-    let responseTimeQuery = `
-      SELECT 
-        AVG(cm.response_time_seconds) as avg_response_time,
-        MIN(cm.response_time_seconds) as min_response_time,
-        MAX(cm.response_time_seconds) as max_response_time,
-        COUNT(cm.response_time_seconds) as total_responses
-      FROM conversation_messages cm
-      JOIN conversations c ON cm.conversation_id = c.id
-      WHERE c.chatbot_id = ANY($1) 
-        AND c.is_livechat = true 
-        AND cm.response_time_seconds IS NOT NULL
-        AND cm.agent_name IS NOT NULL
-    `;
-    let responseTimeParams = [chatbotIds];
-    let responseTimeParamIndex = 2;
-
-    if (start_date && end_date) {
-      responseTimeQuery += ` AND c.created_at BETWEEN $${responseTimeParamIndex++} AND $${responseTimeParamIndex++}`;
-      responseTimeParams.push(start_date, end_date);
-    }
-
-    const responseTimeResult = await pool.query(responseTimeQuery, responseTimeParams);
-
-    // Calculate daily conversation counts
-    const dailyStats = {};
-    conversationsResult.rows.forEach(conv => {
-      const date = new Date(conv.created_at);
-      const dayKey = `${date.getFullYear()}-${('0' + (date.getMonth() + 1)).slice(-2)}-${('0' + date.getDate()).slice(-2)}`;
-      
-      if (!dailyStats[dayKey]) {
-        dailyStats[dayKey] = 0;
-      }
-      dailyStats[dayKey]++;
-    });
-
-    // Get total AI conversations for percentage calculation
-    let aiConversationsQuery = `
-      SELECT COUNT(*) as total_ai_conversations
-      FROM conversations c
-      WHERE c.chatbot_id = ANY($1) AND (c.is_livechat = false OR c.is_livechat IS NULL)
-    `;
-    let aiConversationsParams = [chatbotIds];
-    let aiConversationsParamIndex = 2;
-
-    if (start_date && end_date) {
-      aiConversationsQuery += ` AND c.created_at BETWEEN $${aiConversationsParamIndex++} AND $${aiConversationsParamIndex++}`;
-      aiConversationsParams.push(start_date, end_date);
-    }
-
-    const aiConversationsResult = await pool.query(aiConversationsQuery, aiConversationsParams);
-
-    const totalLivechatConversations = conversationsResult.rows.length;
-    const totalAiConversations = parseInt(aiConversationsResult.rows[0].total_ai_conversations);
-    const totalConversations = totalLivechatConversations + totalAiConversations;
-
-    // Calculate statistics
-    const livechatPercentage = totalConversations > 0 
-      ? ((totalLivechatConversations / totalConversations) * 100).toFixed(1)
-      : '0.0';
-
-    const avgResponseTime = responseTimeResult.rows[0].avg_response_time 
-      ? Math.round(responseTimeResult.rows[0].avg_response_time)
-      : null;
-
-    const uniqueDays = Object.keys(dailyStats).length;
-    const avgLivechatPerDay = uniqueDays > 0 
-      ? (totalLivechatConversations / uniqueDays).toFixed(2)
-      : '0.00';
-
-    // Format daily data for charts
-    const dailyData = Object.keys(dailyStats).length > 0 ? {
-      labels: Object.keys(dailyStats).sort(),
-      datasets: [{
-        label: 'Daily Live Chat Conversations',
-        data: Object.keys(dailyStats).sort().map(key => dailyStats[key]),
-        fill: false,
-        backgroundColor: '#FF6B6B',
-        borderColor: '#FF5252',
-        borderWidth: 2,
-      }],
-    } : null;
-
-    res.json({
-      totalLivechatConversations,
-      avgLivechatPerDay,
-      livechatPercentage: `${livechatPercentage}%`,
-      avgResponseTime: avgResponseTime ? `${avgResponseTime}s` : 'N/A',
-      minResponseTime: responseTimeResult.rows[0].min_response_time || null,
-      maxResponseTime: responseTimeResult.rows[0].max_response_time || null,
-      totalResponses: responseTimeResult.rows[0].total_responses || 0,
-      dailyData,
-      hasResponseTimeData: avgResponseTime !== null,
-    });
-
-  } catch (err) {
-    console.error('Error retrieving livechat statistics:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-/* ================================
-   Public Live Chat Response Time Endpoint
-================================ */
-app.get('/public/average-response-time/:chatbot_id', async (req, res) => {
-  const { chatbot_id } = req.params;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    // Get response time statistics from conversation_messages
-    const responseTimeQuery = `
-      SELECT 
-        AVG(cm.response_time_seconds) as avg_response_time,
-        COUNT(cm.response_time_seconds) as total_responses
-      FROM conversation_messages cm
-      JOIN conversations c ON cm.conversation_id = c.id
-      WHERE c.chatbot_id = $1
-        AND c.is_livechat = true 
-        AND cm.response_time_seconds IS NOT NULL
-        AND cm.agent_name IS NOT NULL
-    `;
-
-    const responseTimeResult = await pool.query(responseTimeQuery, [chatbot_id]);
-    
-    let avgResponseTime = null;
-    let hasResponseTimeData = false;
-    
-    if (responseTimeResult.rows.length > 0 && responseTimeResult.rows[0].avg_response_time) {
-      const avgSeconds = Math.round(responseTimeResult.rows[0].avg_response_time);
-      
-      if (avgSeconds < 60) {
-        avgResponseTime = `${avgSeconds}s`;
-      } else if (avgSeconds < 3600) {
-        const minutes = Math.round(avgSeconds / 60);
-        avgResponseTime = `${minutes}m`;
-      } else {
-        const hours = Math.round(avgSeconds / 3600);
-        avgResponseTime = `${hours}h`;
-      }
-      
-      hasResponseTimeData = true;
-    }
-
-    res.json({
-      avgResponseTime: avgResponseTime || 'N/A',
-      hasResponseTimeData,
-      totalResponses: responseTimeResult.rows[0]?.total_responses || 0
-    });
-
-  } catch (err) {
-    console.error('Error retrieving public average response time:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
@@ -3908,6 +3384,41 @@ app.post('/upload-logo', authenticateToken, async (req, res) => {
   }
 });
 
+// Retrieve livechat conversation for widget polling
+app.get('/livechat-conversation', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT conversation_data FROM conversations
+       WHERE user_id = $1 AND chatbot_id = $2 AND is_livechat = TRUE
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id, chatbot_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    let data = result.rows[0].conversation_data;
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        console.error('Error parsing conversation_data JSON:', e);
+      }
+    }
+
+    res.json({ conversation_data: data });
+  } catch (err) {
+    console.error('Error fetching livechat conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
 
 /* ================================
    Support Status Endpoints
@@ -3941,136 +3452,6 @@ app.get('/support-status/:chatbot_id', async (req, res) => {
   } catch (err) {
     console.error('Error fetching support status:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-/* ================================
-   Individual Livechat Messages Endpoints
-================================ */
-
-// POST endpoint to save individual livechat messages
-app.post('/livechat-message', async (req, res) => {
-  const {
-    user_id,
-    chatbot_id,
-    message_id,
-    text,
-    is_user,
-    is_system = false,
-    timestamp,
-    image_data,
-    image_name,
-    image_mime,
-    agent_id,
-    agent_name,
-    agent_profile_picture
-  } = req.body;
-
-  if (!user_id || !chatbot_id || !message_id || !text) {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id, message_id, text' 
-    });
-  }
-
-  try {
-    const result = await pool.query(`
-      INSERT INTO livechat_messages (
-        user_id, chatbot_id, message_id, text, is_user, is_system, 
-        timestamp, image_data, image_name, image_mime, 
-        agent_id, agent_name, agent_profile_picture, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-      ON CONFLICT (message_id) DO UPDATE SET
-        text = EXCLUDED.text,
-        timestamp = EXCLUDED.timestamp,
-        image_data = EXCLUDED.image_data,
-        image_name = EXCLUDED.image_name,
-        image_mime = EXCLUDED.image_mime,
-        updated_at = NOW()
-      RETURNING *`,
-      [
-        user_id, chatbot_id, message_id, text, is_user, is_system,
-        new Date(timestamp), image_data, image_name, image_mime,
-        agent_id, agent_name, agent_profile_picture
-      ]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Error saving livechat message:', err);
-    res.status(500).json({
-      error: 'Database error',
-      details: err.message
-    });
-  }
-});
-
-// GET endpoint to fetch livechat messages for a conversation
-app.get('/livechat-messages', async (req, res) => {
-  const { user_id, chatbot_id, since_timestamp } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'user_id and chatbot_id are required' 
-    });
-  }
-
-  try {
-    let query = `
-      SELECT * FROM livechat_messages
-      WHERE user_id = $1 AND chatbot_id = $2
-    `;
-    let params = [user_id, chatbot_id];
-
-    // Optional: only fetch messages since a certain timestamp
-    if (since_timestamp) {
-      query += ` AND timestamp > $3`;
-      params.push(new Date(parseInt(since_timestamp)));
-    }
-
-    query += ` ORDER BY timestamp ASC`;
-
-    const result = await pool.query(query, params);
-
-    res.json({ 
-      messages: result.rows.map(row => ({
-        ...row,
-        tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags
-      }))
-    });
-  } catch (err) {
-    console.error('Error fetching livechat messages:', err);
-    res.status(500).json({
-      error: 'Database error',
-      details: err.message
-    });
-  }
-});
-
-// PATCH endpoint to update message statistics
-app.patch('/livechat-message/:messageId/stats', async (req, res) => {
-  const { messageId } = req.params;
-  const { emne, score, lacking_info, fallback, tags } = req.body;
-
-  try {
-    const result = await pool.query(`
-      UPDATE livechat_messages 
-      SET emne = $2, score = $3, lacking_info = $4, fallback = $5, tags = $6, updated_at = NOW()
-      WHERE message_id = $1
-      RETURNING *`,
-      [messageId, emne, score, lacking_info, fallback, JSON.stringify(tags)]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating message stats:', err);
-    res.status(500).json({
-      error: 'Database error',
-      details: err.message
-    });
   }
 });
 
@@ -4434,6 +3815,60 @@ app.get('/api/shopify/orders/:order_id', async (req, res) => {
     console.error('Error in Shopify order details proxy:', error);
     return res.status(500).json({ 
       error: 'Internal server error', 
+      details: error.message 
+    });
+  }
+});
+
+/*
+  GET /api/shopify/credentials/:user_id
+  Gets Shopify credentials for a specific user
+*/
+app.get('/api/shopify/credentials/:user_id', async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    if (!user_id) {
+      return res.status(400).json({ 
+        error: 'user_id is required' 
+      });
+    }
+
+    // Query the database for Shopify credentials
+    const result = await pool.query(`
+      SELECT 
+        shopify_access_token,
+        shopify_api_key,
+        shopify_secret_key,
+        shopify_store,
+        shopify_api_version
+      FROM shopify_credentials 
+      WHERE user_id = $1
+    `, [user_id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'No Shopify credentials found for this user' 
+      });
+    }
+
+    const credentials = result.rows[0];
+    
+    res.json({
+      success: true,
+      credentials: {
+        shopifyAccessToken: credentials.shopify_access_token,
+        shopifyApiKey: credentials.shopify_api_key,
+        shopifySecretKey: credentials.shopify_secret_key,
+        shopifyStore: credentials.shopify_store,
+        shopifyApiVersion: credentials.shopify_api_version || '2024-10'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching Shopify credentials:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
       details: error.message 
     });
   }
@@ -5149,582 +4584,4 @@ app.get('/unread-comments-count', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
-
-// GET total count of leads (contact form submissions)
-app.get('/leads-count', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.query;
-  
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    const chatbotIds = chatbot_id.split(',');
-
-    // Count conversations that have form submissions (leads)
-    const queryText = `
-      SELECT COUNT(DISTINCT c.id) AS leads_count
-      FROM conversations c
-      WHERE c.chatbot_id = ANY($1)
-      AND c.form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')
-    `;
-    
-    const result = await pool.query(queryText, [chatbotIds]);
-    const leadsCount = parseInt(result.rows[0]?.leads_count || 0);
-    
-    res.json({ leads_count: leadsCount });
-  } catch (err) {
-    console.error('Error fetching leads count:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// GET total count of unread livechat messages
-app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.query;
-  
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    const chatbotIds = chatbot_id.split(',');
-    const userId = req.user.userId;
-
-    // Count livechat conversations that are unread (viewed = false) for this user's chatbots
-    const queryText = `
-      SELECT COUNT(c.id) AS unread_livechat_count
-      FROM conversations c
-      WHERE c.chatbot_id = ANY($1)
-      AND c.is_livechat = TRUE
-      AND (c.viewed = FALSE OR c.viewed IS NULL)
-    `;
-    
-    const result = await pool.query(queryText, [chatbotIds]);
-    const unreadLivechatCount = parseInt(result.rows[0]?.unread_livechat_count || 0);
-    
-    res.json({ unread_livechat_count: unreadLivechatCount });
-  } catch (err) {
-    console.error('Error fetching unread livechat count:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// GET user's livechat notification sound preference
-app.get('/livechat-notification-sound', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  try {
-    const result = await pool.query(
-      'SELECT livechat_notification_sound FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const soundEnabled = result.rows[0].livechat_notification_sound !== false; // Default to true if null
-    res.json({ livechat_notification_sound: soundEnabled });
-  } catch (err) {
-    console.error('Error fetching livechat notification sound preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// PUT update user's livechat notification sound preference
-app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { livechat_notification_sound } = req.body;
-  
-  if (typeof livechat_notification_sound !== 'boolean') {
-    return res.status(400).json({ error: 'livechat_notification_sound must be a boolean' });
-  }
-  
-  try {
-    const result = await pool.query(
-      'UPDATE users SET livechat_notification_sound = $2 WHERE id = $1 RETURNING livechat_notification_sound',
-      [userId, livechat_notification_sound]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({ 
-      message: 'Livechat notification sound preference updated successfully',
-      livechat_notification_sound: result.rows[0].livechat_notification_sound 
-    });
-  } catch (err) {
-    console.error('Error updating livechat notification sound preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// GET user's show user profile pictures preference
-app.get('/show-user-profile-pictures', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  try {
-    const result = await pool.query(
-      'SELECT show_user_profile_pictures FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const showPictures = result.rows[0].show_user_profile_pictures !== false; // Default to true if null
-    res.json({ show_user_profile_pictures: showPictures });
-  } catch (err) {
-    console.error('Error fetching show user profile pictures preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// PUT update user's show user profile pictures preference
-app.put('/show-user-profile-pictures', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { show_user_profile_pictures } = req.body;
-  
-  if (typeof show_user_profile_pictures !== 'boolean') {
-    return res.status(400).json({ error: 'show_user_profile_pictures must be a boolean' });
-  }
-  
-  try {
-    const result = await pool.query(
-      'UPDATE users SET show_user_profile_pictures = $2 WHERE id = $1 RETURNING show_user_profile_pictures',
-      [userId, show_user_profile_pictures]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({ 
-      message: 'Show user profile pictures preference updated successfully',
-      show_user_profile_pictures: result.rows[0].show_user_profile_pictures 
-    });
-  } catch (err) {
-    console.error('Error updating show user profile pictures preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// =========================================
-// ATOMIC LIVECHAT MESSAGE ENDPOINTS
-// =========================================
-
-// POST append single message atomically
-app.post('/append-livechat-message', async (req, res) => {
-  const {
-    user_id,
-    chatbot_id,
-    message_text,
-    is_user,
-    agent_name,
-    profile_picture,
-    image_data,
-    message_type = 'text',
-    is_system = false,
-    is_form = false,
-    metadata = {}
-  } = req.body;
-
-  if (!user_id || !chatbot_id || !message_text || typeof is_user !== 'boolean') {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id, message_text, is_user' 
-    });
-  }
-
-  try {
-    const result = await pool.query(`
-      SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    `, [
-      user_id,
-      chatbot_id, 
-      message_text,
-      is_user,
-      agent_name,
-      profile_picture,
-      image_data,
-      message_type,
-      is_system,
-      is_form,
-      JSON.stringify(metadata)
-    ]);
-
-    const messageResult = result.rows[0];
-    
-    if (!messageResult.success) {
-      return res.status(500).json({ 
-        error: 'Failed to append message',
-        details: messageResult.error_message 
-      });
-    }
-
-    // Mark conversation as using the new message system
-    await pool.query(`
-      UPDATE conversations 
-      SET uses_message_system = true,
-          is_livechat = true
-      WHERE id = $1
-    `, [messageResult.conversation_id]);
-
-    // Calculate response time if this is an agent message responding to a user message
-    if (!is_user && agent_name) {
-      try {
-        // Find the most recent user message in this conversation
-        const userMessageResult = await pool.query(`
-          SELECT created_at 
-          FROM conversation_messages 
-          WHERE conversation_id = $1 AND is_user = true
-          ORDER BY sequence_number DESC 
-          LIMIT 1
-        `, [messageResult.conversation_id]);
-
-        if (userMessageResult.rows.length > 0) {
-          const userMessageTime = new Date(userMessageResult.rows[0].created_at);
-          const agentMessageTime = new Date(); // Current time (when agent responded)
-          const responseTimeSeconds = Math.round((agentMessageTime - userMessageTime) / 1000);
-
-          // Update the agent message with response time
-          await pool.query(`
-            UPDATE conversation_messages 
-            SET response_time_seconds = $1 
-            WHERE id = $2
-          `, [responseTimeSeconds, messageResult.message_id]);
-
-          console.log(`Calculated response time: ${responseTimeSeconds} seconds for message ${messageResult.message_id}`);
-        }
-      } catch (responseTimeError) {
-        console.error('Error calculating response time:', responseTimeError);
-        // Don't fail the request if response time calculation fails
-      }
-    }
-
-    res.status(201).json({
-      success: true,
-      message_id: messageResult.message_id,
-      conversation_id: messageResult.conversation_id,
-      sequence_number: messageResult.sequence_number
-    });
-
-  } catch (error) {
-    console.error('Error appending livechat message:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-// Agent typing status endpoints
-app.post('/agent-typing-status', async (req, res) => {
-  const { user_id, chatbot_id, agent_name, profile_picture, is_typing } = req.body;
-
-  if (!user_id || !chatbot_id || !agent_name) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: user_id, chatbot_id, agent_name' 
-    });
-  }
-
-  try {
-    // Use upsert to handle concurrent updates
-    const result = await pool.query(`
-      INSERT INTO agent_typing_status (user_id, chatbot_id, agent_name, profile_picture, is_typing, last_updated)
-      VALUES ($1, $2, $3, $4, $5, NOW())
-      ON CONFLICT (user_id, chatbot_id)
-      DO UPDATE SET 
-        agent_name = EXCLUDED.agent_name,
-        profile_picture = EXCLUDED.profile_picture,
-        is_typing = EXCLUDED.is_typing,
-        last_updated = NOW()
-      RETURNING *
-    `, [user_id, chatbot_id, agent_name, profile_picture || '', is_typing]);
-
-    res.json({ success: true, typing_status: result.rows[0] });
-  } catch (error) {
-    console.error('Error updating agent typing status:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-app.get('/agent-typing-status', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: user_id, chatbot_id' 
-    });
-  }
-
-  try {
-    // Get current typing status, excluding expired ones (older than 10 seconds)
-    const result = await pool.query(`
-      SELECT * FROM agent_typing_status 
-      WHERE user_id = $1 
-        AND chatbot_id = $2 
-        AND is_typing = true 
-        AND last_updated > NOW() - INTERVAL '15 seconds'
-    `, [user_id, chatbot_id]);
-
-    const isAgentTyping = result.rows.length > 0;
-    const agentInfo = isAgentTyping ? result.rows[0] : null;
-
-    res.json({ 
-      is_agent_typing: isAgentTyping,
-      agent_name: agentInfo?.agent_name || null,
-      profile_picture: agentInfo?.profile_picture || null
-    });
-  } catch (error) {
-    console.error('Error fetching agent typing status:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-// GET conversation messages in atomic format
-app.get('/conversation-messages', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: user_id, chatbot_id' 
-    });
-  }
-
-  try {
-    const result = await pool.query(`
-      SELECT * FROM get_conversation_messages($1, $2)
-    `, [user_id, chatbot_id]);
-
-    // Convert to frontend format with all properties preserved
-    const messages = result.rows.map(row => ({
-      text: row.message_text,
-      isUser: row.is_user,
-      isSystem: row.is_system,
-      isForm: row.is_form,
-      agentName: row.agent_name,
-      profilePicture: row.profile_picture,
-      image: row.image_data,
-      messageType: row.message_type,
-      sequenceNumber: row.sequence_number,
-      createdAt: row.created_at,
-      metadata: row.metadata,
-      // Include file metadata from metadata field
-      fileName: row.metadata?.fileName,
-      fileMime: row.metadata?.fileMime,
-      // Restore original properties from metadata
-      textWithMarkers: row.text_with_markers || row.message_text,
-      isError: row.is_error || false,
-      // Include any other properties stored in metadata
-      ...((row.metadata && row.metadata.originalProperties) || {})
-    }));
-
-    res.json({
-      conversation_data: messages,
-      message_count: messages.length
-    });
-
-  } catch (error) {
-    console.error('Error fetching conversation messages:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-
-
-// POST migrate conversation to atomic message system with provided conversation data
-app.post('/migrate-conversation-to-atomic-with-messages', async (req, res) => {
-  const { user_id, chatbot_id, conversation_data } = req.body;
-
-  if (!user_id || !chatbot_id || !conversation_data) {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id, conversation_data' 
-    });
-  }
-
-  if (!Array.isArray(conversation_data)) {
-    return res.status(400).json({ error: 'conversation_data must be an array' });
-  }
-
-  try {
-    console.log('🔄 Starting migration with messages for user:', user_id, 'chatbot:', chatbot_id);
-    console.log('📊 Messages to migrate:', conversation_data.length);
-    console.log('📋 Message types:', conversation_data.map(msg => ({ 
-      isUser: msg.isUser, 
-      isSystem: msg.isSystem, 
-      hasTextWithMarkers: !!msg.textWithMarkers,
-      isError: msg.isError,
-      text: msg.text?.substring(0, 30) + "..."
-    })));
-    
-    // Get or create conversation
-    let convResult = await pool.query(`
-      SELECT id FROM conversations 
-      WHERE user_id = $1 AND chatbot_id = $2
-    `, [user_id, chatbot_id]);
-
-    let conversationId;
-    
-    if (convResult.rows.length === 0) {
-      // Create new conversation
-      const newConvResult = await pool.query(`
-        INSERT INTO conversations (
-          user_id, chatbot_id, conversation_data, is_livechat, uses_message_system
-        ) VALUES ($1, $2, $3, true, true) RETURNING id
-      `, [user_id, chatbot_id, JSON.stringify(conversation_data)]);
-      
-      conversationId = newConvResult.rows[0].id;
-    } else {
-      conversationId = convResult.rows[0].id;
-    }
-
-    // Clear existing messages for this conversation
-    await pool.query(`
-      DELETE FROM conversation_messages 
-      WHERE conversation_id = $1
-    `, [conversationId]);
-
-    // Insert each message atomically with comprehensive property handling
-    for (let i = 0; i < conversation_data.length; i++) {
-      const msg = conversation_data[i];
-      
-      await pool.query(`
-        INSERT INTO conversation_messages (
-          conversation_id, user_id, chatbot_id, message_text, is_user,
-          agent_name, profile_picture, image_data, sequence_number,
-          message_type, is_system, is_form, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      `, [
-        conversationId,
-        user_id,
-        chatbot_id,
-        msg.text || msg.content || '', // Handle both text and content properties
-        Boolean(msg.isUser),
-        msg.agentName || msg.agent_name || null,
-        msg.profilePicture || msg.profile_picture || null,
-        msg.image || msg.image_data || null,
-        i + 1, // sequence_number starts from 1
-        msg.messageType || msg.message_type || (msg.image ? 'image' : 'text'),
-        Boolean(msg.isSystem || msg.is_system),
-        Boolean(msg.isForm || msg.is_form),
-        JSON.stringify({
-          textWithMarkers: msg.textWithMarkers,
-          isError: msg.isError,
-          ...(msg.metadata || {})
-        })
-      ]);
-    }
-
-    // Update conversation record
-    await pool.query(`
-      UPDATE conversations 
-      SET uses_message_system = true,
-          is_livechat = true,
-          conversation_data = $2
-      WHERE id = $1
-    `, [conversationId, JSON.stringify(conversation_data)]);
-
-    console.log('✅ Migration completed successfully. Conversation ID:', conversationId);
-    console.log('📊 Total messages migrated:', conversation_data.length);
-
-    res.json({
-      success: true,
-      message: 'Conversation migrated to atomic message system with provided data',
-      migrated_messages: conversation_data.length,
-      conversation_id: conversationId
-    });
-
-  } catch (error) {
-    console.error('Error migrating conversation with messages:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
-// GET livechat conversation with atomic message support
-app.get('/livechat-conversation-atomic', async (req, res) => {
-  const { user_id, chatbot_id } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: user_id, chatbot_id' 
-    });
-  }
-
-  try {
-    // Check if conversation exists and uses message system
-    const convCheck = await pool.query(`
-      SELECT id, uses_message_system FROM conversations 
-      WHERE user_id = $1 AND chatbot_id = $2
-    `, [user_id, chatbot_id]);
-
-    if (convCheck.rows.length === 0) {
-      return res.json({ conversation_data: [] });
-    }
-
-    const conversation = convCheck.rows[0];
-    
-    if (conversation.uses_message_system) {
-      // Use atomic message system
-      const result = await pool.query(`
-        SELECT * FROM get_conversation_messages($1, $2)
-      `, [user_id, chatbot_id]);
-
-      const messages = result.rows.map(row => ({
-        text: row.message_text,
-        isUser: row.is_user,
-        isSystem: row.is_system,
-        isForm: row.is_form,
-        agentName: row.agent_name,
-        profilePicture: row.profile_picture,
-        image: row.image_data,
-        messageType: row.message_type,
-        sequenceNumber: row.sequence_number,
-        createdAt: row.created_at,
-        // Include file metadata from metadata field
-        fileName: row.metadata?.fileName,
-        fileMime: row.metadata?.fileMime,
-        // Restore original properties from metadata
-        textWithMarkers: row.text_with_markers || row.message_text,
-        isError: row.is_error || false,
-        // Include any other properties stored in metadata
-        ...((row.metadata && row.metadata.originalProperties) || {})
-      }));
-
-      res.json({ conversation_data: messages });
-    } else {
-      // Fall back to original system
-      const result = await pool.query(`
-        SELECT conversation_data FROM conversations 
-        WHERE user_id = $1 AND chatbot_id = $2
-      `, [user_id, chatbot_id]);
-
-      res.json({ 
-        conversation_data: result.rows[0]?.conversation_data || [] 
-      });
-    }
-
-  } catch (error) {
-    console.error('Error fetching atomic livechat conversation:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      details: error.message 
-    });
-  }
-});
-
 
