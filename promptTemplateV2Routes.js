@@ -256,8 +256,9 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
     if (!chatbot_id || !language) return res.status(400).json({ error: 'chatbot_id and language required' });
     
     // Validate language value
-    if (!['danish', 'english'].includes(language)) {
-      return res.status(400).json({ error: 'language must be either "danish" or "english"' });
+    const supportedLanguages = ['danish', 'english', 'swedish', 'norwegian', 'german', 'dutch', 'french', 'italian', 'finnish'];
+    if (!supportedLanguages.includes(language)) {
+      return res.status(400).json({ error: `language must be one of: ${supportedLanguages.join(', ')}` });
     }
     
     try {

@@ -119,10 +119,10 @@ async function migrateShopifyCredentialsTable() {
         CREATE TABLE shopify_credentials (
           id SERIAL PRIMARY KEY,
           chatbot_id VARCHAR(255) UNIQUE NOT NULL,
-          shopify_store VARCHAR(255) NOT NULL,
           shopify_access_token VARCHAR(500) NOT NULL,
           shopify_api_key VARCHAR(255),
           shopify_secret_key VARCHAR(255),
+          shopify_store VARCHAR(255) NOT NULL,
           shopify_api_version VARCHAR(50) DEFAULT '2024-10',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -135,21 +135,6 @@ async function migrateShopifyCredentialsTable() {
       console.log('Created index on chatbot_id');
     } else {
       console.log('shopify_credentials table already exists');
-      
-      // Check if the existing table has user_id instead of chatbot_id and fix it
-      const columnCheck = await pool.query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name = 'shopify_credentials' AND column_name IN ('user_id', 'chatbot_id');
-      `);
-      
-      const hasUserId = columnCheck.rows.some(row => row.column_name === 'user_id');
-      const hasChatbotId = columnCheck.rows.some(row => row.column_name === 'chatbot_id');
-      
-      if (hasUserId && !hasChatbotId) {
-        console.log('Renaming user_id column to chatbot_id in shopify_credentials table...');
-        await pool.query('ALTER TABLE shopify_credentials RENAME COLUMN user_id TO chatbot_id;');
-        console.log('Successfully renamed user_id to chatbot_id');
-      }
     }
   } catch (error) {
     console.error('Error migrating shopify_credentials table:', error);
@@ -3636,7 +3621,7 @@ app.get('/api/shopify/credentials/:chatbot_id', async (req, res) => {
     console.log('🔑 SHOPIFY: Fetching credentials for chatbot:', chatbot_id);
     
     const result = await pool.query(
-      'SELECT shopify_store, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
+      'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
       [chatbot_id]
     );
     
@@ -3697,18 +3682,18 @@ app.post('/api/shopify/credentials', async (req, res) => {
     // Use UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
     const result = await pool.query(`
       INSERT INTO shopify_credentials 
-      (chatbot_id, shopify_store, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_api_version, updated_at)
+      (chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
       ON CONFLICT (chatbot_id) 
       DO UPDATE SET 
-        shopify_store = EXCLUDED.shopify_store,
         shopify_access_token = EXCLUDED.shopify_access_token,
         shopify_api_key = EXCLUDED.shopify_api_key,
         shopify_secret_key = EXCLUDED.shopify_secret_key,
+        shopify_store = EXCLUDED.shopify_store,
         shopify_api_version = EXCLUDED.shopify_api_version,
         updated_at = CURRENT_TIMESTAMP
       RETURNING id, chatbot_id
-    `, [chatbot_id, shopify_store, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_api_version]);
+    `, [chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version]);
     
     res.json({
       success: true,
