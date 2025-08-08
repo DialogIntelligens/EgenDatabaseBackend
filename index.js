@@ -136,9 +136,193 @@ async function migrateProfilePictureColumn() {
   }
 }
 
+// Database migration function to create agent_typing_status table
+async function createAgentTypingStatusTable() {
+  try {
+    // Check if the table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'agent_typing_status'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Create the agent_typing_status table
+      await pool.query(`
+        CREATE TABLE agent_typing_status (
+          id SERIAL PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          chatbot_id VARCHAR NOT NULL,
+          agent_name VARCHAR NOT NULL,
+          profile_picture TEXT DEFAULT '',
+          is_typing BOOLEAN NOT NULL DEFAULT false,
+          last_updated TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+          created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+          UNIQUE (user_id, chatbot_id)
+        );
+      `);
+      console.log('✅ Created agent_typing_status table');
+    } else {
+      console.log('✅ agent_typing_status table already exists');
+    }
+  } catch (error) {
+    console.error('❌ Error creating agent_typing_status table:', error);
+  }
+}
+
+// Database migration function to create conversation_messages table
+async function createConversationMessagesTable() {
+  try {
+    // Check if the table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'conversation_messages'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Create the conversation_messages table
+      await pool.query(`
+        CREATE TABLE conversation_messages (
+          id SERIAL PRIMARY KEY,
+          conversation_id INTEGER NOT NULL,
+          user_id VARCHAR NOT NULL,
+          chatbot_id VARCHAR NOT NULL,
+          message_text TEXT NOT NULL,
+          is_user BOOLEAN NOT NULL,
+          is_system BOOLEAN DEFAULT FALSE,
+          is_form BOOLEAN DEFAULT FALSE,
+          agent_name VARCHAR,
+          profile_picture TEXT,
+          image_data TEXT,
+          sequence_number INTEGER NOT NULL,
+          message_type VARCHAR,
+          response_time_seconds INTEGER,
+          metadata JSONB,
+          created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+      `);
+      
+      // Create indexes for better performance
+      await pool.query(`
+        CREATE INDEX idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);
+      `);
+      await pool.query(`
+        CREATE INDEX idx_conversation_messages_user_chatbot ON conversation_messages(user_id, chatbot_id);
+      `);
+      await pool.query(`
+        CREATE INDEX idx_conversation_messages_sequence ON conversation_messages(conversation_id, sequence_number);
+      `);
+      
+      console.log('✅ Created conversation_messages table with indexes');
+    } else {
+      console.log('✅ conversation_messages table already exists');
+    }
+  } catch (error) {
+    console.error('❌ Error creating conversation_messages table:', error);
+  }
+}
+
+// Database migration function to add livechat columns to users table
+async function addLivechatColumnsToUsers() {
+  try {
+    // Check and add livechat_notification_sound column
+    const soundColumnExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'livechat_notification_sound'
+      );
+    `);
+    
+    if (!soundColumnExists.rows[0].exists) {
+      await pool.query(`
+        ALTER TABLE users ADD COLUMN livechat_notification_sound BOOLEAN DEFAULT TRUE;
+      `);
+      console.log('✅ Added livechat_notification_sound column to users table');
+    } else {
+      console.log('✅ livechat_notification_sound column already exists');
+    }
+
+    // Check and add show_user_profile_pictures column
+    const profileColumnExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'show_user_profile_pictures'
+      );
+    `);
+    
+    if (!profileColumnExists.rows[0].exists) {
+      await pool.query(`
+        ALTER TABLE users ADD COLUMN show_user_profile_pictures BOOLEAN DEFAULT TRUE;
+      `);
+      console.log('✅ Added show_user_profile_pictures column to users table');
+    } else {
+      console.log('✅ show_user_profile_pictures column already exists');
+    }
+
+    // Check and add columns to conversations table for livechat tracking
+    const usesMessageSystemExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'conversations' AND column_name = 'uses_message_system'
+      );
+    `);
+    
+    if (!usesMessageSystemExists.rows[0].exists) {
+      await pool.query(`
+        ALTER TABLE conversations ADD COLUMN uses_message_system BOOLEAN DEFAULT FALSE;
+      `);
+      console.log('✅ Added uses_message_system column to conversations table');
+    } else {
+      console.log('✅ uses_message_system column already exists');
+    }
+
+    const lastAgentViewExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'conversations' AND column_name = 'last_agent_view'
+      );
+    `);
+    
+    if (!lastAgentViewExists.rows[0].exists) {
+      await pool.query(`
+        ALTER TABLE conversations ADD COLUMN last_agent_view TIMESTAMP WITHOUT TIME ZONE;
+      `);
+      console.log('✅ Added last_agent_view column to conversations table');
+    } else {
+      console.log('✅ last_agent_view column already exists');
+    }
+
+    const lastMessageCountExists = await pool.query(`
+      SELECT EXISTS(
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'conversations' AND column_name = 'last_message_count_seen_by_agent'
+      );
+    `);
+    
+    if (!lastMessageCountExists.rows[0].exists) {
+      await pool.query(`
+        ALTER TABLE conversations ADD COLUMN last_message_count_seen_by_agent INTEGER DEFAULT 0;
+      `);
+      console.log('✅ Added last_message_count_seen_by_agent column to conversations table');
+    } else {
+      console.log('✅ last_message_count_seen_by_agent column already exists');
+    }
+
+  } catch (error) {
+    console.error('❌ Error adding livechat columns:', error);
+  }
+}
+
 // Run migration on startup
 migrateProfilePictureColumn();
 createShopifyCredentialsTable();
+createAgentTypingStatusTable();
+createConversationMessagesTable();
+addLivechatColumnsToUsers();
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -4747,6 +4931,620 @@ app.get('/unread-comments-count', authenticateToken, async (req, res) => {
     res.json({ unread_comments_count: unreadConversationsCount });
   } catch (err) {
     console.error('Error fetching unread conversations count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+/* ================================
+   Livechat System Endpoints
+================================ */
+
+// Get unread livechat count
+app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+    const userId = req.user.userId;
+
+    // Count livechat conversations that have new messages since last agent view
+    const queryText = `
+      SELECT COUNT(DISTINCT c.id) AS unread_livechat_count
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)
+      AND c.is_livechat = TRUE
+      AND (
+        c.uses_message_system = TRUE AND EXISTS (
+          SELECT 1 FROM conversation_messages cm
+          WHERE cm.conversation_id = c.id
+          AND cm.is_user = TRUE
+          AND cm.created_at > COALESCE(c.last_agent_view, c.created_at)
+        )
+        OR
+        c.uses_message_system IS NOT TRUE AND jsonb_array_length(c.conversation_data) > COALESCE(c.last_message_count_seen_by_agent, 0)
+      )
+    `;
+    
+    const result = await pool.query(queryText, [chatbotIds]);
+    const unreadCount = parseInt(result.rows[0]?.unread_livechat_count || 0);
+    
+    res.json({ unread_livechat_count: unreadCount });
+  } catch (err) {
+    console.error('Error fetching unread livechat count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Get leads count (for statistics)
+app.get('/leads-count', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+
+    // Count conversations that started with livechat requests
+    const queryText = `
+      SELECT COUNT(id) AS leads_count
+      FROM conversations c
+      WHERE c.chatbot_id = ANY($1)
+      AND c.is_livechat = TRUE
+    `;
+    
+    const result = await pool.query(queryText, [chatbotIds]);
+    const leadsCount = parseInt(result.rows[0]?.leads_count || 0);
+    
+    res.json({ leads_count: leadsCount });
+  } catch (err) {
+    console.error('Error fetching leads count:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Get livechat notification sound preference
+app.get('/livechat-notification-sound', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      'SELECT livechat_notification_sound FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const soundEnabled = result.rows[0].livechat_notification_sound !== false;
+    res.json({ sound_enabled: soundEnabled });
+  } catch (err) {
+    console.error('Error fetching notification sound preference:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Update livechat notification sound preference
+app.post('/livechat-notification-sound', authenticateToken, async (req, res) => {
+  const { sound_enabled } = req.body;
+  const userId = req.user.userId;
+
+  if (typeof sound_enabled !== 'boolean') {
+    return res.status(400).json({ error: 'sound_enabled (boolean) is required' });
+  }
+
+  try {
+    await pool.query(
+      'UPDATE users SET livechat_notification_sound = $1 WHERE id = $2',
+      [sound_enabled, userId]
+    );
+
+    res.json({ message: 'Notification sound preference updated successfully' });
+  } catch (err) {
+    console.error('Error updating notification sound preference:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Get user profile pictures setting
+app.get('/show-user-profile-pictures', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      'SELECT show_user_profile_pictures FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const showProfilePictures = result.rows[0].show_user_profile_pictures !== false;
+    res.json({ show_profile_pictures: showProfilePictures });
+  } catch (err) {
+    console.error('Error fetching profile pictures setting:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Update user profile pictures setting
+app.post('/show-user-profile-pictures', authenticateToken, async (req, res) => {
+  const { show_profile_pictures } = req.body;
+  const userId = req.user.userId;
+
+  if (typeof show_profile_pictures !== 'boolean') {
+    return res.status(400).json({ error: 'show_profile_pictures (boolean) is required' });
+  }
+
+  try {
+    await pool.query(
+      'UPDATE users SET show_user_profile_pictures = $1 WHERE id = $2',
+      [show_profile_pictures, userId]
+    );
+
+    res.json({ message: 'Profile pictures setting updated successfully' });
+  } catch (err) {
+    console.error('Error updating profile pictures setting:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Agent typing status endpoints
+app.post('/agent-typing-status', async (req, res) => {
+  const { user_id, chatbot_id, agent_name, profile_picture, is_typing } = req.body;
+
+  if (!user_id || !chatbot_id || !agent_name || typeof is_typing !== 'boolean') {
+    return res.status(400).json({ 
+      error: 'user_id, chatbot_id, agent_name, and is_typing (boolean) are required' 
+    });
+  }
+
+  try {
+    // Upsert typing status
+    await pool.query(
+      `INSERT INTO agent_typing_status (user_id, chatbot_id, agent_name, profile_picture, is_typing, last_updated)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (user_id, chatbot_id)
+       DO UPDATE SET 
+         agent_name = $3, 
+         profile_picture = $4, 
+         is_typing = $5, 
+         last_updated = NOW()`,
+      [user_id, chatbot_id, agent_name, profile_picture || '', is_typing]
+    );
+
+    res.json({ success: true, message: 'Typing status updated successfully' });
+  } catch (err) {
+    console.error('Error updating agent typing status:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+app.get('/agent-typing-status', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
+  }
+
+  try {
+    // Get typing status, only if updated within last 15 seconds
+    const result = await pool.query(
+      `SELECT agent_name, profile_picture, is_typing, last_updated
+       FROM agent_typing_status
+       WHERE user_id = $1 AND chatbot_id = $2
+       AND last_updated > NOW() - INTERVAL '15 seconds'`,
+      [user_id, chatbot_id]
+    );
+
+    if (result.rows.length === 0 || !result.rows[0].is_typing) {
+      res.json({
+        is_agent_typing: false,
+        agent_name: null,
+        profile_picture: null
+      });
+    } else {
+      res.json({
+        is_agent_typing: true,
+        agent_name: result.rows[0].agent_name,
+        profile_picture: result.rows[0].profile_picture
+      });
+    }
+  } catch (err) {
+    console.error('Error fetching agent typing status:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Append livechat message (atomic system)
+app.post('/append-livechat-message', async (req, res) => {
+  const { 
+    user_id, 
+    chatbot_id, 
+    message_text, 
+    is_user, 
+    is_system = false,
+    agent_name = null, 
+    profile_picture = null, 
+    image_data = null,
+    timestamp 
+  } = req.body;
+
+  if (!user_id || !chatbot_id || !message_text || typeof is_user !== 'boolean') {
+    return res.status(400).json({ 
+      error: 'user_id, chatbot_id, message_text, and is_user (boolean) are required' 
+    });
+  }
+
+  try {
+    // Get or create conversation
+    let conversationResult = await pool.query(
+      `SELECT id FROM conversations 
+       WHERE user_id = $1 AND chatbot_id = $2 
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id, chatbot_id]
+    );
+
+    let conversationId;
+    if (conversationResult.rows.length === 0) {
+      // Create new conversation
+      const newConversation = await pool.query(
+        `INSERT INTO conversations (user_id, chatbot_id, is_livechat, uses_message_system, created_at)
+         VALUES ($1, $2, TRUE, TRUE, NOW())
+         RETURNING id`,
+        [user_id, chatbot_id]
+      );
+      conversationId = newConversation.rows[0].id;
+    } else {
+      conversationId = conversationResult.rows[0].id;
+      
+      // Update conversation to use message system if not already
+      await pool.query(
+        `UPDATE conversations 
+         SET uses_message_system = TRUE, is_livechat = TRUE 
+         WHERE id = $1`,
+        [conversationId]
+      );
+    }
+
+    // Get next sequence number
+    const sequenceResult = await pool.query(
+      `SELECT COALESCE(MAX(sequence_number), 0) + 1 as next_sequence
+       FROM conversation_messages
+       WHERE conversation_id = $1`,
+      [conversationId]
+    );
+    const sequenceNumber = sequenceResult.rows[0].next_sequence;
+
+    // Calculate response time if this is an agent message responding to user
+    let responseTimeSeconds = null;
+    if (!is_user && !is_system) {
+      const lastUserMessageResult = await pool.query(
+        `SELECT created_at FROM conversation_messages
+         WHERE conversation_id = $1 AND is_user = TRUE
+         ORDER BY sequence_number DESC LIMIT 1`,
+        [conversationId]
+      );
+      
+      if (lastUserMessageResult.rows.length > 0) {
+        const lastUserMessageTime = new Date(lastUserMessageResult.rows[0].created_at);
+        const now = new Date();
+        responseTimeSeconds = Math.round((now - lastUserMessageTime) / 1000);
+      }
+    }
+
+    // Insert message
+    const messageResult = await pool.query(
+      `INSERT INTO conversation_messages (
+        conversation_id, user_id, chatbot_id, message_text, is_user, is_system,
+        agent_name, profile_picture, image_data, sequence_number, response_time_seconds, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING id`,
+      [
+        conversationId, user_id, chatbot_id, message_text, is_user, is_system,
+        agent_name, profile_picture, image_data, sequenceNumber, responseTimeSeconds
+      ]
+    );
+
+    res.json({
+      success: true,
+      message_id: messageResult.rows[0].id,
+      conversation_id: conversationId,
+      sequence_number: sequenceNumber
+    });
+  } catch (err) {
+    console.error('Error appending livechat message:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Get livechat conversation (atomic system with hybrid support)
+app.get('/livechat-conversation-atomic', async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
+  }
+
+  try {
+    // Get conversation
+    const conversationResult = await pool.query(
+      `SELECT id, uses_message_system, conversation_data FROM conversations
+       WHERE user_id = $1 AND chatbot_id = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id, chatbot_id]
+    );
+
+    if (conversationResult.rows.length === 0) {
+      return res.json({ conversation_data: [] });
+    }
+
+    const conversation = conversationResult.rows[0];
+    
+    if (conversation.uses_message_system) {
+      // Use atomic system
+      const messagesResult = await pool.query(
+        `SELECT message_text, is_user, is_system, agent_name, profile_picture, 
+                image_data, sequence_number, created_at, metadata
+         FROM conversation_messages
+         WHERE conversation_id = $1
+         ORDER BY sequence_number ASC`,
+        [conversation.id]
+      );
+
+      const conversationData = messagesResult.rows.map(msg => {
+        const metadata = msg.metadata ? JSON.parse(msg.metadata) : {};
+        return {
+          text: msg.message_text,
+          isUser: msg.is_user,
+          isSystem: msg.is_system || false,
+          agentName: msg.agent_name,
+          profilePicture: msg.profile_picture,
+          image: msg.image_data,
+          sequenceNumber: msg.sequence_number,
+          createdAt: msg.created_at,
+          ...metadata
+        };
+      });
+
+      res.json({ conversation_data: conversationData });
+    } else {
+      // Use legacy JSONB system
+      let data = conversation.conversation_data;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          console.error('Error parsing conversation_data JSON:', e);
+          data = [];
+        }
+      }
+      res.json({ conversation_data: data || [] });
+    }
+  } catch (err) {
+    console.error('Error fetching atomic livechat conversation:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Get conversation messages (for dashboard)
+app.get('/conversation-messages', authenticateToken, async (req, res) => {
+  const { user_id, chatbot_id } = req.query;
+
+  if (!user_id || !chatbot_id) {
+    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
+  }
+
+  try {
+    // Get conversation
+    const conversationResult = await pool.query(
+      `SELECT id, uses_message_system, conversation_data FROM conversations
+       WHERE user_id = $1 AND chatbot_id = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id, chatbot_id]
+    );
+
+    if (conversationResult.rows.length === 0) {
+      return res.json({ conversation_data: [], message_count: 0 });
+    }
+
+    const conversation = conversationResult.rows[0];
+    
+    if (conversation.uses_message_system) {
+      // Use atomic system
+      const messagesResult = await pool.query(
+        `SELECT message_text, is_user, is_system, agent_name, profile_picture, 
+                image_data, sequence_number, created_at, metadata
+         FROM conversation_messages
+         WHERE conversation_id = $1
+         ORDER BY sequence_number ASC`,
+        [conversation.id]
+      );
+
+      const conversationData = messagesResult.rows.map(msg => {
+        const metadata = msg.metadata ? JSON.parse(msg.metadata) : {};
+        return {
+          text: msg.message_text,
+          isUser: msg.is_user,
+          isSystem: msg.is_system || false,
+          agentName: msg.agent_name,
+          profilePicture: msg.profile_picture,
+          image: msg.image_data,
+          sequenceNumber: msg.sequence_number,
+          createdAt: msg.created_at,
+          ...metadata
+        };
+      });
+
+      res.json({ 
+        conversation_data: conversationData,
+        message_count: conversationData.length 
+      });
+    } else {
+      // Use legacy JSONB system
+      let data = conversation.conversation_data;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          console.error('Error parsing conversation_data JSON:', e);
+          data = [];
+        }
+      }
+      res.json({ 
+        conversation_data: data || [],
+        message_count: (data || []).length 
+      });
+    }
+  } catch (err) {
+    console.error('Error fetching conversation messages:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Migrate conversation to atomic system
+app.post('/migrate-conversation-to-atomic-with-messages', async (req, res) => {
+  const { user_id, chatbot_id, conversation_data, is_livechat = true } = req.body;
+
+  if (!user_id || !chatbot_id || !conversation_data || !Array.isArray(conversation_data)) {
+    return res.status(400).json({ 
+      error: 'user_id, chatbot_id, and conversation_data (array) are required' 
+    });
+  }
+
+  try {
+    // Get or create conversation
+    let conversationResult = await pool.query(
+      `SELECT id FROM conversations 
+       WHERE user_id = $1 AND chatbot_id = $2 
+       ORDER BY created_at DESC LIMIT 1`,
+      [user_id, chatbot_id]
+    );
+
+    let conversationId;
+    if (conversationResult.rows.length === 0) {
+      // Create new conversation
+      const newConversation = await pool.query(
+        `INSERT INTO conversations (user_id, chatbot_id, is_livechat, uses_message_system, created_at)
+         VALUES ($1, $2, $3, TRUE, NOW())
+         RETURNING id`,
+        [user_id, chatbot_id, is_livechat]
+      );
+      conversationId = newConversation.rows[0].id;
+    } else {
+      conversationId = conversationResult.rows[0].id;
+      
+      // Update conversation to use message system
+      await pool.query(
+        `UPDATE conversations 
+         SET uses_message_system = TRUE, is_livechat = $1 
+         WHERE id = $2`,
+        [is_livechat, conversationId]
+      );
+
+      // Clear existing messages if any
+      await pool.query(
+        'DELETE FROM conversation_messages WHERE conversation_id = $1',
+        [conversationId]
+      );
+    }
+
+    // Insert all messages
+    let migratedCount = 0;
+    for (let i = 0; i < conversation_data.length; i++) {
+      const msg = conversation_data[i];
+      const sequenceNumber = i + 1;
+
+      // Preserve additional properties in metadata
+      const metadata = {};
+      Object.keys(msg).forEach(key => {
+        if (!['text', 'isUser', 'isSystem', 'agentName', 'profilePicture', 'image'].includes(key)) {
+          metadata[key] = msg[key];
+        }
+      });
+
+      await pool.query(
+        `INSERT INTO conversation_messages (
+          conversation_id, user_id, chatbot_id, message_text, is_user, is_system,
+          agent_name, profile_picture, image_data, sequence_number, metadata, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+        [
+          conversationId, user_id, chatbot_id, msg.text || '', 
+          msg.isUser || false, msg.isSystem || false,
+          msg.agentName || null, msg.profilePicture || null, msg.image || null,
+          sequenceNumber, JSON.stringify(metadata)
+        ]
+      );
+      migratedCount++;
+    }
+
+    res.json({
+      success: true,
+      message: 'Conversation migrated to atomic message system with provided data',
+      migrated_messages: migratedCount,
+      conversation_id: conversationId
+    });
+  } catch (err) {
+    console.error('Error migrating conversation to atomic system:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Public endpoint for average response time
+app.get('/public/average-response-time/:chatbot_id', async (req, res) => {
+  const { chatbot_id } = req.params;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT AVG(response_time_seconds) as avg_response_time, COUNT(*) as total_responses
+       FROM conversation_messages cm
+       JOIN conversations c ON cm.conversation_id = c.id
+       WHERE c.chatbot_id = $1 
+       AND cm.response_time_seconds IS NOT NULL
+       AND cm.response_time_seconds > 0`,
+      [chatbot_id]
+    );
+
+    const avgSeconds = result.rows[0]?.avg_response_time;
+    const totalResponses = parseInt(result.rows[0]?.total_responses || 0);
+
+    if (!avgSeconds || totalResponses === 0) {
+      return res.json({
+        avgResponseTime: 'N/A',
+        hasResponseTimeData: false,
+        totalResponses: 0
+      });
+    }
+
+    // Format time
+    const seconds = Math.round(parseFloat(avgSeconds));
+    let formattedTime;
+    if (seconds < 60) {
+      formattedTime = `${seconds}s`;
+    } else if (seconds < 3600) {
+      formattedTime = `${Math.round(seconds / 60)}m`;
+    } else {
+      formattedTime = `${Math.round(seconds / 3600)}h`;
+    }
+
+    res.json({
+      avgResponseTime: formattedTime,
+      hasResponseTimeData: true,
+      totalResponses: totalResponses
+    });
+  } catch (err) {
+    console.error('Error calculating average response time:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
