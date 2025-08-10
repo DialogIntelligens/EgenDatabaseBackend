@@ -65,6 +65,7 @@ app.options('*', cors());
 // Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
 app.set('trust proxy', true);
 
+
 // Database migration function to update profile_picture column
 async function migrateProfilePictureColumn() {
   try {
@@ -101,50 +102,8 @@ async function migrateProfilePictureColumn() {
   }
 }
 
-// Database migration function for Shopify credentials table
-async function migrateShopifyCredentialsTable() {
-  try {
-    // Check if shopify_credentials table exists
-    const tableCheck = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'shopify_credentials'
-      );
-    `);
-    
-    if (!tableCheck.rows[0].exists) {
-      console.log('Creating shopify_credentials table...');
-      await pool.query(`
-        CREATE TABLE shopify_credentials (
-          id SERIAL PRIMARY KEY,
-          chatbot_id VARCHAR(255) UNIQUE NOT NULL,
-          shopify_access_token VARCHAR(500) NOT NULL,
-          shopify_api_key VARCHAR(255),
-          shopify_secret_key VARCHAR(255),
-          shopify_store VARCHAR(255) NOT NULL,
-          shopify_api_version VARCHAR(50) DEFAULT '2024-10',
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-      console.log('Successfully created shopify_credentials table');
-      
-      // Create an index on chatbot_id for faster lookups
-      await pool.query('CREATE INDEX idx_shopify_credentials_chatbot_id ON shopify_credentials(chatbot_id);');
-      console.log('Created index on chatbot_id');
-    } else {
-      console.log('shopify_credentials table already exists');
-    }
-  } catch (error) {
-    console.error('Error migrating shopify_credentials table:', error);
-    // Don't exit the process, just log the error
-  }
-}
-
-// Run migrations on startup
+// Run migration on startup
 migrateProfilePictureColumn();
-migrateShopifyCredentialsTable();
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -222,6 +181,371 @@ async function getPineconeApiKeyForIndex(userId, indexName, namespace) {
     throw error;
   }
 }
+
+/* ================================
+   Shopify Credentials Management
+================================ */
+
+/*
+  GET /api/shopify/credentials/:chatbot_id
+  Retrieves Shopify credentials for a specific chatbot
+*/
+app.get('/api/shopify/credentials/:chatbot_id', async (req, res) => {
+  try {
+    const { chatbot_id } = req.params;
+    
+    if (!chatbot_id) {
+      return res.status(400).json({ error: 'Chatbot ID is required' });
+    }
+    
+    console.log('🔑 SHOPIFY: Fetching credentials for chatbot:', chatbot_id);
+    
+    const result = await pool.query(
+      'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
+      [chatbot_id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Shopify credentials not found for this chatbot' });
+    }
+    
+    const credentials = result.rows[0];
+    
+    res.json({
+      success: true,
+      credentials: {
+        shopifyStore: credentials.shopify_store,
+        shopifyAccessToken: credentials.shopify_access_token,
+        shopifyApiKey: credentials.shopify_api_key,
+        shopifySecretKey: credentials.shopify_secret_key,
+        shopifyApiVersion: credentials.shopify_api_version
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching Shopify credentials:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/*
+  POST /api/shopify/credentials
+  Creates or updates Shopify credentials for a chatbot
+  Body: {
+    chatbot_id: string,
+    shopify_store: string,
+    shopify_access_token: string,
+    shopify_api_key?: string,
+    shopify_secret_key?: string,
+    shopify_api_version?: string
+  }
+*/
+app.post('/api/shopify/credentials', async (req, res) => {
+  try {
+    const {
+      chatbot_id,
+      shopify_store,
+      shopify_access_token,
+      shopify_api_key,
+      shopify_secret_key,
+      shopify_api_version = '2024-10'
+    } = req.body;
+    
+    if (!chatbot_id || !shopify_store || !shopify_access_token) {
+      return res.status(400).json({ 
+        error: 'chatbot_id, shopify_store, and shopify_access_token are required' 
+      });
+    }
+    
+    console.log('🔑 SHOPIFY: Saving credentials for chatbot:', chatbot_id, 'store:', shopify_store);
+    
+    // Use UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
+    const result = await pool.query(`
+      INSERT INTO shopify_credentials 
+      (chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      ON CONFLICT (chatbot_id) 
+      DO UPDATE SET 
+        shopify_access_token = EXCLUDED.shopify_access_token,
+        shopify_api_key = EXCLUDED.shopify_api_key,
+        shopify_secret_key = EXCLUDED.shopify_secret_key,
+        shopify_store = EXCLUDED.shopify_store,
+        shopify_api_version = EXCLUDED.shopify_api_version,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING id, chatbot_id
+    `, [chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version]);
+    
+    res.json({
+      success: true,
+      message: 'Shopify credentials saved successfully',
+      id: result.rows[0].id
+    });
+    
+  } catch (error) {
+    console.error('Error saving Shopify credentials:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/*
+  DELETE /api/shopify/credentials/:chatbot_id
+  Deletes Shopify credentials for a specific chatbot
+*/
+app.delete('/api/shopify/credentials/:chatbot_id', async (req, res) => {
+  try {
+    const { chatbot_id } = req.params;
+    
+    if (!chatbot_id) {
+      return res.status(400).json({ error: 'Chatbot ID is required' });
+    }
+    
+    console.log('🔑 SHOPIFY: Deleting credentials for chatbot:', chatbot_id);
+    
+    const result = await pool.query(
+      'DELETE FROM shopify_credentials WHERE chatbot_id = $1 RETURNING id',
+      [chatbot_id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Shopify credentials not found for this chatbot' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Shopify credentials deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error deleting Shopify credentials:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/* ================================
+   Shopify Order Tracking Proxy
+================================ */
+
+/*
+  POST /api/shopify/orders
+  Body: { 
+    shopifyStore: string,
+    shopifyAccessToken: string,
+    shopifyApiVersion: string,
+    email?: string,
+    phone?: string,
+    order_number?: string,
+    name?: string
+  }
+  Proxies Shopify API calls to search for orders
+*/
+app.post('/api/shopify/orders', async (req, res) => {
+  try {
+    const { 
+      shopifyStore, 
+      shopifyAccessToken, 
+      shopifyApiVersion = '2024-10',
+      email,
+      phone,
+      order_number,
+      name
+    } = req.body;
+
+    if (!shopifyStore || !shopifyAccessToken) {
+      return res.status(400).json({ 
+        error: 'shopifyStore and shopifyAccessToken are required' 
+      });
+    }
+
+    // Build Shopify API URL
+    const baseUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders.json`;
+    
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.append('status', 'any');
+    queryParams.append('limit', '50');
+    queryParams.append('fulfillment_status', 'any'); // Include all fulfillment statuses
+    
+    if (email) queryParams.append('email', email);
+    if (phone) queryParams.append('phone', phone);
+    if (order_number) queryParams.append('name', order_number);
+    
+    const shopifyUrl = `${baseUrl}?${queryParams.toString()}`;
+
+    console.log('Making Shopify API request to:', shopifyUrl.replace(shopifyAccessToken, '[HIDDEN]'));
+
+    // Make request to Shopify API
+    const response = await fetch(shopifyUrl, {
+      method: 'GET',
+      headers: {
+        'X-Shopify-Access-Token': shopifyAccessToken,
+        'Content-Type': 'application/json',
+        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Shopify API error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: 'Shopify API error', 
+        details: errorText,
+        status: response.status
+      });
+    }
+
+    const data = await response.json();
+    
+    // Transform the data and fetch fulfillment information for each order
+    const transformedOrders = data.orders ? await Promise.all(data.orders.map(async (order) => {
+      // Fetch fulfillments for this order
+      let fulfillments = [];
+      try {
+        const fulfillmentUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order.id}/fulfillments.json`;
+        const fulfillmentResponse = await fetch(fulfillmentUrl, {
+          method: 'GET',
+          headers: {
+            'X-Shopify-Access-Token': shopifyAccessToken,
+            'Content-Type': 'application/json',
+            'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+          }
+        });
+        
+        if (fulfillmentResponse.ok) {
+          const fulfillmentData = await fulfillmentResponse.json();
+          fulfillments = fulfillmentData.fulfillments || [];
+          console.log(`Fetched ${fulfillments.length} fulfillments for order ${order.id}`);
+        } else {
+          console.warn(`Failed to fetch fulfillments for order ${order.id}:`, fulfillmentResponse.status);
+        }
+      } catch (fulfillmentError) {
+        console.error(`Error fetching fulfillments for order ${order.id}:`, fulfillmentError);
+      }
+      
+      return {
+        id: order.id,
+        order_number: order.name || order.order_number,
+        email: order.email,
+        phone: order.phone || (order.billing_address && order.billing_address.phone),
+        total_price: order.total_price,
+        currency: order.currency,
+        financial_status: order.financial_status,
+        fulfillment_status: order.fulfillment_status,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
+        line_items: order.line_items ? order.line_items.map(item => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          fulfillment_status: item.fulfillment_status,
+          sku: item.sku,
+          product_id: item.product_id,
+          variant_id: item.variant_id
+        })) : [],
+        shipping_address: order.shipping_address,
+        billing_address: order.billing_address,
+        // Add fulfillment and tracking information
+        fulfillments: fulfillments.map(fulfillment => ({
+          id: fulfillment.id,
+          status: fulfillment.status,
+          tracking_company: fulfillment.tracking_company,
+          tracking_number: fulfillment.tracking_number,
+          tracking_url: fulfillment.tracking_url,
+          tracking_urls: fulfillment.tracking_urls || [],
+          created_at: fulfillment.created_at,
+          updated_at: fulfillment.updated_at,
+          shipment_status: fulfillment.shipment_status,
+          location_id: fulfillment.location_id,
+          line_items: fulfillment.line_items ? fulfillment.line_items.map(item => ({
+            id: item.id,
+            quantity: item.quantity
+          })) : []
+        })),
+        // Extract primary tracking info for easy access
+        primary_tracking: fulfillments.length > 0 ? {
+          tracking_number: fulfillments[0].tracking_number,
+          tracking_url: fulfillments[0].tracking_url,
+          tracking_company: fulfillments[0].tracking_company,
+          status: fulfillments[0].status,
+          shipment_status: fulfillments[0].shipment_status
+        } : null
+      };
+    })) : [];
+
+    return res.json({
+      success: true,
+      orders: transformedOrders,
+      total_count: data.orders ? data.orders.length : 0
+    });
+
+  } catch (error) {
+    console.error('Error in Shopify proxy:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error', 
+      details: error.message 
+    });
+  }
+});
+
+/*
+  GET /api/shopify/orders/:order_id
+  Query params: shopifyStore, shopifyAccessToken, shopifyApiVersion
+  Gets details for a specific order
+*/
+app.get('/api/shopify/orders/:order_id', async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const { 
+      shopifyStore, 
+      shopifyAccessToken, 
+      shopifyApiVersion = '2024-10'
+    } = req.query;
+
+    if (!shopifyStore || !shopifyAccessToken) {
+      return res.status(400).json({ 
+        error: 'shopifyStore and shopifyAccessToken are required' 
+      });
+    }
+
+    // Build Shopify API URL
+    const shopifyUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order_id}.json`;
+
+    console.log('Making Shopify API request for order:', order_id);
+
+    // Make request to Shopify API
+    const response = await fetch(shopifyUrl, {
+      method: 'GET',
+      headers: {
+        'X-Shopify-Access-Token': shopifyAccessToken,
+        'Content-Type': 'application/json',
+        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Shopify API error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: 'Shopify API error', 
+        details: errorText,
+        status: response.status
+      });
+    }
+
+    const data = await response.json();
+    return res.json(data);
+
+  } catch (error) {
+    console.error('Error in Shopify order details proxy:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error', 
+      details: error.message 
+    });
+  }
+});
+
+
 
 /* ================================
    Bodylab Order API Proxy
@@ -3602,368 +3926,6 @@ app.post('/api/create-freshdesk-ticket', async (req, res) => {
   }
 });
 
-/* ================================
-   Shopify Credentials Management
-================================ */
-
-/*
-  GET /api/shopify/credentials/:chatbot_id
-  Retrieves Shopify credentials for a specific chatbot
-*/
-app.get('/api/shopify/credentials/:chatbot_id', async (req, res) => {
-  try {
-    const { chatbot_id } = req.params;
-    
-    if (!chatbot_id) {
-      return res.status(400).json({ error: 'Chatbot ID is required' });
-    }
-    
-    console.log('🔑 SHOPIFY: Fetching credentials for chatbot:', chatbot_id);
-    
-    const result = await pool.query(
-      'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
-      [chatbot_id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shopify credentials not found for this chatbot' });
-    }
-    
-    const credentials = result.rows[0];
-    
-    res.json({
-      success: true,
-      credentials: {
-        shopifyStore: credentials.shopify_store,
-        shopifyAccessToken: credentials.shopify_access_token,
-        shopifyApiKey: credentials.shopify_api_key,
-        shopifySecretKey: credentials.shopify_secret_key,
-        shopifyApiVersion: credentials.shopify_api_version
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error fetching Shopify credentials:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/*
-  POST /api/shopify/credentials
-  Creates or updates Shopify credentials for a chatbot
-  Body: {
-    chatbot_id: string,
-    shopify_store: string,
-    shopify_access_token: string,
-    shopify_api_key?: string,
-    shopify_secret_key?: string,
-    shopify_api_version?: string
-  }
-*/
-app.post('/api/shopify/credentials', async (req, res) => {
-  try {
-    const {
-      chatbot_id,
-      shopify_store,
-      shopify_access_token,
-      shopify_api_key,
-      shopify_secret_key,
-      shopify_api_version = '2024-10'
-    } = req.body;
-    
-    if (!chatbot_id || !shopify_store || !shopify_access_token) {
-      return res.status(400).json({ 
-        error: 'chatbot_id, shopify_store, and shopify_access_token are required' 
-      });
-    }
-    
-    console.log('🔑 SHOPIFY: Saving credentials for chatbot:', chatbot_id, 'store:', shopify_store);
-    
-    // Use UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
-    const result = await pool.query(`
-      INSERT INTO shopify_credentials 
-      (chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-      ON CONFLICT (chatbot_id) 
-      DO UPDATE SET 
-        shopify_access_token = EXCLUDED.shopify_access_token,
-        shopify_api_key = EXCLUDED.shopify_api_key,
-        shopify_secret_key = EXCLUDED.shopify_secret_key,
-        shopify_store = EXCLUDED.shopify_store,
-        shopify_api_version = EXCLUDED.shopify_api_version,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING id, chatbot_id
-    `, [chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version]);
-    
-    res.json({
-      success: true,
-      message: 'Shopify credentials saved successfully',
-      id: result.rows[0].id
-    });
-    
-  } catch (error) {
-    console.error('Error saving Shopify credentials:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/*
-  DELETE /api/shopify/credentials/:chatbot_id
-  Deletes Shopify credentials for a specific chatbot
-*/
-app.delete('/api/shopify/credentials/:chatbot_id', async (req, res) => {
-  try {
-    const { chatbot_id } = req.params;
-    
-    if (!chatbot_id) {
-      return res.status(400).json({ error: 'Chatbot ID is required' });
-    }
-    
-    console.log('🔑 SHOPIFY: Deleting credentials for chatbot:', chatbot_id);
-    
-    const result = await pool.query(
-      'DELETE FROM shopify_credentials WHERE chatbot_id = $1 RETURNING id',
-      [chatbot_id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shopify credentials not found for this chatbot' });
-    }
-    
-    res.json({
-      success: true,
-      message: 'Shopify credentials deleted successfully'
-    });
-    
-  } catch (error) {
-    console.error('Error deleting Shopify credentials:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/* ================================
-   Shopify Order Tracking Proxy
-================================ */
-
-/*
-  POST /api/shopify/orders
-  Body: { 
-    shopifyStore: string,
-    shopifyAccessToken: string,
-    shopifyApiVersion: string,
-    email?: string,
-    phone?: string,
-    order_number?: string,
-    name?: string
-  }
-  Proxies Shopify API calls to search for orders
-*/
-app.post('/api/shopify/orders', async (req, res) => {
-  try {
-    const { 
-      shopifyStore, 
-      shopifyAccessToken, 
-      shopifyApiVersion = '2024-10',
-      email,
-      phone,
-      order_number,
-      name
-    } = req.body;
-
-    if (!shopifyStore || !shopifyAccessToken) {
-      return res.status(400).json({ 
-        error: 'shopifyStore and shopifyAccessToken are required' 
-      });
-    }
-
-    // Build Shopify API URL
-    const baseUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders.json`;
-    
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    queryParams.append('status', 'any');
-    queryParams.append('limit', '50');
-    queryParams.append('fulfillment_status', 'any'); // Include all fulfillment statuses
-    
-    if (email) queryParams.append('email', email);
-    if (phone) queryParams.append('phone', phone);
-    if (order_number) queryParams.append('name', order_number);
-    
-    const shopifyUrl = `${baseUrl}?${queryParams.toString()}`;
-
-    console.log('Making Shopify API request to:', shopifyUrl.replace(shopifyAccessToken, '[HIDDEN]'));
-
-    // Make request to Shopify API
-    const response = await fetch(shopifyUrl, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': shopifyAccessToken,
-        'Content-Type': 'application/json',
-        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Shopify API error:', response.status, errorText);
-      return res.status(response.status).json({ 
-        error: 'Shopify API error', 
-        details: errorText,
-        status: response.status
-      });
-    }
-
-    const data = await response.json();
-    
-    // Transform the data and fetch fulfillment information for each order
-    const transformedOrders = data.orders ? await Promise.all(data.orders.map(async (order) => {
-      // Fetch fulfillments for this order
-      let fulfillments = [];
-      try {
-        const fulfillmentUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order.id}/fulfillments.json`;
-        const fulfillmentResponse = await fetch(fulfillmentUrl, {
-          method: 'GET',
-          headers: {
-            'X-Shopify-Access-Token': shopifyAccessToken,
-            'Content-Type': 'application/json',
-            'User-Agent': 'DialogIntelligens-Chatbot/1.0'
-          }
-        });
-        
-        if (fulfillmentResponse.ok) {
-          const fulfillmentData = await fulfillmentResponse.json();
-          fulfillments = fulfillmentData.fulfillments || [];
-          console.log(`Fetched ${fulfillments.length} fulfillments for order ${order.id}`);
-        } else {
-          console.warn(`Failed to fetch fulfillments for order ${order.id}:`, fulfillmentResponse.status);
-        }
-      } catch (fulfillmentError) {
-        console.error(`Error fetching fulfillments for order ${order.id}:`, fulfillmentError);
-      }
-      
-      return {
-        id: order.id,
-        order_number: order.name || order.order_number,
-        email: order.email,
-        phone: order.phone || (order.billing_address && order.billing_address.phone),
-        total_price: order.total_price,
-        currency: order.currency,
-        financial_status: order.financial_status,
-        fulfillment_status: order.fulfillment_status,
-        created_at: order.created_at,
-        updated_at: order.updated_at,
-        customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
-        line_items: order.line_items ? order.line_items.map(item => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-          fulfillment_status: item.fulfillment_status,
-          sku: item.sku,
-          product_id: item.product_id,
-          variant_id: item.variant_id
-        })) : [],
-        shipping_address: order.shipping_address,
-        billing_address: order.billing_address,
-        // Add fulfillment and tracking information
-        fulfillments: fulfillments.map(fulfillment => ({
-          id: fulfillment.id,
-          status: fulfillment.status,
-          tracking_company: fulfillment.tracking_company,
-          tracking_number: fulfillment.tracking_number,
-          tracking_url: fulfillment.tracking_url,
-          tracking_urls: fulfillment.tracking_urls || [],
-          created_at: fulfillment.created_at,
-          updated_at: fulfillment.updated_at,
-          shipment_status: fulfillment.shipment_status,
-          location_id: fulfillment.location_id,
-          line_items: fulfillment.line_items ? fulfillment.line_items.map(item => ({
-            id: item.id,
-            quantity: item.quantity
-          })) : []
-        })),
-        // Extract primary tracking info for easy access
-        primary_tracking: fulfillments.length > 0 ? {
-          tracking_number: fulfillments[0].tracking_number,
-          tracking_url: fulfillments[0].tracking_url,
-          tracking_company: fulfillments[0].tracking_company,
-          status: fulfillments[0].status,
-          shipment_status: fulfillments[0].shipment_status
-        } : null
-      };
-    })) : [];
-
-    return res.json({
-      success: true,
-      orders: transformedOrders,
-      total_count: data.orders ? data.orders.length : 0
-    });
-
-  } catch (error) {
-    console.error('Error in Shopify proxy:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
-});
-
-/*
-  GET /api/shopify/orders/:order_id
-  Query params: shopifyStore, shopifyAccessToken, shopifyApiVersion
-  Gets details for a specific order
-*/
-app.get('/api/shopify/orders/:order_id', async (req, res) => {
-  try {
-    const { order_id } = req.params;
-    const { 
-      shopifyStore, 
-      shopifyAccessToken, 
-      shopifyApiVersion = '2024-10'
-    } = req.query;
-
-    if (!shopifyStore || !shopifyAccessToken) {
-      return res.status(400).json({ 
-        error: 'shopifyStore and shopifyAccessToken are required' 
-      });
-    }
-
-    // Build Shopify API URL
-    const shopifyUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order_id}.json`;
-
-    console.log('Making Shopify API request for order:', order_id);
-
-    // Make request to Shopify API
-    const response = await fetch(shopifyUrl, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': shopifyAccessToken,
-        'Content-Type': 'application/json',
-        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Shopify API error:', response.status, errorText);
-      return res.status(response.status).json({ 
-        error: 'Shopify API error', 
-        details: errorText,
-        status: response.status
-      });
-    }
-
-    const data = await response.json();
-    return res.json(data);
-
-  } catch (error) {
-    console.error('Error in Shopify order details proxy:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
-});
 
 // Start the server
 app.listen(PORT, () => {
@@ -4317,6 +4279,172 @@ async function getContextChunks(conversationId, messageIndex) {
   } catch (error) {
     console.error('Error retrieving context chunks:', error);
     return [];
+  }
+}
+
+// GDPR Compliance Functions
+async function createGdprSettingsTable() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS gdpr_settings (
+        id SERIAL PRIMARY KEY,
+        chatbot_id VARCHAR NOT NULL UNIQUE,
+        retention_days INTEGER NOT NULL DEFAULT 90,
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        last_cleanup_run TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('GDPR settings table created successfully');
+  } catch (error) {
+    console.error('Error creating GDPR settings table:', error);
+  } finally {
+    client.release();
+  }
+}
+
+async function anonymizeConversationContent(chatbotId, retentionDays = 90) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    
+    console.log(`Starting GDPR cleanup for chatbot ${chatbotId}, removing content older than ${cutoffDate.toISOString()}`);
+    
+    // Get conversations to be anonymized
+    const conversationsResult = await client.query(`
+      SELECT id, created_at 
+      FROM conversations 
+      WHERE chatbot_id = $1 AND created_at < $2
+    `, [chatbotId, cutoffDate]);
+    
+    const conversationIds = conversationsResult.rows.map(row => row.id);
+    
+    if (conversationIds.length === 0) {
+      console.log('No conversations found for cleanup');
+      await client.query('COMMIT');
+      return { cleanedConversations: 0, cleanedMessages: 0, cleanedChunks: 0 };
+    }
+    
+    console.log(`Found ${conversationIds.length} conversations to anonymize`);
+    
+    // 1. Anonymize legacy conversation_data (JSONB) while preserving message count and structure
+    const conversationDataResult = await client.query(`
+      UPDATE conversations 
+      SET conversation_data = (
+        SELECT jsonb_agg(
+          CASE 
+            WHEN jsonb_typeof(message) = 'object' THEN 
+              message || jsonb_build_object(
+                'text', '[DELETED FOR GDPR COMPLIANCE]',
+                'gdpr_anonymized', true,
+                'anonymized_at', NOW()
+              ) - 'image' - 'textWithMarkers' -- Remove image data and detailed text
+            ELSE 
+              jsonb_build_object(
+                'text', '[DELETED FOR GDPR COMPLIANCE]', 
+                'isUser', false,
+                'gdpr_anonymized', true,
+                'anonymized_at', NOW()
+              )
+          END
+        )
+        FROM jsonb_array_elements(conversation_data) AS message
+      )
+      WHERE id = ANY($1) AND conversation_data IS NOT NULL
+      RETURNING id
+    `, [conversationIds]);
+    
+    // 2. Anonymize atomic message system
+    const messagesResult = await client.query(`
+      UPDATE conversation_messages 
+      SET 
+        message_text = '[DELETED FOR GDPR COMPLIANCE]',
+        image_data = NULL,
+        metadata = CASE 
+          WHEN metadata IS NOT NULL THEN 
+            metadata || jsonb_build_object('gdpr_anonymized', true, 'anonymized_at', NOW())
+          ELSE 
+            jsonb_build_object('gdpr_anonymized', true, 'anonymized_at', NOW())
+        END
+      WHERE conversation_id = ANY($1)
+      RETURNING id
+    `, [conversationIds]);
+    
+    // 3. Anonymize context chunks
+    const chunksResult = await client.query(`
+      UPDATE message_context_chunks 
+      SET 
+        chunk_content = '[DELETED FOR GDPR COMPLIANCE]',
+        chunk_metadata = jsonb_build_object('gdpr_anonymized', true, 'anonymized_at', NOW())
+      WHERE conversation_id = ANY($1)
+      RETURNING id
+    `, [conversationIds]);
+    
+    // 4. Update GDPR settings with last cleanup time
+    await client.query(`
+      UPDATE gdpr_settings 
+      SET 
+        last_cleanup_run = NOW(),
+        updated_at = NOW()
+      WHERE chatbot_id = $1
+    `, [chatbotId]);
+    
+    await client.query('COMMIT');
+    
+    const result = {
+      cleanedConversations: conversationIds.length,
+      cleanedMessages: messagesResult.rows.length,
+      cleanedChunks: chunksResult.rows.length
+    };
+    
+    console.log('GDPR cleanup completed:', result);
+    return result;
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error during GDPR cleanup:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function runGdprCleanupForAllEnabledClients() {
+  try {
+    const result = await pool.query(`
+      SELECT chatbot_id, retention_days 
+      FROM gdpr_settings 
+      WHERE enabled = true
+    `);
+    
+    const results = [];
+    for (const setting of result.rows) {
+      try {
+        const cleanupResult = await anonymizeConversationContent(setting.chatbot_id, setting.retention_days);
+        results.push({
+          chatbot_id: setting.chatbot_id,
+          success: true,
+          ...cleanupResult
+        });
+      } catch (error) {
+        console.error(`GDPR cleanup failed for chatbot ${setting.chatbot_id}:`, error);
+        results.push({
+          chatbot_id: setting.chatbot_id,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error running GDPR cleanup for all clients:', error);
+    throw error;
   }
 }
 
@@ -4676,3 +4804,264 @@ app.get('/unread-comments-count', authenticateToken, async (req, res) => {
   }
 });
 
+/* ================================
+   GDPR Compliance API Endpoints
+================================ */
+
+// Initialize GDPR settings table on startup
+createGdprSettingsTable();
+
+// GET GDPR settings for a specific client
+app.get('/gdpr-settings/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  
+  try {
+    const result = await pool.query(
+      'SELECT * FROM gdpr_settings WHERE chatbot_id = $1',
+      [chatbot_id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({
+        chatbot_id,
+        retention_days: 90,
+        enabled: false,
+        last_cleanup_run: null
+      });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching GDPR settings:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// POST/PUT GDPR settings for a specific client
+app.post('/gdpr-settings', authenticateToken, async (req, res) => {
+  const { chatbot_id, retention_days, enabled } = req.body;
+  
+  if (!chatbot_id || retention_days === undefined || enabled === undefined) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: chatbot_id, retention_days, enabled' 
+    });
+  }
+  
+  if (retention_days < 1 || retention_days > 3650) { // Max 10 years
+    return res.status(400).json({ 
+      error: 'retention_days must be between 1 and 3650 days' 
+    });
+  }
+  
+  try {
+    const result = await pool.query(`
+      INSERT INTO gdpr_settings (chatbot_id, retention_days, enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (chatbot_id) 
+      DO UPDATE SET 
+        retention_days = EXCLUDED.retention_days,
+        enabled = EXCLUDED.enabled,
+        updated_at = NOW()
+      RETURNING *
+    `, [chatbot_id, retention_days, enabled]);
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating GDPR settings:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// GET all GDPR settings (admin only)
+app.get('/gdpr-settings', authenticateToken, async (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  try {
+    const result = await pool.query(
+      'SELECT * FROM gdpr_settings ORDER BY chatbot_id'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching all GDPR settings:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// POST manual GDPR cleanup for a specific client
+app.post('/gdpr-cleanup/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { retention_days } = req.body;
+  
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ error: 'Admin access required for manual cleanup' });
+  }
+  
+  try {
+    // Get retention days from settings if not provided
+    let effectiveRetentionDays = retention_days;
+    if (!effectiveRetentionDays) {
+      const settingsResult = await pool.query(
+        'SELECT retention_days FROM gdpr_settings WHERE chatbot_id = $1',
+        [chatbot_id]
+      );
+      effectiveRetentionDays = settingsResult.rows[0]?.retention_days || 90;
+    }
+    
+    console.log(`Manual GDPR cleanup initiated for chatbot ${chatbot_id} by user ${req.user.userId}`);
+    
+    const result = await anonymizeConversationContent(chatbot_id, effectiveRetentionDays);
+    
+    res.json({
+      message: 'GDPR cleanup completed successfully',
+      chatbot_id,
+      retention_days: effectiveRetentionDays,
+      ...result
+    });
+  } catch (error) {
+    console.error('Error during manual GDPR cleanup:', error);
+    res.status(500).json({ 
+      error: 'GDPR cleanup failed', 
+      details: error.message 
+    });
+  }
+});
+
+// POST run GDPR cleanup for all enabled clients
+app.post('/gdpr-cleanup-all', authenticateToken, async (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  
+  try {
+    console.log(`GDPR cleanup for all enabled clients initiated by user ${req.user.userId}`);
+    
+    const results = await runGdprCleanupForAllEnabledClients();
+    
+    res.json({
+      message: 'GDPR cleanup completed for all enabled clients',
+      results
+    });
+  } catch (error) {
+    console.error('Error during bulk GDPR cleanup:', error);
+    res.status(500).json({ 
+      error: 'Bulk GDPR cleanup failed', 
+      details: error.message 
+    });
+  }
+});
+
+// GET GDPR cleanup preview (shows what would be deleted without actually deleting)
+app.get('/gdpr-preview/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { retention_days } = req.query;
+  
+  try {
+    // Get retention days from settings if not provided
+    let effectiveRetentionDays = retention_days ? parseInt(retention_days) : null;
+    if (!effectiveRetentionDays) {
+      const settingsResult = await pool.query(
+        'SELECT retention_days FROM gdpr_settings WHERE chatbot_id = $1',
+        [chatbot_id]
+      );
+      effectiveRetentionDays = settingsResult.rows[0]?.retention_days || 90;
+    }
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - effectiveRetentionDays);
+    
+    // Get conversations that would be affected
+    const conversationsResult = await pool.query(`
+      SELECT 
+        id, 
+        created_at,
+        CASE 
+          WHEN conversation_data IS NOT NULL THEN jsonb_array_length(conversation_data)
+          ELSE 0
+        END as legacy_message_count
+      FROM conversations 
+      WHERE chatbot_id = $1 AND created_at < $2
+    `, [chatbot_id, cutoffDate]);
+    
+    // Get atomic messages that would be affected
+    const messagesResult = await pool.query(`
+      SELECT COUNT(*) as atomic_message_count
+      FROM conversation_messages cm
+      JOIN conversations c ON cm.conversation_id = c.id
+      WHERE c.chatbot_id = $1 AND c.created_at < $2
+    `, [chatbot_id, cutoffDate]);
+    
+    // Get context chunks that would be affected
+    const chunksResult = await pool.query(`
+      SELECT COUNT(*) as chunk_count
+      FROM message_context_chunks mcc
+      JOIN conversations c ON mcc.conversation_id = c.id
+      WHERE c.chatbot_id = $1 AND c.created_at < $2
+    `, [chatbot_id, cutoffDate]);
+    
+    const totalLegacyMessages = conversationsResult.rows.reduce(
+      (sum, row) => sum + (row.legacy_message_count || 0), 0
+    );
+    
+    res.json({
+      chatbot_id,
+      retention_days: effectiveRetentionDays,
+      cutoff_date: cutoffDate.toISOString(),
+      preview: {
+        conversations_affected: conversationsResult.rows.length,
+        legacy_messages_affected: totalLegacyMessages,
+        atomic_messages_affected: parseInt(messagesResult.rows[0].atomic_message_count),
+        context_chunks_affected: parseInt(chunksResult.rows[0].chunk_count),
+        conversations_details: conversationsResult.rows
+      }
+    });
+  } catch (error) {
+    console.error('Error generating GDPR preview:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate preview', 
+      details: error.message 
+    });
+  }
+});
+
+/* ================================
+   GDPR Cleanup Scheduler
+================================ */
+
+// Schedule GDPR cleanup to run daily at 2 AM
+function scheduleGdprCleanup() {
+  const runCleanup = async () => {
+    try {
+      console.log('Scheduled GDPR cleanup starting...');
+      const results = await runGdprCleanupForAllEnabledClients();
+      console.log('Scheduled GDPR cleanup completed:', results);
+    } catch (error) {
+      console.error('Scheduled GDPR cleanup failed:', error);
+    }
+  };
+
+  // Calculate time until next 2 AM
+  const now = new Date();
+  const nextRun = new Date();
+  nextRun.setHours(2, 0, 0, 0); // Set to 2 AM today
+  
+  // If 2 AM has already passed today, schedule for tomorrow
+  if (now > nextRun) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+  
+  const timeUntilNextRun = nextRun.getTime() - now.getTime();
+  
+  console.log(`GDPR cleanup scheduled to run at ${nextRun.toISOString()}`);
+  
+  // Set initial timeout
+  setTimeout(() => {
+    runCleanup();
+    // Then run every 24 hours
+    setInterval(runCleanup, 24 * 60 * 60 * 1000);
+  }, timeUntilNextRun);
+}
+
+// Start the scheduler
+scheduleGdprCleanup();
