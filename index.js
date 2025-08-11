@@ -1488,6 +1488,9 @@ app.post('/conversations', async (req, res) => {
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
+    // Normalize is_livechat: only update when explicitly provided as boolean; otherwise leave unchanged (null)
+    const normalizedIsLivechat = (typeof is_livechat === 'boolean') ? is_livechat : null;
+
     // Call upsertConversation with is_livechat, fallback, tags, form_data, is_flagged, and is_resolved parameters
     const result = await upsertConversation(
       user_id,
@@ -1499,7 +1502,7 @@ app.post('/conversations', async (req, res) => {
       lacking_info,
       bug_status,
       purchase_tracking_enabled,
-      is_livechat || false,
+      normalizedIsLivechat,
       fallback,
       tags,
       form_data,
