@@ -1946,25 +1946,25 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
     }
 
     let conversation = result.rows[0];
-    
-    // If this is a livechat conversation, enrich with file metadata
+
+    // If this is a livechat conversation, enrich with file metadata from atomic messages
     if (conversation.is_livechat) {
       try {
-        // Get file metadata from livechat_messages table
-        const livechatMessages = await pool.query(
-          `SELECT message_id, text, is_user, image_data, image_name, image_mime, timestamp
-           FROM livechat_messages 
-           WHERE user_id = $1 AND chatbot_id = $2 
-           ORDER BY timestamp ASC`,
-          [conversation.user_id, conversation.chatbot_id]
+        // Read file metadata from atomic conversation_messages metadata JSONB
+        const cmResult = await pool.query(
+          `SELECT message_text, metadata
+           FROM conversation_messages
+           WHERE conversation_id = $1
+           ORDER BY sequence_number ASC`,
+          [conversation.id]
         );
 
         // Parse existing conversation data
         let conversationData = [];
         if (conversation.conversation_data) {
           try {
-            conversationData = typeof conversation.conversation_data === 'string' 
-              ? JSON.parse(conversation.conversation_data) 
+            conversationData = typeof conversation.conversation_data === 'string'
+              ? JSON.parse(conversation.conversation_data)
               : conversation.conversation_data;
           } catch (e) {
             console.error('Error parsing conversation_data:', e);
@@ -1972,14 +1972,17 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
           }
         }
 
-        // Enrich conversation data with file metadata
-        if (livechatMessages.rows.length > 0) {
+        // Enrich conversation data with file metadata from metadata field
+        if (cmResult.rows.length > 0 && conversationData.length > 0) {
           const messageMap = new Map();
-          livechatMessages.rows.forEach(msg => {
-            messageMap.set(msg.text, {
-              fileName: msg.image_name,
-              fileMime: msg.image_mime
-            });
+          cmResult.rows.forEach(row => {
+            const meta = row.metadata || {};
+            if (meta.fileName || meta.fileMime) {
+              messageMap.set(row.message_text, {
+                fileName: meta.fileName || null,
+                fileMime: meta.fileMime || null
+              });
+            }
           });
 
           // Update conversation data with file metadata
@@ -1998,7 +2001,7 @@ app.get('/conversation/:id', authenticateToken, async (req, res) => {
           conversation.conversation_data = conversationData;
         }
       } catch (error) {
-        console.error('Error enriching livechat conversation with file metadata:', error);
+        console.error('Error enriching livechat conversation with file metadata (atomic):', error);
         // Continue without enrichment if there's an error
       }
     }
@@ -3945,134 +3948,9 @@ app.get('/support-status/:chatbot_id', async (req, res) => {
 });
 
 /* ================================
-   Individual Livechat Messages Endpoints
+   (Removed) Legacy Individual Livechat Messages Endpoints
+   Replaced by atomic endpoints: /append-livechat-message, /conversation-messages
 ================================ */
-
-// POST endpoint to save individual livechat messages
-app.post('/livechat-message', async (req, res) => {
-  const {
-    user_id,
-    chatbot_id,
-    message_id,
-    text,
-    is_user,
-    is_system = false,
-    timestamp,
-    image_data,
-    image_name,
-    image_mime,
-    agent_id,
-    agent_name,
-    agent_profile_picture
-  } = req.body;
-
-  if (!user_id || !chatbot_id || !message_id || !text) {
-    return res.status(400).json({ 
-      error: 'Missing required fields: user_id, chatbot_id, message_id, text' 
-    });
-  }
-
-  try {
-    const result = await pool.query(`
-      INSERT INTO livechat_messages (
-        user_id, chatbot_id, message_id, text, is_user, is_system, 
-        timestamp, image_data, image_name, image_mime, 
-        agent_id, agent_name, agent_profile_picture, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-      ON CONFLICT (message_id) DO UPDATE SET
-        text = EXCLUDED.text,
-        timestamp = EXCLUDED.timestamp,
-        image_data = EXCLUDED.image_data,
-        image_name = EXCLUDED.image_name,
-        image_mime = EXCLUDED.image_mime,
-        updated_at = NOW()
-      RETURNING *`,
-      [
-        user_id, chatbot_id, message_id, text, is_user, is_system,
-        new Date(timestamp), image_data, image_name, image_mime,
-        agent_id, agent_name, agent_profile_picture
-      ]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Error saving livechat message:', err);
-    res.status(500).json({
-      error: 'Database error',
-      details: err.message
-    });
-  }
-});
-
-// GET endpoint to fetch livechat messages for a conversation
-app.get('/livechat-messages', async (req, res) => {
-  const { user_id, chatbot_id, since_timestamp } = req.query;
-
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ 
-      error: 'user_id and chatbot_id are required' 
-    });
-  }
-
-  try {
-    let query = `
-      SELECT * FROM livechat_messages
-      WHERE user_id = $1 AND chatbot_id = $2
-    `;
-    let params = [user_id, chatbot_id];
-
-    // Optional: only fetch messages since a certain timestamp
-    if (since_timestamp) {
-      query += ` AND timestamp > $3`;
-      params.push(new Date(parseInt(since_timestamp)));
-    }
-
-    query += ` ORDER BY timestamp ASC`;
-
-    const result = await pool.query(query, params);
-
-    res.json({ 
-      messages: result.rows.map(row => ({
-        ...row,
-        tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags
-      }))
-    });
-  } catch (err) {
-    console.error('Error fetching livechat messages:', err);
-    res.status(500).json({
-      error: 'Database error',
-      details: err.message
-    });
-  }
-});
-
-// PATCH endpoint to update message statistics
-app.patch('/livechat-message/:messageId/stats', async (req, res) => {
-  const { messageId } = req.params;
-  const { emne, score, lacking_info, fallback, tags } = req.body;
-
-  try {
-    const result = await pool.query(`
-      UPDATE livechat_messages 
-      SET emne = $2, score = $3, lacking_info = $4, fallback = $5, tags = $6, updated_at = NOW()
-      WHERE message_id = $1
-      RETURNING *`,
-      [messageId, emne, score, lacking_info, fallback, JSON.stringify(tags)]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating message stats:', err);
-    res.status(500).json({
-      error: 'Database error',
-      details: err.message
-    });
-  }
-});
 
 // Update support status for a user
 app.post('/support-status', authenticateToken, async (req, res) => {
