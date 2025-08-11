@@ -5345,6 +5345,9 @@ app.post('/append-livechat-message', async (req, res) => {
     agent_name,
     profile_picture,
     image_data,
+    file_name,
+    file_mime,
+    file_size,
     message_type = 'text',
     is_system = false,
     is_form = false,
@@ -5358,6 +5361,15 @@ app.post('/append-livechat-message', async (req, res) => {
   }
 
   try {
+    // Enhanced metadata to include file information
+    const enhancedMetadata = {
+      ...metadata,
+      fileName: file_name,
+      fileMime: file_mime,
+      fileSize: file_size,
+      isFile: file_name && !file_mime?.startsWith('image/')
+    };
+
     const result = await pool.query(`
       SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, [
@@ -5371,7 +5383,7 @@ app.post('/append-livechat-message', async (req, res) => {
       message_type,
       is_system,
       is_form,
-      JSON.stringify(metadata)
+      JSON.stringify(enhancedMetadata)
     ]);
 
     const messageResult = result.rows[0];
@@ -5717,6 +5729,8 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         // Include file metadata from metadata field
         fileName: row.metadata?.fileName,
         fileMime: row.metadata?.fileMime,
+        fileSize: row.metadata?.fileSize,
+        isFile: row.metadata?.isFile || false,
         // Restore original properties from metadata
         textWithMarkers: row.text_with_markers || row.message_text,
         isError: row.is_error || false,
