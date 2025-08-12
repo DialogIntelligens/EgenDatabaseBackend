@@ -3452,6 +3452,10 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             ...user,
             total_messages: 0,
             monthly_payment: parseFloat(user.monthly_payment) || 0,
+            average_monthly_messages: 0,
+            last_month_messages: 0,
+            average_monthly_conversations: 0,
+            last_month_conversations: 0,
             ...trackingData
           };
         }
@@ -3472,10 +3476,13 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         const conversations = conversationsResult.rows;
         console.log(`Found ${conversations.length} conversations for user ${user.username}'s chatbots`);
 
-        // Calculate total messages from all conversations for this user's chatbots
+        // Calculate total messages and conversations for this user's chatbots
         let totalMessages = 0;
         let monthlyMessages = 0;
         let lastMonthMessages = 0;
+        let totalConversations = 0;
+        let monthlyConversations = 0;
+        let lastMonthConversations = 0;
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
@@ -3492,6 +3499,8 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         console.log(`User ${user.username} calculation: First conversation: ${userCreatedAt.toISOString()}, Days active: ${daysActive}`);
         
         conversations.forEach(conv => {
+          // Count conversations
+          totalConversations += 1;
           let conversationData = conv.conversation_data;
           
           // Parse conversation_data if it's a string
@@ -3516,11 +3525,13 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             const conversationDate = new Date(conv.created_at);
             if (conversationDate >= thirtyDaysAgo) {
               monthlyMessages += userMessages.length;
+              monthlyConversations += 1;
             }
             
             // Count last month messages (previous calendar month)
             if (conversationDate >= lastMonthStart && conversationDate <= lastMonthEnd) {
               lastMonthMessages += userMessages.length;
+              lastMonthConversations += 1;
             }
           }
         });
@@ -3528,6 +3539,10 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         // Calculate average monthly messages: (total messages / days active) * 30
         const averageDailyMessages = totalMessages / daysActive;
         const averageMonthlyMessages = averageDailyMessages * 30;
+
+        // Calculate average monthly conversations: (total conversations / days active) * 30
+        const averageDailyConversations = totalConversations / daysActive;
+        const averageMonthlyConversations = averageDailyConversations * 30;
 
         // Safely parse monthly_payment
         let monthlyPayment = 0;
@@ -3543,6 +3558,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           monthly_messages: monthlyMessages, // Last 30 days
           average_monthly_messages: Math.round(averageMonthlyMessages),
           last_month_messages: lastMonthMessages,
+          monthly_conversations: monthlyConversations, // Last 30 days
+          average_monthly_conversations: Math.round(averageMonthlyConversations),
+          last_month_conversations: lastMonthConversations,
           days_active: daysActive,
           monthly_payment: monthlyPayment,
           ...trackingData
