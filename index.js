@@ -462,8 +462,8 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
       // Initialize Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      // Use the actual index name for the Pinecone index handle; namespace is provided separately in upsert options
-      const index = pineconeClient.index(indexName);
+      
+      const index = pineconeClient.index(namespace);
 
       // Create unique vector ID
       const vectorId = `vector-${Date.now()}`;
@@ -488,7 +488,7 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
         metadata: vectorMetadata
       };
 
-      // Upsert into Pinecone
+      // Upsert into Pineconex½
       await index.upsert([vector], { namespace });
 
       // Convert expirationTime -> Date or set null
@@ -643,8 +643,8 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
 
       // Update in Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      // Use stored index name from the record when referencing the Pinecone index
-      const index = pineconeClient.index(pinecone_index_name);
+
+      const index = pineconeClient.index(namespace);
       
       await index.upsert([
         {
