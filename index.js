@@ -462,7 +462,8 @@ app.post('/pinecone-data', authenticateToken, async (req, res) => {
 
       // Initialize Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      const index = pineconeClient.index(namespace);
+      // Use the actual index name for the Pinecone index handle; namespace is provided separately in upsert options
+      const index = pineconeClient.index(indexName);
 
       // Create unique vector ID
       const vectorId = `vector-${Date.now()}`;
@@ -642,7 +643,8 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
 
       // Update in Pinecone
       const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      const index = pineconeClient.index(namespace);
+      // Use stored index name from the record when referencing the Pinecone index
+      const index = pineconeClient.index(pinecone_index_name);
       
       await index.upsert([
         {
