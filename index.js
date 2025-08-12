@@ -3389,7 +3389,8 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         id,
         username,
         monthly_payment,
-        chatbot_ids
+        chatbot_ids,
+        thumbs_rating
       FROM users 
       ORDER BY monthly_payment DESC NULLS LAST
     `;
@@ -3456,6 +3457,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             last_month_messages: 0,
             average_monthly_conversations: 0,
             last_month_conversations: 0,
+            csat: 'N/A',
+            conversion_rate: 'N/A',
+            fallback_rate: 'N/A',
             ...trackingData
           };
         }
@@ -3467,7 +3471,10 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           SELECT 
             conversation_data,
             created_at,
-            chatbot_id
+            chatbot_id,
+            customer_rating,
+            purchase_tracking_enabled,
+            fallback
           FROM conversations 
           WHERE chatbot_id = ANY($1)
         `;
@@ -3483,6 +3490,11 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         let totalConversations = 0;
         let monthlyConversations = 0;
         let lastMonthConversations = 0;
+        let totalRatingsCount = 0;
+        let thumbsUpCount = 0;
+        let satisfiedCount = 0;
+        let fallbackCount = 0;
+        let conversationsWithPurchaseTracking = 0;
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
@@ -3513,6 +3525,22 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             }
           }
           
+          // Count metadata-based metrics
+          if (conv.purchase_tracking_enabled === true) {
+            conversationsWithPurchaseTracking += 1;
+          }
+          if (typeof conv.customer_rating === 'number') {
+            totalRatingsCount += 1;
+            if (user.thumbs_rating) {
+              if (conv.customer_rating === 5) thumbsUpCount += 1;
+            } else if (conv.customer_rating >= 4) {
+              satisfiedCount += 1;
+            }
+          }
+          if (conv.fallback === true) {
+            fallbackCount += 1;
+          }
+
           // Ensure it's an array
           if (Array.isArray(conversationData)) {
             // Count user messages (messages from the chatbot users, not the dashboard user)
@@ -3550,7 +3578,36 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           monthlyPayment = parseFloat(user.monthly_payment) || 0;
         }
 
-        console.log(`User ${user.username}: ${totalMessages} total, ${averageDailyMessages.toFixed(2)} avg daily, ${Math.round(averageMonthlyMessages)} avg monthly (daily*30), ${monthlyMessages} last 30 days, ${lastMonthMessages} last month, ${monthlyPayment} kr payment`);
+        // Purchases count for this user's chatbots (all time)
+        const purchasesCountResult = await pool.query(
+          `SELECT COUNT(*)::int as cnt FROM purchases WHERE chatbot_id = ANY($1)`,
+          [chatbotIds]
+        );
+        const purchasesCount = purchasesCountResult.rows[0]?.cnt || 0;
+
+        // Compute per-user CSAT
+        let csat = 'N/A';
+        if (totalRatingsCount > 0) {
+          if (user.thumbs_rating) {
+            csat = `${((thumbsUpCount / totalRatingsCount) * 100).toFixed(1)}%`;
+          } else {
+            csat = `${((satisfiedCount / totalRatingsCount) * 100).toFixed(1)}%`;
+          }
+        }
+
+        // Compute per-user conversion rate: purchases / conversations with purchase tracking
+        let conversionRate = 'N/A';
+        if (conversationsWithPurchaseTracking > 0) {
+          conversionRate = `${((purchasesCount / conversationsWithPurchaseTracking) * 100).toFixed(1)}%`;
+        }
+
+        // Compute per-user fallback rate
+        let fallbackRate = 'N/A';
+        if (conversations.length > 0) {
+          fallbackRate = `${((fallbackCount / conversations.length) * 100).toFixed(1)}%`;
+        }
+
+        console.log(`User ${user.username}: ${totalMessages} total msgs, ${Math.round(averageMonthlyMessages)} avg monthly msgs, purchases ${purchasesCount}, ratings ${totalRatingsCount}, csat ${csat}, convRate ${conversionRate}, fallback ${fallbackRate}`);
 
         return {
           ...user,
@@ -3563,6 +3620,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           last_month_conversations: lastMonthConversations,
           days_active: daysActive,
           monthly_payment: monthlyPayment,
+          csat: csat,
+          conversion_rate: conversionRate,
+          fallback_rate: fallbackRate,
           ...trackingData
         };
       } catch (error) {
