@@ -29,12 +29,6 @@ const pool = new Pool({
     : { rejectUnauthorized: false }
 });
 
-// Cleanup old data periodically
-cron.schedule('*/5 * * * *', () => {
-  console.log('Cleaning up old data...');
-  // Any cleanup logic can go here if needed
-});
-
 // Check for required environment variables
 if (!process.env.OPENAI_API_KEY) {
   console.error('ERROR: OPENAI_API_KEY environment variable is required');
@@ -65,44 +59,6 @@ app.options('*', cors());
 // Trust X-Forwarded-For header when behind proxies (Render, Heroku, etc.)
 app.set('trust proxy', true);
 
-// Database migration function to update profile_picture column
-async function migrateProfilePictureColumn() {
-  try {
-    // Check if column exists and its type
-    const columnCheck = await pool.query(`
-      SELECT data_type, character_maximum_length 
-      FROM information_schema.columns 
-      WHERE table_name = 'users' AND column_name = 'profile_picture'
-    `);
-    
-    if (columnCheck.rows.length > 0) {
-      const currentType = columnCheck.rows[0].data_type;
-      const maxLength = columnCheck.rows[0].character_maximum_length;
-      
-      // If it's varchar with limited length, upgrade to TEXT
-      if (currentType === 'character varying' && maxLength && maxLength <= 500) {
-        console.log('Migrating profile_picture column from varchar to TEXT...');
-        await pool.query('ALTER TABLE users ALTER COLUMN profile_picture TYPE TEXT');
-        console.log('Successfully migrated profile_picture column to TEXT');
-      } else if (currentType === 'text') {
-        console.log('profile_picture column is already TEXT type');
-      } else {
-        console.log(`profile_picture column type: ${currentType}, max_length: ${maxLength}`);
-      }
-    } else {
-      // Column doesn't exist, add it as TEXT
-      console.log('Adding profile_picture column as TEXT...');
-      await pool.query('ALTER TABLE users ADD COLUMN profile_picture TEXT');
-      console.log('Successfully added profile_picture column');
-    }
-  } catch (error) {
-    console.error('Error migrating profile_picture column:', error);
-    // Don't exit the process, just log the error
-  }
-}
-
-// Run migration on startup
-migrateProfilePictureColumn();
 
 // JWT auth middleware
 function authenticateToken(req, res, next) {
@@ -1357,8 +1313,8 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
   }
 });
 
-    // Helper upsert function
-    async function upsertConversation(
+// Helper upsert function
+async function upsertConversation(
       user_id,
       chatbot_id,
       conversation_data,
@@ -1442,7 +1398,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       } finally {
         client.release();
       }
-    }
+}
 
 // POST conversation
 app.post('/conversations', async (req, res) => {
@@ -3247,8 +3203,6 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
-
-
 // Add this endpoint to reset a user's password (admin only)
 app.post('/reset-password/:id', authenticateToken, async (req, res) => {
   const targetId = parseInt(req.params.id);
@@ -3784,7 +3738,6 @@ app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
   }
 });
 
-// Add this before the app.listen section, near other user-related endpoints
 
 // Add endpoint to update company information
 app.put('/update-company-info', authenticateToken, async (req, res) => {
@@ -4030,10 +3983,6 @@ app.get('/support-status/:chatbot_id', async (req, res) => {
   }
 });
 
-/* ================================
-   (Removed) Legacy Individual Livechat Messages Endpoints
-   Replaced by atomic endpoints: /append-livechat-message, /conversation-messages
-================================ */
 
 // Update support status for a user
 app.post('/support-status', authenticateToken, async (req, res) => {
@@ -4222,18 +4171,7 @@ app.get('/api/shopify/credentials/:chatbot_id', async (req, res) => {
   }
 });
 
-/*
-  POST /api/shopify/credentials
-  Creates or updates Shopify credentials for a chatbot
-  Body: {
-    chatbot_id: string,
-    shopify_store: string,
-    shopify_access_token: string,
-    shopify_api_key?: string,
-    shopify_secret_key?: string,
-    shopify_api_version?: string
-  }
-*/
+
 app.post('/api/shopify/credentials', async (req, res) => {
   try {
     const {
@@ -5655,8 +5593,6 @@ app.get('/conversation-messages', async (req, res) => {
     });
   }
 });
-
-
 
 // POST migrate conversation to atomic message system with provided conversation data
 app.post('/migrate-conversation-to-atomic-with-messages', async (req, res) => {
