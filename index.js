@@ -5404,14 +5404,25 @@ app.put('/show-user-profile-pictures', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    res.json({ 
-      message: 'Show user profile pictures preference updated successfully',
-      show_user_profile_pictures: result.rows[0].show_user_profile_pictures 
-    });
+      res.json({ 
+    message: 'Show user profile pictures preference updated successfully',
+    show_user_profile_pictures: result.rows[0].show_user_profile_pictures 
+  });
   } catch (err) {
     console.error('Error updating show user profile pictures preference:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
+});
+
+// GET GitHub token for image uploads
+app.get('/github-token', authenticateToken, async (req, res) => {
+  const githubToken = process.env.GITHUB_TOKEN;
+  
+  if (!githubToken) {
+    return res.status(500).json({ error: 'GitHub token not configured' });
+  }
+  
+  res.json({ token: githubToken });
 });
 
 // =========================================
@@ -5536,7 +5547,7 @@ app.post('/append-livechat-message', async (req, res) => {
 
 // Agent typing status endpoints
 app.post('/agent-typing-status', async (req, res) => {
-  const { user_id, chatbot_id, agent_name, profile_picture, is_typing } = req.body;
+  const { user_id, chatbot_id, agent_name, is_typing } = req.body;
 
   if (!user_id || !chatbot_id || !agent_name) {
     return res.status(400).json({ 
@@ -5545,18 +5556,17 @@ app.post('/agent-typing-status', async (req, res) => {
   }
 
   try {
-    // Use upsert to handle concurrent updates
+    // Use upsert to handle concurrent updates - no longer store profile_picture in typing status
     const result = await pool.query(`
-      INSERT INTO agent_typing_status (user_id, chatbot_id, agent_name, profile_picture, is_typing, last_updated)
-      VALUES ($1, $2, $3, $4, $5, NOW())
+      INSERT INTO agent_typing_status (user_id, chatbot_id, agent_name, is_typing, last_updated)
+      VALUES ($1, $2, $3, $4, NOW())
       ON CONFLICT (user_id, chatbot_id)
       DO UPDATE SET 
         agent_name = EXCLUDED.agent_name,
-        profile_picture = EXCLUDED.profile_picture,
         is_typing = EXCLUDED.is_typing,
         last_updated = NOW()
       RETURNING *
-    `, [user_id, chatbot_id, agent_name, profile_picture || '', is_typing]);
+    `, [user_id, chatbot_id, agent_name, is_typing]);
 
     res.json({ success: true, typing_status: result.rows[0] });
   } catch (error) {
@@ -5578,13 +5588,17 @@ app.get('/agent-typing-status', async (req, res) => {
   }
 
   try {
-    // Get current typing status, excluding expired ones (older than 10 seconds)
+    // Get current typing status with agent profile picture from user profile
     const result = await pool.query(`
-      SELECT * FROM agent_typing_status 
-      WHERE user_id = $1 
-        AND chatbot_id = $2 
-        AND is_typing = true 
-        AND last_updated > NOW() - INTERVAL '15 seconds'
+      SELECT 
+        ats.*, 
+        u.profile_picture as agent_profile_picture
+      FROM agent_typing_status ats
+      LEFT JOIN users u ON ats.agent_name = u.agent_name
+      WHERE ats.user_id = $1 
+        AND ats.chatbot_id = $2 
+        AND ats.is_typing = true 
+        AND ats.last_updated > NOW() - INTERVAL '15 seconds'
     `, [user_id, chatbot_id]);
 
     const isAgentTyping = result.rows.length > 0;
@@ -5593,7 +5607,7 @@ app.get('/agent-typing-status', async (req, res) => {
     res.json({ 
       is_agent_typing: isAgentTyping,
       agent_name: agentInfo?.agent_name || null,
-      profile_picture: agentInfo?.profile_picture || null
+      profile_picture: agentInfo?.agent_profile_picture || null // Get from user profile instead of typing status
     });
   } catch (error) {
     console.error('Error fetching agent typing status:', error);
@@ -5615,9 +5629,28 @@ app.get('/conversation-messages', async (req, res) => {
   }
 
   try {
-    const result = await pool.query(`
-      SELECT * FROM get_conversation_messages($1, $2)
+    // First get the conversation ID
+    const convResult = await pool.query(`
+      SELECT id FROM conversations 
+      WHERE user_id = $1 AND chatbot_id = $2
     `, [user_id, chatbot_id]);
+
+    if (convResult.rows.length === 0) {
+      return res.json({ conversation_data: [], message_count: 0 });
+    }
+
+    const conversationId = convResult.rows[0].id;
+
+    // Get messages with agent profile picture lookup
+    const result = await pool.query(`
+      SELECT 
+        cm.*,
+        u.profile_picture as agent_profile_picture
+      FROM conversation_messages cm
+      LEFT JOIN users u ON (cm.agent_name = u.agent_name AND NOT cm.is_user AND cm.agent_name IS NOT NULL)
+      WHERE cm.conversation_id = $1
+      ORDER BY cm.sequence_number ASC
+    `, [conversationId]);
 
     // Convert to frontend format with all properties preserved
     const messages = result.rows.map(row => ({
@@ -5626,7 +5659,7 @@ app.get('/conversation-messages', async (req, res) => {
       isSystem: row.is_system,
       isForm: row.is_form,
       agentName: row.agent_name,
-      profilePicture: row.profile_picture,
+      profilePicture: row.agent_profile_picture || null, // Get from user profile instead of message data
       image: row.image_data,
       messageType: row.message_type,
       sequenceNumber: row.sequence_number,
@@ -5793,10 +5826,16 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
     const conversation = convCheck.rows[0];
     
     if (conversation.uses_message_system) {
-      // Use atomic message system
+      // Use atomic message system with agent profile picture lookup
       const result = await pool.query(`
-        SELECT * FROM get_conversation_messages($1, $2)
-      `, [user_id, chatbot_id]);
+        SELECT 
+          cm.*,
+          u.profile_picture as agent_profile_picture
+        FROM conversation_messages cm
+        LEFT JOIN users u ON (cm.agent_name = u.agent_name AND NOT cm.is_user AND cm.agent_name IS NOT NULL)
+        WHERE cm.conversation_id = $1
+        ORDER BY cm.sequence_number ASC
+      `, [conversation.id]);
 
       const messages = result.rows.map(row => ({
         text: row.message_text,
@@ -5804,7 +5843,7 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         isSystem: row.is_system,
         isForm: row.is_form,
         agentName: row.agent_name,
-        profilePicture: row.profile_picture,
+        profilePicture: row.agent_profile_picture || null, // Get from user profile instead of message data
         image: row.image_data,
         messageType: row.message_type,
         sequenceNumber: row.sequence_number,
