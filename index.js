@@ -5445,6 +5445,23 @@ app.post('/append-livechat-message', async (req, res) => {
   }
 
   try {
+    // If profile_picture not provided or not an http(s) URL, try to populate from users table for agent messages
+    let resolvedProfilePicture = profile_picture;
+    if (!is_user && agent_name && (!resolvedProfilePicture || !/^https?:\/\//.test(resolvedProfilePicture))) {
+      try {
+        const userPicResult = await pool.query(
+          'SELECT profile_picture FROM users WHERE agent_name = $1 LIMIT 1',
+          [agent_name]
+        );
+        const candidate = userPicResult.rows[0]?.profile_picture || null;
+        if (candidate && /^https?:\/\//.test(candidate)) {
+          resolvedProfilePicture = candidate;
+        }
+      } catch (e) {
+        // ignore lookup errors; proceed without profile picture
+      }
+    }
+
     // Enhanced metadata to include file information
     const enhancedMetadata = {
       ...metadata,
@@ -5462,7 +5479,7 @@ app.post('/append-livechat-message', async (req, res) => {
       message_text,
       is_user,
       agent_name,
-      profile_picture,
+      resolvedProfilePicture,
       image_data,
       message_type,
       is_system,
@@ -5631,11 +5648,11 @@ app.get('/conversation-messages', async (req, res) => {
 
     const conversationId = convResult.rows[0].id;
 
-    // Get messages with agent profile picture lookup
+    // Get messages with agent profile picture lookup (prefer per-message URL, fallback to user profile)
     const result = await pool.query(`
       SELECT 
         cm.*,
-        u.profile_picture as agent_profile_picture
+        COALESCE(NULLIF(cm.profile_picture, ''), u.profile_picture) as agent_profile_picture
       FROM conversation_messages cm
       LEFT JOIN users u ON (cm.agent_name = u.agent_name AND NOT cm.is_user AND cm.agent_name IS NOT NULL)
       WHERE cm.conversation_id = $1
@@ -5816,11 +5833,11 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
     const conversation = convCheck.rows[0];
     
     if (conversation.uses_message_system) {
-      // Use atomic message system with agent profile picture lookup
+      // Use atomic message system with agent profile picture lookup (prefer per-message URL, fallback to user profile)
       const result = await pool.query(`
         SELECT 
           cm.*,
-          u.profile_picture as agent_profile_picture
+          COALESCE(NULLIF(cm.profile_picture, ''), u.profile_picture) as agent_profile_picture
         FROM conversation_messages cm
         LEFT JOIN users u ON (cm.agent_name = u.agent_name AND NOT cm.is_user AND cm.agent_name IS NOT NULL)
         WHERE cm.conversation_id = $1
