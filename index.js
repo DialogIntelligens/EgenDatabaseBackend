@@ -5594,11 +5594,6 @@ app.get('/agent-typing-status', async (req, res) => {
     const isAgentTyping = result.rows.length > 0;
     const agentInfo = isAgentTyping ? result.rows[0] : null;
 
-    // Debug logging for typing status profile picture lookup
-    if (agentInfo) {
-      console.log(`[typing-status] Profile picture lookup for agent "${agentInfo.agent_name}": ${agentInfo.agent_profile_picture ? 'Found' : 'Not found'}`);
-    }
-
     res.json({ 
       is_agent_typing: isAgentTyping,
       agent_name: agentInfo?.agent_name || null,
@@ -5648,19 +5643,13 @@ app.get('/conversation-messages', async (req, res) => {
     `, [conversationId]);
 
     // Convert to frontend format with all properties preserved
-    const messages = result.rows.map(row => {
-      // Debug logging for profile picture lookup
-      if (row.agent_name && !row.is_user) {
-        console.log(`[conversation-messages] Profile picture lookup for agent "${row.agent_name}": ${row.agent_profile_picture ? 'Found' : 'Not found'}`);
-      }
-      
-      return {
-        text: row.message_text,
-        isUser: row.is_user,
-        isSystem: row.is_system,
-        isForm: row.is_form,
-        agentName: row.agent_name,
-        profilePicture: row.agent_profile_picture || null, // Get from user profile instead of message data
+    const messages = result.rows.map(row => ({
+      text: row.message_text,
+      isUser: row.is_user,
+      isSystem: row.is_system,
+      isForm: row.is_form,
+      agentName: row.agent_name,
+      profilePicture: row.agent_profile_picture || null, // Get from user profile instead of message data
       image: row.image_data,
       messageType: row.message_type,
       sequenceNumber: row.sequence_number,
@@ -5827,14 +5816,6 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
     const conversation = convCheck.rows[0];
     
     if (conversation.uses_message_system) {
-      // Debug: Check what agent names and profile pictures exist
-      const debugResult = await pool.query(`
-        SELECT DISTINCT agent_name, profile_picture 
-        FROM users 
-        WHERE agent_name IS NOT NULL AND agent_name != ''
-      `);
-      console.log('Available agents with profile pictures:', debugResult.rows);
-      
       // Use atomic message system with agent profile picture lookup
       const result = await pool.query(`
         SELECT 
@@ -5846,19 +5827,13 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
         ORDER BY cm.sequence_number ASC
       `, [conversation.id]);
 
-      const messages = result.rows.map(row => {
-        // Debug logging for profile picture lookup
-        if (row.agent_name && !row.is_user) {
-          console.log(`Profile picture lookup for agent "${row.agent_name}": ${row.agent_profile_picture ? 'Found' : 'Not found'}`);
-        }
-        
-        return {
-          text: row.message_text,
-          isUser: row.is_user,
-          isSystem: row.is_system,
-          isForm: row.is_form,
-          agentName: row.agent_name,
-          profilePicture: row.agent_profile_picture || null, // Get from user profile instead of message data
+      const messages = result.rows.map(row => ({
+        text: row.message_text,
+        isUser: row.is_user,
+        isSystem: row.is_system,
+        isForm: row.is_form,
+        agentName: row.agent_name,
+        profilePicture: row.agent_profile_picture || null, // Get from user profile instead of message data
         image: row.image_data,
         messageType: row.message_type,
         sequenceNumber: row.sequence_number,
