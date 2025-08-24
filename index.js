@@ -5414,6 +5414,16 @@ app.put('/show-user-profile-pictures', authenticateToken, async (req, res) => {
   }
 });
 
+// GET GitHub token for image uploads
+app.get('/github-token', authenticateToken, async (req, res) => {
+  const githubToken = process.env.GITHUB_TOKEN;
+  
+  if (!githubToken) {
+    return res.status(500).json({ error: 'GitHub token not configured' });
+  }
+  
+  res.json({ token: githubToken });
+});
 
 // =========================================
 // ATOMIC LIVECHAT MESSAGE ENDPOINTS
