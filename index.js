@@ -5445,6 +5445,43 @@ app.post('/append-livechat-message', async (req, res) => {
   }
 
   try {
+    // Prevent accidental duplicate agent messages within a short window
+    if (!is_user && !is_system && agent_name) {
+      try {
+        const convLookup = await pool.query(
+          `SELECT id FROM conversations WHERE user_id = $1 AND chatbot_id = $2 LIMIT 1`,
+          [user_id, chatbot_id]
+        );
+        if (convLookup.rows.length > 0) {
+          const convId = convLookup.rows[0].id;
+          const dupCheck = await pool.query(
+            `SELECT id, sequence_number
+             FROM conversation_messages
+             WHERE conversation_id = $1
+               AND is_user = false
+               AND is_system = false
+               AND agent_name = $2
+               AND message_text = $3
+               AND created_at > NOW() - INTERVAL '5 seconds'
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [convId, agent_name, message_text]
+          );
+          if (dupCheck.rows.length > 0) {
+            return res.status(201).json({
+              success: true,
+              message_id: dupCheck.rows[0].id,
+              conversation_id: convId,
+              sequence_number: dupCheck.rows[0].sequence_number,
+              deduped: true
+            });
+          }
+        }
+      } catch (dupErr) {
+        console.warn('Duplicate-prevent check failed (continuing):', dupErr?.message || dupErr);
+      }
+    }
+
     // If profile_picture not provided or not an http(s) URL, try to populate from users table for agent messages
     let resolvedProfilePicture = profile_picture;
     if (!is_user && agent_name && (!resolvedProfilePicture || !/^https?:\/\//.test(resolvedProfilePicture))) {
