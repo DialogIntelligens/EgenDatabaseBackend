@@ -5445,6 +5445,23 @@ app.post('/append-livechat-message', async (req, res) => {
   }
 
   try {
+    // Get agent's profile picture from user profile if this is an agent message
+    let actualProfilePicture = profile_picture;
+    if (!is_user && agent_name && !profile_picture) {
+      try {
+        const profileResult = await pool.query(`
+          SELECT profile_picture FROM users WHERE agent_name = $1 LIMIT 1
+        `, [agent_name]);
+        
+        if (profileResult.rows.length > 0) {
+          actualProfilePicture = profileResult.rows[0].profile_picture;
+        }
+      } catch (profileError) {
+        console.error('Error fetching agent profile picture:', profileError);
+        // Continue without profile picture
+      }
+    }
+
     // Enhanced metadata to include file information
     const enhancedMetadata = {
       ...metadata,
@@ -5462,7 +5479,7 @@ app.post('/append-livechat-message', async (req, res) => {
       message_text,
       is_user,
       agent_name,
-      profile_picture,
+      actualProfilePicture,
       image_data,
       message_type,
       is_system,
@@ -5546,6 +5563,20 @@ app.post('/agent-typing-status', async (req, res) => {
   }
 
   try {
+    // Get agent's profile picture for the response
+    let agentProfilePicture = null;
+    try {
+      const profileResult = await pool.query(`
+        SELECT profile_picture FROM users WHERE agent_name = $1 LIMIT 1
+      `, [agent_name]);
+      
+      if (profileResult.rows.length > 0) {
+        agentProfilePicture = profileResult.rows[0].profile_picture;
+      }
+    } catch (profileError) {
+      console.error('Error fetching agent profile picture for typing status:', profileError);
+    }
+
     // Use upsert to handle concurrent updates - no longer store profile_picture in typing status
     const result = await pool.query(`
       INSERT INTO agent_typing_status (user_id, chatbot_id, agent_name, is_typing, last_updated)
@@ -5558,7 +5589,11 @@ app.post('/agent-typing-status', async (req, res) => {
       RETURNING *
     `, [user_id, chatbot_id, agent_name, is_typing]);
 
-    res.json({ success: true, typing_status: result.rows[0] });
+    res.json({ 
+      success: true, 
+      typing_status: result.rows[0],
+      profile_picture: agentProfilePicture // Include profile picture in response
+    });
   } catch (error) {
     console.error('Error updating agent typing status:', error);
     res.status(500).json({ 
