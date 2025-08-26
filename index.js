@@ -1638,7 +1638,7 @@ app.get('/conversations', authenticateToken, async (req, res) => {
 });
 
 app.get('/conversation-count', authenticateToken, async (req, res) => {
-  const { chatbot_id, fejlstatus, customer_rating, emne, tags, is_resolved } = req.query;
+  const { chatbot_id, fejlstatus, customer_rating, emne, tags, is_resolved, has_purchase } = req.query;
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
@@ -1674,6 +1674,14 @@ app.get('/conversation-count', authenticateToken, async (req, res) => {
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
+      }
+    }
+    if (has_purchase && has_purchase !== '') {
+      if (has_purchase === 'true') {
+        queryText += ` AND EXISTS (
+          SELECT 1 FROM purchases p
+          WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
+        )`;
       }
     }
     if (customer_rating && customer_rating !== '') {
@@ -1814,7 +1822,7 @@ app.get('/greeting-rate', authenticateToken, async (req, res) => {
   CHANGED: /conversations-metadata also uses ANY($1) for multiple IDs.
 */
 app.get('/conversations-metadata', authenticateToken, async (req, res) => {
-  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved, is_livechat_page } = req.query;
+  const { chatbot_id, page_number, page_size, lacking_info, start_date, end_date, conversation_filter, fejlstatus, customer_rating, emne, tags, is_resolved, is_livechat_page, has_purchase } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1885,6 +1893,14 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       } else {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
+      }
+    }
+    if (has_purchase && has_purchase !== '') {
+      if (has_purchase === 'true') {
+        queryText += ` AND EXISTS (
+          SELECT 1 FROM purchases p
+          WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
+        )`;
       }
     }
     if (customer_rating && customer_rating !== '') {
@@ -4626,6 +4642,36 @@ app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
     return res.json(result.rows);
   } catch (err) {
     console.error('Error fetching purchases:', err);
+    return res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+/*
+  GET /has-purchase-conversations
+  Returns whether the user has any conversations with purchases to conditionally show the purchase filter
+*/
+app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+
+    const result = await pool.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM conversations c
+        JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
+        WHERE c.chatbot_id = ANY($1) AND p.amount > 0
+      ) as has_purchase_conversations`,
+      [chatbotIds]
+    );
+
+    return res.json({ has_purchase_conversations: result.rows[0].has_purchase_conversations });
+  } catch (err) {
+    console.error('Error checking purchase conversations:', err);
     return res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
