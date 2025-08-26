@@ -646,7 +646,44 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   // Resolve module references
   finalPrompt = await resolveModuleReferences(pool, finalPrompt);
   
+  // Add current date and time information at the beginning of the prompt
+  const now = new Date();
+  const options = { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Copenhagen' // Danish timezone
+  };
+  const dateTimeString = now.toLocaleDateString('en-US', options);
+  const timeString = now.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    hour12: false,
+    timeZone: 'Europe/Copenhagen'
+  });
+  
+  const dateTimeInfo = `It is currently ${dateTimeString.split(',')[0].toLowerCase()} the ${now.getDate()}${getOrdinalSuffix(now.getDate())} of ${now.toLocaleDateString('en-US', { month: 'long', timeZone: 'Europe/Copenhagen' }).toLowerCase()} ${timeString}`;
+  
+  // Prepend date/time info to the prompt if there's content
+  if (finalPrompt.trim()) {
+    finalPrompt = `${dateTimeInfo}\n\n${finalPrompt}`;
+  }
+  
   return finalPrompt;
+}
+
+/* Helper to get ordinal suffix for day numbers */
+function getOrdinalSuffix(day) {
+  if (day > 3 && day < 21) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
 }
 
 /* Helper to resolve module references in prompt text */
