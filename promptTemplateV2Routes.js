@@ -193,6 +193,47 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   /* =============================
+     CHATBOT LANGUAGE SETTINGS
+  ============================= */
+  router.get('/language/:chatbot_id', async (req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT * FROM chatbot_language_settings WHERE chatbot_id=$1', [req.params.chatbot_id]);
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'No language setting found for this chatbot' });
+      }
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('GET language setting error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  router.post('/language', authenticateToken, async (req, res) => {
+    const { chatbot_id, language } = req.body;
+    if (!chatbot_id || !language) return res.status(400).json({ error: 'chatbot_id and language required' });
+    
+    // Validate language value
+    const supportedLanguages = ['danish', 'english', 'swedish', 'norwegian', 'german', 'dutch', 'french', 'italian', 'finnish'];
+    if (!supportedLanguages.includes(language)) {
+      return res.status(400).json({ error: `language must be one of: ${supportedLanguages.join(', ')}` });
+    }
+    
+    try {
+      await pool.query(
+        `INSERT INTO chatbot_language_settings (chatbot_id, language, updated_at)
+         VALUES ($1, $2, CURRENT_TIMESTAMP)
+         ON CONFLICT (chatbot_id) 
+         DO UPDATE SET language = $2, updated_at = CURRENT_TIMESTAMP`,
+        [chatbot_id, language]
+      );
+      res.json({ success: true, message: 'Language setting saved successfully' });
+    } catch (err) {
+      console.error('POST language setting error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  /* =============================
      FLOW PINECONE API KEYS
   ============================= */
   router.get('/flow-api-keys/:chatbot_id', async (req, res) => {
