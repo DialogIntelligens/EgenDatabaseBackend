@@ -4971,6 +4971,267 @@ async function getContextChunks(conversationId, messageIndex) {
   }
 }
 
+/* ================================
+   GDPR Compliance Functions
+================================ */
+
+// Create GDPR settings table
+async function createGdprSettingsTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS gdpr_settings (
+        id SERIAL PRIMARY KEY,
+        chatbot_id VARCHAR(255) UNIQUE NOT NULL,
+        retention_days INTEGER NOT NULL DEFAULT 90 CHECK (retention_days >= 1 AND retention_days <= 3650),
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        last_cleanup_run TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('GDPR settings table initialized');
+  } catch (error) {
+    console.error('Error creating GDPR settings table:', error);
+  }
+}
+
+// Get GDPR settings for a chatbot
+async function getGdprSettings(chatbotId) {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM gdpr_settings WHERE chatbot_id = $1',
+      [chatbotId]
+    );
+    
+    if (result.rows.length === 0) {
+      // Return default settings if none exist
+      return {
+        chatbot_id: chatbotId,
+        retention_days: 90,
+        enabled: false,
+        last_cleanup_run: null
+      };
+    }
+    
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error fetching GDPR settings:', error);
+    throw error;
+  }
+}
+
+// Save or update GDPR settings
+async function saveGdprSettings(chatbotId, retentionDays, enabled) {
+  try {
+    const result = await pool.query(`
+      INSERT INTO gdpr_settings (chatbot_id, retention_days, enabled, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (chatbot_id) 
+      DO UPDATE SET 
+        retention_days = EXCLUDED.retention_days,
+        enabled = EXCLUDED.enabled,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [chatbotId, retentionDays, enabled]);
+    
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error saving GDPR settings:', error);
+    throw error;
+  }
+}
+
+// Preview what would be affected by GDPR cleanup
+async function previewGdprCleanup(chatbotId, retentionDays) {
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    
+    // Get conversations that would be affected
+    const conversationsResult = await pool.query(`
+      SELECT 
+        id,
+        created_at,
+        emne,
+        CASE 
+          WHEN conversation_data IS NOT NULL THEN jsonb_array_length(conversation_data)
+          ELSE 0
+        END as legacy_message_count,
+        (SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = conversations.id) as atomic_message_count
+      FROM conversations 
+      WHERE chatbot_id = $1 AND created_at < $2
+      ORDER BY created_at DESC
+      LIMIT 100
+    `, [chatbotId, cutoffDate]);
+    
+    // Get total counts
+    const totalCountsResult = await pool.query(`
+      SELECT 
+        COUNT(*) as total_conversations,
+        COALESCE(SUM(
+          CASE 
+            WHEN conversation_data IS NOT NULL THEN jsonb_array_length(conversation_data)
+            ELSE 0
+          END
+        ), 0) as total_legacy_messages,
+        (SELECT COUNT(*) FROM conversation_messages cm 
+         JOIN conversations c ON cm.conversation_id = c.id 
+         WHERE c.chatbot_id = $1 AND c.created_at < $2) as total_atomic_messages,
+        (SELECT COUNT(*) FROM message_context_chunks mcc
+         JOIN conversations c ON mcc.conversation_id = c.id 
+         WHERE c.chatbot_id = $1 AND c.created_at < $2) as total_context_chunks
+      FROM conversations 
+      WHERE chatbot_id = $1 AND created_at < $2
+    `, [chatbotId, cutoffDate]);
+    
+    return {
+      cutoff_date: cutoffDate,
+      retention_days: retentionDays,
+      sample_conversations: conversationsResult.rows,
+      totals: totalCountsResult.rows[0]
+    };
+  } catch (error) {
+    console.error('Error generating GDPR preview:', error);
+    throw error;
+  }
+}
+
+// Execute GDPR cleanup for a specific chatbot
+async function executeGdprCleanup(chatbotId, retentionDays) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    
+    // Get conversations to anonymize
+    const conversationsResult = await client.query(`
+      SELECT id FROM conversations 
+      WHERE chatbot_id = $1 AND created_at < $2
+    `, [chatbotId, cutoffDate]);
+    
+    const conversationIds = conversationsResult.rows.map(row => row.id);
+    
+    if (conversationIds.length === 0) {
+      await client.query('COMMIT');
+      return {
+        success: true,
+        processed_conversations: 0,
+        anonymized_legacy_messages: 0,
+        anonymized_atomic_messages: 0,
+        anonymized_context_chunks: 0
+      };
+    }
+    
+    // 1. Anonymize legacy conversation_data (JSONB) while preserving message count and structure
+    const conversationDataResult = await client.query(`
+      UPDATE conversations 
+      SET conversation_data = (
+        SELECT jsonb_agg(
+          CASE 
+            WHEN jsonb_typeof(message) = 'object' THEN 
+              message || jsonb_build_object(
+                'text', '[DELETED FOR GDPR COMPLIANCE]',
+                'image', null
+              ) - 'imageData'
+            ELSE 
+              jsonb_build_object(
+                'text', '[DELETED FOR GDPR COMPLIANCE]', 
+                'isUser', false,
+                'timestamp', extract(epoch from now()) * 1000
+              )
+          END
+        )
+        FROM jsonb_array_elements(conversation_data) AS message
+      )
+      WHERE id = ANY($1) AND conversation_data IS NOT NULL
+      RETURNING id
+    `, [conversationIds]);
+    
+    // 2. Anonymize atomic message storage
+    const atomicMessagesResult = await client.query(`
+      UPDATE conversation_messages 
+      SET 
+        message_text = '[DELETED FOR GDPR COMPLIANCE]',
+        image_data = null
+      WHERE conversation_id = ANY($1)
+      RETURNING id
+    `, [conversationIds]);
+    
+    // 3. Anonymize context chunks
+    const contextChunksResult = await client.query(`
+      UPDATE message_context_chunks 
+      SET chunk_content = '[DELETED FOR GDPR COMPLIANCE]'
+      WHERE conversation_id = ANY($1)
+      RETURNING id
+    `, [conversationIds]);
+    
+    // 4. Update last cleanup run timestamp
+    await client.query(`
+      UPDATE gdpr_settings 
+      SET last_cleanup_run = CURRENT_TIMESTAMP 
+      WHERE chatbot_id = $1
+    `, [chatbotId]);
+    
+    await client.query('COMMIT');
+    
+    const result = {
+      success: true,
+      processed_conversations: conversationIds.length,
+      anonymized_legacy_messages: conversationDataResult.rows.length,
+      anonymized_atomic_messages: atomicMessagesResult.rows.length,
+      anonymized_context_chunks: contextChunksResult.rows.length,
+      cutoff_date: cutoffDate
+    };
+    
+    console.log(`GDPR cleanup completed for chatbot ${chatbotId}:`, result);
+    return result;
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error(`GDPR cleanup failed for chatbot ${chatbotId}:`, error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Run GDPR cleanup for all enabled clients
+async function runGdprCleanupForAllEnabledClients() {
+  try {
+    const enabledClients = await pool.query(`
+      SELECT chatbot_id, retention_days 
+      FROM gdpr_settings 
+      WHERE enabled = true
+    `);
+    
+    const results = [];
+    
+    for (const client of enabledClients.rows) {
+      try {
+        const result = await executeGdprCleanup(client.chatbot_id, client.retention_days);
+        results.push({
+          chatbot_id: client.chatbot_id,
+          ...result
+        });
+      } catch (error) {
+        results.push({
+          chatbot_id: client.chatbot_id,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error running GDPR cleanup for all clients:', error);
+    throw error;
+  }
+}
+
 // Modify the streamAnswer function to capture sourceDocuments
 const streamAnswer = async (apiUrl, bodyObject, retryCount = 0) => {
   // ... existing code until the streaming while loop ...
@@ -5917,4 +6178,171 @@ app.get('/livechat-conversation-atomic', async (req, res) => {
     });
   }
 });
+
+/* ================================
+   GDPR Compliance API Endpoints
+================================ */
+
+// Initialize GDPR settings table on startup
+createGdprSettingsTable();
+
+// GET GDPR settings for a specific client
+app.get('/gdpr-settings/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  
+  try {
+    const settings = await getGdprSettings(chatbot_id);
+    res.json(settings);
+  } catch (error) {
+    console.error('Error fetching GDPR settings:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch GDPR settings', 
+      details: error.message 
+    });
+  }
+});
+
+// POST/PUT GDPR settings for a specific client
+app.post('/gdpr-settings', authenticateToken, async (req, res) => {
+  const { chatbot_id, retention_days, enabled } = req.body;
+  
+  // Validation
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+  
+  if (!retention_days || retention_days < 1 || retention_days > 3650) {
+    return res.status(400).json({ 
+      error: 'retention_days must be between 1 and 3650 days' 
+    });
+  }
+  
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean' });
+  }
+  
+  try {
+    const settings = await saveGdprSettings(chatbot_id, retention_days, enabled);
+    res.json({
+      message: 'GDPR settings saved successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('Error saving GDPR settings:', error);
+    res.status(500).json({ 
+      error: 'Failed to save GDPR settings', 
+      details: error.message 
+    });
+  }
+});
+
+// GET preview of what would be affected by GDPR cleanup
+app.get('/gdpr-preview/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { retention_days } = req.query;
+  
+  if (!retention_days || retention_days < 1 || retention_days > 3650) {
+    return res.status(400).json({ 
+      error: 'retention_days query parameter must be between 1 and 3650 days' 
+    });
+  }
+  
+  try {
+    const preview = await previewGdprCleanup(chatbot_id, parseInt(retention_days));
+    res.json({
+      message: 'GDPR cleanup preview generated successfully',
+      preview
+    });
+  } catch (error) {
+    console.error('Error generating GDPR preview:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate preview', 
+      details: error.message 
+    });
+  }
+});
+
+// POST execute GDPR cleanup for a specific client
+app.post('/gdpr-cleanup/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { retention_days } = req.body;
+  
+  if (!retention_days || retention_days < 1 || retention_days > 3650) {
+    return res.status(400).json({ 
+      error: 'retention_days must be between 1 and 3650 days' 
+    });
+  }
+  
+  try {
+    const result = await executeGdprCleanup(chatbot_id, retention_days);
+    res.json({
+      message: 'GDPR cleanup completed successfully',
+      result
+    });
+  } catch (error) {
+    console.error('Error executing GDPR cleanup:', error);
+    res.status(500).json({ 
+      error: 'Failed to execute GDPR cleanup', 
+      details: error.message 
+    });
+  }
+});
+
+// POST run GDPR cleanup for all enabled clients (admin only)
+app.post('/gdpr-cleanup-all', authenticateToken, async (req, res) => {
+  try {
+    const results = await runGdprCleanupForAllEnabledClients();
+    res.json({
+      message: 'GDPR cleanup completed for all enabled clients',
+      results
+    });
+  } catch (error) {
+    console.error('Error running GDPR cleanup for all clients:', error);
+    res.status(500).json({ 
+      error: 'Failed to run GDPR cleanup for all clients', 
+      details: error.message 
+    });
+  }
+});
+
+/* ================================
+   GDPR Cleanup Scheduler
+================================ */
+
+// Schedule GDPR cleanup to run daily at 2 AM
+function scheduleGdprCleanup() {
+  const runCleanup = async () => {
+    try {
+      console.log('Scheduled GDPR cleanup starting...');
+      const results = await runGdprCleanupForAllEnabledClients();
+      console.log('Scheduled GDPR cleanup completed:', results);
+    } catch (error) {
+      console.error('Scheduled GDPR cleanup failed:', error);
+    }
+  };
+
+  // Calculate time until next 2 AM
+  const now = new Date();
+  const next2AM = new Date();
+  next2AM.setHours(2, 0, 0, 0);
+  
+  // If it's already past 2 AM today, schedule for tomorrow
+  if (now >= next2AM) {
+    next2AM.setDate(next2AM.getDate() + 1);
+  }
+  
+  const timeUntilNext2AM = next2AM.getTime() - now.getTime();
+  
+  // Schedule first run
+  setTimeout(() => {
+    runCleanup();
+    // Then schedule to run every 24 hours
+    setInterval(runCleanup, 24 * 60 * 60 * 1000);
+  }, timeUntilNext2AM);
+  
+  console.log(`GDPR cleanup scheduled to run at ${next2AM.toLocaleString()}`);
+}
+
+// Start the scheduler
+scheduleGdprCleanup();
 
