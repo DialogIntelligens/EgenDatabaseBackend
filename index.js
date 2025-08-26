@@ -1136,15 +1136,44 @@ app.post('/login', async (req, res) => {
 
 
 app.delete('/conversations/:id', authenticateToken, async (req, res) => {
-  // Only admins can delete single conversations
-  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
   const { id } = req.params;
+  const authenticatedUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin || req.user.isLimitedAdmin;
 
   try {
-    // We do a standard single-row DELETE by conversation ID
+    // Load conversation to verify access
+    const convResult = await pool.query(
+      'SELECT id, chatbot_id FROM conversations WHERE id = $1',
+      [id]
+    );
+    if (convResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const conversation = convResult.rows[0];
+
+    if (!isAdmin) {
+      // Non-admins can delete only conversations tied to chatbots they own
+      const userResult = await pool.query(
+        'SELECT chatbot_ids FROM users WHERE id = $1',
+        [authenticatedUserId]
+      );
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      let chatbotIds = userResult.rows[0].chatbot_ids || [];
+      if (typeof chatbotIds === 'string') {
+        try { chatbotIds = JSON.parse(chatbotIds); } catch (_) { chatbotIds = []; }
+      }
+
+      const hasAccess = Array.isArray(chatbotIds) && chatbotIds.includes(conversation.chatbot_id);
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Forbidden: You do not have access to this conversation' });
+      }
+    }
+
+    // Delete conversation
     const result = await pool.query(
       'DELETE FROM conversations WHERE id = $1 RETURNING *',
       [id]
