@@ -667,9 +667,9 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   
   const dateTimeInfo = `It is currently ${dateTimeString.split(',')[0].toLowerCase()} the ${now.getDate()}${getOrdinalSuffix(now.getDate())} of ${now.toLocaleDateString('en-US', { month: 'long', timeZone: 'Europe/Copenhagen' }).toLowerCase()} ${timeString}`;
   
-  // Prepend date/time info to the prompt if there's content
+  // Append date/time info to the prompt if there's content
   if (finalPrompt.trim()) {
-    finalPrompt = `${dateTimeInfo}\n\n${finalPrompt}`;
+    finalPrompt = `${finalPrompt}\n\n${dateTimeInfo}`;
   }
   
   return finalPrompt;
