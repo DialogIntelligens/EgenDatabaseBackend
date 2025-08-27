@@ -1,28 +1,42 @@
-<!-- Backend/EgenDatabaseBackend/reportTemplates/default.html -->
-
 <!DOCTYPE html>
 <html lang="da">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Statistics Report</title>
+  <title>{{reportTitle}} - Professional Report</title>
   <style>
-    /* CSS Variables for consistent theming */
+    /* Professional Color Palette */
     :root {
       --primary-color: #1a365d;
       --secondary-color: #3182ce;
       --accent-color: #38a169;
-      --text-primary: #1a365d;
+      --success-color: #48bb78;
+      --warning-color: #ed8936;
+      --danger-color: #e53e3e;
+      --text-primary: #2d3748;
       --text-secondary: #4a5568;
       --text-muted: #718096;
       --background-primary: #ffffff;
-      --background-secondary: #f7fafc;
+      --background-secondary: #f8fafc;
+      --background-accent: #edf2f7;
       --border-color: #e2e8f0;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
-      --shadow-lg: 0 10px 25px rgba(0,0,0,0.1);
+      --border-light: #f1f5f9;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,0.15);
+      --shadow-xl: 0 20px 40px rgba(0,0,0,0.1);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --spacing-xs: 8px;
+      --spacing-sm: 12px;
+      --spacing-md: 20px;
+      --spacing-lg: 30px;
+      --spacing-xl: 40px;
+      --spacing-2xl: 60px;
     }
     
-    /* Reset and base styles */
+    /* Reset and Professional Base */
     * {
       margin: 0;
       padding: 0;
@@ -30,117 +44,277 @@
     }
     
     body {
-      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Segoe UI', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
       line-height: 1.6;
       color: var(--text-primary);
-      background-color: var(--background-primary);
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       margin: 0;
-      padding: 20mm;
+      padding: var(--spacing-lg);
+      font-size: 14px;
+      min-height: 100vh;
     }
     
-    /* Typography */
+    /* Main Container */
+    .report-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: var(--background-primary);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-xl);
+      overflow: hidden;
+    }
+    
+    /* Professional Typography Scale */
     h1, h2, h3, h4, h5, h6 {
       color: var(--primary-color);
       margin-bottom: 0.5em;
       font-weight: 600;
+      line-height: 1.3;
+      letter-spacing: -0.025em;
     }
     
-    h1 { font-size: 28px; }
-    h2 { font-size: 24px; }
-    h3 { font-size: 20px; }
-    h4 { font-size: 18px; }
+    h1 { 
+      font-size: 36px; 
+      font-weight: 700; 
+      letter-spacing: -0.05em;
+    }
+    h2 { 
+      font-size: 28px; 
+      font-weight: 600;
+    }
+    h3 { 
+      font-size: 24px; 
+      font-weight: 600;
+    }
+    h4 { 
+      font-size: 18px; 
+      font-weight: 600;
+    }
     
     p {
       margin-bottom: 1em;
       color: var(--text-secondary);
+      line-height: 1.7;
     }
     
-    /* Layout components */
+    /* Premium Header Design */
     .header {
-      background: linear-gradient(135deg, var(--primary-color) 0%, #2d3748 100%);
+      background: linear-gradient(135deg, #1a365d 0%, #2c5282 50%, #3182ce 100%);
       color: white;
-      padding: 30px;
-      border-radius: 12px;
-      margin-bottom: 40px;
+      padding: var(--spacing-2xl) var(--spacing-xl);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='m36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      opacity: 0.1;
+    }
+    
+    .header-content {
+      position: relative;
+      z-index: 2;
       text-align: center;
     }
     
     .header h1 {
       color: white;
-      margin-bottom: 10px;
+      margin-bottom: var(--spacing-sm);
+      font-size: 42px;
+      font-weight: 700;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
-    .header p {
-      color: rgba(255, 255, 255, 0.9);
+    .header .subtitle {
+      color: rgba(255, 255, 255, 0.95);
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: var(--spacing-sm);
+    }
+    
+    .header .meta {
+      color: rgba(255, 255, 255, 0.8);
       font-size: 16px;
+      font-weight: 400;
     }
     
+    /* Content Container */
+    .content {
+      padding: var(--spacing-xl);
+    }
+    
+    /* Professional Section Styling */
     .section {
-      margin-bottom: 40px;
+      margin-bottom: var(--spacing-2xl);
+      break-inside: avoid;
     }
     
     .section-header {
       color: var(--primary-color);
       border-bottom: 3px solid var(--secondary-color);
-      padding-bottom: 10px;
-      margin-bottom: 20px;
-      font-size: 20px;
+      padding-bottom: var(--spacing-sm);
+      margin-bottom: var(--spacing-xl);
+      font-size: 28px;
       font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      position: relative;
     }
     
+    .section-header::after {
+      content: '';
+      position: absolute;
+      bottom: -3px;
+      left: 0;
+      width: 60px;
+      height: 3px;
+      background: var(--accent-color);
+      border-radius: 2px;
+    }
+    
+    .section-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--secondary-color), var(--accent-color));
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: var(--shadow-md);
+    }
+    
+    /* Premium Metric Cards */
     .metric-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--spacing-lg);
+      margin-bottom: var(--spacing-xl);
     }
     
     .metric-card {
       background: white;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 20px;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-xl);
       box-shadow: var(--shadow-sm);
-      transition: box-shadow 0.2s ease;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 5px;
+      height: 100%;
+      background: linear-gradient(180deg, var(--secondary-color), var(--accent-color));
+      transition: width 0.3s ease;
     }
     
     .metric-card:hover {
       box-shadow: var(--shadow-lg);
+      transform: translateY(-4px);
+      border-color: var(--secondary-color);
+    }
+    
+    .metric-card:hover::before {
+      width: 8px;
+    }
+    
+    .metric-card.highlight::before {
+      background: linear-gradient(180deg, var(--accent-color), #48bb78);
+    }
+    
+    .metric-card.warning::before {
+      background: linear-gradient(180deg, var(--warning-color), #f6ad55);
+    }
+    
+    .metric-card.success::before {
+      background: linear-gradient(180deg, var(--success-color), #68d391);
     }
     
     .metric-card h4 {
-      color: var(--text-secondary);
+      color: var(--text-muted);
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
+      letter-spacing: 1px;
+      margin-bottom: var(--spacing-md);
     }
     
     .metric-card .value {
       color: var(--primary-color);
-      font-size: 24px;
+      font-size: 36px;
       font-weight: 700;
-      margin-bottom: 5px;
+      margin-bottom: var(--spacing-sm);
+      line-height: 1.1;
+      font-feature-settings: 'tnum';
     }
     
     .metric-card .description {
-      color: var(--text-muted);
-      font-size: 12px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.5;
+      font-weight: 500;
     }
     
+    .metric-card .trend {
+      position: absolute;
+      top: var(--spacing-md);
+      right: var(--spacing-md);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-feature-settings: 'tnum';
+    }
+    
+    .trend.positive {
+      background: rgba(72, 187, 120, 0.1);
+      color: var(--success-color);
+      border: 1px solid rgba(72, 187, 120, 0.2);
+    }
+    
+    .trend.negative {
+      background: rgba(229, 62, 62, 0.1);
+      color: var(--danger-color);
+      border: 1px solid rgba(229, 62, 62, 0.2);
+    }
+    
+    /* Professional Chart Containers */
     .chart-container {
       background: white;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 30px;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-xl);
+      margin-bottom: var(--spacing-xl);
       box-shadow: var(--shadow-sm);
+      break-inside: avoid;
+      transition: box-shadow 0.3s ease;
+    }
+    
+    .chart-container:hover {
+      box-shadow: var(--shadow-md);
     }
     
     .chart-container h3 {
-      margin-bottom: 20px;
+      margin-bottom: var(--spacing-lg);
       text-align: center;
+      color: var(--primary-color);
+      font-size: 22px;
+      font-weight: 600;
     }
     
     .chart-image {
@@ -148,124 +322,303 @@
       height: auto;
       display: block;
       margin: 0 auto;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
     }
     
+    .chart-description {
+      margin-top: var(--spacing-md);
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      font-style: italic;
+      font-weight: 500;
+    }
+    
+    /* Premium Analysis Section */
     .analysis-content {
-      background: var(--background-secondary);
-      border-left: 4px solid var(--secondary-color);
-      padding: 20px;
-      border-radius: 0 8px 8px 0;
-      margin-bottom: 30px;
+      background: linear-gradient(135deg, var(--background-secondary) 0%, #ffffff 100%);
+      border-left: 5px solid var(--secondary-color);
+      border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+      padding: var(--spacing-xl);
+      margin-bottom: var(--spacing-xl);
+      font-size: 16px;
+      line-height: 1.8;
+      box-shadow: var(--shadow-sm);
+      position: relative;
     }
     
+    .analysis-content::before {
+      content: '"';
+      position: absolute;
+      top: var(--spacing-md);
+      left: var(--spacing-md);
+      font-size: 48px;
+      color: var(--secondary-color);
+      opacity: 0.2;
+      font-family: Georgia, serif;
+      line-height: 1;
+    }
+    
+    .analysis-content h1,
+    .analysis-content h2,
+    .analysis-content h3 {
+      margin-top: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+      color: var(--primary-color);
+    }
+    
+    .analysis-content ul,
+    .analysis-content ol {
+      margin-left: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+    }
+    
+    .analysis-content li {
+      margin-bottom: var(--spacing-xs);
+      line-height: 1.7;
+    }
+    
+    .analysis-content strong {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    
+    /* Professional Footer */
     .footer {
+      background: var(--background-accent);
+      border-top: 3px solid var(--border-light);
+      padding: var(--spacing-xl);
       text-align: center;
       color: var(--text-muted);
-      font-size: 12px;
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 1px solid var(--border-color);
+      font-size: 13px;
     }
     
-    /* Print-specific styles */
+    .footer-brand {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: var(--spacing-sm);
+      letter-spacing: 0.5px;
+    }
+    
+    .footer-tagline {
+      font-style: italic;
+      margin-top: var(--spacing-sm);
+      color: var(--text-secondary);
+    }
+    
+    /* Print Optimization */
     @media print {
       body {
-        padding: 10mm;
+        background: white;
+        padding: 0;
       }
       
-      .header {
-        break-inside: avoid;
+      .report-container {
+        box-shadow: none;
+        border-radius: 0;
       }
       
-      .section {
+      .header,
+      .section,
+      .chart-container,
+      .metric-card {
         break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      
+      .metric-card:hover {
+        transform: none;
+        box-shadow: var(--shadow-sm);
+      }
+      
+      .analysis-content {
+        font-size: 14px;
       }
       
       .chart-container {
-        break-inside: avoid;
+        max-height: 400px;
       }
     }
+    
+    /* Responsive Professional Design */
+    @media screen and (max-width: 768px) {
+      body {
+        padding: var(--spacing-sm);
+      }
+      
+      .content {
+        padding: var(--spacing-lg);
+      }
+      
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .header h1 {
+        font-size: 32px;
+      }
+      
+      .header {
+        padding: var(--spacing-xl) var(--spacing-lg);
+      }
+    }
+    
+    /* Professional Utility Classes */
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .font-bold { font-weight: 700; }
+    .text-success { color: var(--success-color); }
+    .text-warning { color: var(--warning-color); }
+    .text-danger { color: var(--danger-color); }
+    .mb-0 { margin-bottom: 0; }
+    .mt-lg { margin-top: var(--spacing-lg); }
+    .hidden { display: none; }
+    
+    /* Professional Status Indicators */
+    .status-excellent { border-left-color: var(--success-color) !important; }
+    .status-good { border-left-color: var(--accent-color) !important; }
+    .status-warning { border-left-color: var(--warning-color) !important; }
+    .status-critical { border-left-color: var(--danger-color) !important; }
   </style>
 </head>
 <body>
-  <!-- Header Section -->
-  <div class="header">
-    <h1>{{reportTitle}}</h1>
-    <p>{{timePeriod}} • Generated on {{generatedDate}}</p>
-    {{#if companyInfo}}
-    <p>{{companyInfo}}</p>
-    {{/if}}
-  </div>
-  
-  <!-- Content Section -->
-<div class="content">
-    <!-- Executive Summary Section -->
-    <div class="section">
-      <h2 class="section-header">Executive Summary</h2>
-      <div class="metric-grid">
-        <div class="metric-card">
-          <h4>Total Messages</h4>
-          <div class="value">{{totalMessages}}</div>
-          <div class="description">User interactions with chatbot</div>
-        </div>
-        <div class="metric-card">
-          <h4>Total Conversations</h4>
-          <div class="value">{{totalConversations}}</div>
-          <div class="description">Unique chat sessions</div>
-        </div>
-        <div class="metric-card">
-          <h4>Customer Satisfaction</h4>
-          <div class="value">{{averageCustomerRating}}</div>
-          <div class="description">User rating average</div>
-        </div>
-        <div class="metric-card">
-          <h4>CSAT Score</h4>
-          <div class="value">{{csatScore}}</div>
-          <div class="description">Customer satisfaction score</div>
+  <div class="report-container">
+    <!-- Professional Header -->
+    <div class="header">
+      <div class="header-content">
+        <h1>{{reportTitle}}</h1>
+        <div class="subtitle">{{timePeriod}}</div>
+        <div class="meta">
+          Generated on {{generatedDate}}
+          {{#if companyInfo}} • {{companyInfo}}{{/if}}
         </div>
       </div>
     </div>
-  
-    <!-- AI Analysis Section -->
-    {{#if gptAnalysis}}
-    <div class="section">
-      <h2 class="section-header">AI Analysis Insights</h2>
-      <div class="analysis-content">
-        {{{gptAnalysis}}}
+    
+    <div class="content">
+      <!-- Executive Metrics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📊</span>
+          Executive Performance Overview
+        </h2>
+        <div class="metric-grid">
+          <div class="metric-card highlight">
+            <h4>Total Messages</h4>
+            <div class="value">{{totalMessages}}</div>
+            <div class="description">User interactions with chatbot system</div>
+          </div>
+          
+          <div class="metric-card">
+            <h4>Total Conversations</h4>
+            <div class="value">{{totalConversations}}</div>
+            <div class="description">Unique customer chat sessions</div>
+          </div>
+          
+          <div class="metric-card status-excellent">
+            <h4>Customer Satisfaction</h4>
+            <div class="value">{{averageCustomerRating}}</div>
+            <div class="description">Average user rating score</div>
+          </div>
+          
+          <div class="metric-card status-good">
+            <h4>CSAT Score</h4>
+            <div class="value">{{csatScore}}</div>
+            <div class="description">Customer satisfaction percentage</div>
+          </div>
+          
+          {{#if hasPurchaseTracking}}
+          <div class="metric-card success">
+            <h4>Total Revenue</h4>
+            <div class="value">{{totalRevenue}}</div>
+            <div class="description">Revenue generated through chatbot</div>
+          </div>
+          
+          <div class="metric-card highlight">
+            <h4>Conversion Rate</h4>
+            <div class="value">{{conversionRate}}</div>
+            <div class="description">Message-to-purchase conversion</div>
+          </div>
+          {{/if}}
+          
+          {{#if hasGreetingRateData}}
+          <div class="metric-card">
+            <h4>Greeting Success Rate</h4>
+            <div class="value">{{greetingRate}}</div>
+            <div class="description">Successful conversation initiations</div>
+          </div>
+          {{/if}}
+          
+          {{#if hasFallbackData}}
+          <div class="metric-card warning">
+            <h4>Fallback Rate</h4>
+            <div class="value">{{fallbackRate}}</div>
+            <div class="description">Unhandled customer queries</div>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+
+      <!-- AI Analysis Section -->
+      {{#if gptAnalysis}}
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">🤖</span>
+          AI-Powered Business Insights
+        </h2>
+        <div class="analysis-content">
+          {{{gptAnalysis}}}
+        </div>
+      </div>
+      {{/if}}
+
+      <!-- Performance Analytics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📈</span>
+          Performance Analytics Dashboard
+        </h2>
+        
+        {{#if dailyChart}}
+        <div class="chart-container">
+          <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
+          <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
+          <div class="chart-description">
+            Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals
+          </div>
+        </div>
+        {{/if}}
+        
+        {{#if hourlyChart}}
+        <div class="chart-container">
+          <h3>Peak Activity Hours Analysis</h3>
+          <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
+          <div class="chart-description">
+            Customer engagement patterns throughout the day
+          </div>
+        </div>
+        {{/if}}
+        
+        {{#if topicChart}}
+        <div class="chart-container">
+          <h3>Customer Inquiry Topic Distribution</h3>
+          <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
+          <div class="chart-description">
+            Most frequently discussed topics and customer interests
+          </div>
+        </div>
+        {{/if}}
       </div>
     </div>
-    {{/if}}
-  
-    <!-- Performance Charts Section -->
-    <div class="section">
-      <h2 class="section-header">Performance Analytics</h2>
-      
-      {{#if dailyChart}}
-      <div class="chart-container">
-        <h3>Message Volume Over Time</h3>
-        <img src="{{dailyChart}}" alt="Daily Message Chart" class="chart-image">
-      </div>
-      {{/if}}
-      
-      {{#if hourlyChart}}
-      <div class="chart-container">
-        <h3>Message Distribution by Time of Day</h3>
-        <img src="{{hourlyChart}}" alt="Hourly Distribution Chart" class="chart-image">
-      </div>
-      {{/if}}
-      
-      {{#if topicChart}}
-      <div class="chart-container">
-        <h3>Conversation Topics Distribution</h3>
-        <img src="{{topicChart}}" alt="Topic Distribution Chart" class="chart-image">
-      </div>
-      {{/if}}
+    
+    <!-- Professional Footer -->
+    <div class="footer">
+      <div class="footer-brand">Dialog Intelligens</div>
+      <p>Professional Analytics Report • Generated {{generatedDate}}</p>
+      <div class="footer-tagline">Empowering businesses through intelligent conversation analytics</div>
     </div>
-  </div>
-  
-  <!-- Footer -->
-  <div class="footer">
-    <p>Report generated by Dialog Intelligens • {{generatedDate}}</p>
   </div>
 </body>
 </html>
