@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{reportTitle}} - Professional Report</title>
+  <title>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}} - Professional Report</title>
   <style>
     /* Professional Color Palette */
     :root {
@@ -21,13 +21,6 @@
       --background-accent: #edf2f7;
       --border-color: #e2e8f0;
       --border-light: #f1f5f9;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-      --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
-      --shadow-lg: 0 10px 25px rgba(0,0,0,0.15);
-      --shadow-xl: 0 20px 40px rgba(0,0,0,0.1);
-      --radius-sm: 4px;
-      --radius-md: 8px;
-      --radius-lg: 12px;
       --spacing-xs: 8px;
       --spacing-sm: 12px;
       --spacing-md: 20px;
@@ -44,24 +37,20 @@
     }
     
     body {
-      font-family: 'Segoe UI', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
       color: var(--text-primary);
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #ffffff;
       margin: 0;
-      padding: var(--spacing-lg);
+      padding: 15mm;
       font-size: 14px;
-      min-height: 100vh;
     }
     
     /* Main Container */
     .report-container {
-      max-width: 1200px;
-      margin: 0 auto;
+      max-width: 100%;
+      margin: 0;
       background: var(--background-primary);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-xl);
-      overflow: hidden;
     }
     
     /* Professional Typography Scale */
@@ -99,28 +88,11 @@
     
     /* Premium Header Design */
     .header {
-      background: linear-gradient(135deg, #1a365d 0%, #2c5282 50%, #3182ce 100%);
+      background: #1a365d;
       color: white;
       padding: var(--spacing-2xl) var(--spacing-xl);
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='m36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-      opacity: 0.1;
-    }
-    
-    .header-content {
-      position: relative;
-      z-index: 2;
       text-align: center;
+      margin-bottom: var(--spacing-xl);
     }
     
     .header h1 {
@@ -182,7 +154,7 @@
     .section-icon {
       width: 32px;
       height: 32px;
-      background: linear-gradient(135deg, var(--secondary-color), var(--accent-color));
+      background: var(--secondary-color);
       border-radius: 50%;
       display: inline-flex;
       align-items: center;
@@ -190,59 +162,41 @@
       color: white;
       font-size: 16px;
       font-weight: bold;
-      box-shadow: var(--shadow-md);
     }
     
     /* Premium Metric Cards */
     .metric-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: var(--spacing-lg);
       margin-bottom: var(--spacing-xl);
+    }
+    
+    .metric-grid .metric-card {
+      flex: 1;
+      min-width: 280px;
     }
     
     .metric-card {
       background: white;
       border: 1px solid var(--border-light);
-      border-radius: var(--radius-lg);
+      border-radius: 8px;
       padding: var(--spacing-xl);
-      box-shadow: var(--shadow-sm);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
-      overflow: hidden;
+      margin-bottom: var(--spacing-md);
+      border-left: 5px solid var(--secondary-color);
     }
     
-    .metric-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 5px;
-      height: 100%;
-      background: linear-gradient(180deg, var(--secondary-color), var(--accent-color));
-      transition: width 0.3s ease;
+    .metric-card.highlight {
+      border-left-color: var(--accent-color);
     }
     
-    .metric-card:hover {
-      box-shadow: var(--shadow-lg);
-      transform: translateY(-4px);
-      border-color: var(--secondary-color);
+    .metric-card.warning {
+      border-left-color: var(--warning-color);
     }
     
-    .metric-card:hover::before {
-      width: 8px;
-    }
-    
-    .metric-card.highlight::before {
-      background: linear-gradient(180deg, var(--accent-color), #48bb78);
-    }
-    
-    .metric-card.warning::before {
-      background: linear-gradient(180deg, var(--warning-color), #f6ad55);
-    }
-    
-    .metric-card.success::before {
-      background: linear-gradient(180deg, var(--success-color), #68d391);
+    .metric-card.success {
+      border-left-color: var(--success-color);
     }
     
     .metric-card h4 {
@@ -297,16 +251,10 @@
     .chart-container {
       background: white;
       border: 1px solid var(--border-light);
-      border-radius: var(--radius-lg);
+      border-radius: 8px;
       padding: var(--spacing-xl);
       margin-bottom: var(--spacing-xl);
-      box-shadow: var(--shadow-sm);
       break-inside: avoid;
-      transition: box-shadow 0.3s ease;
-    }
-    
-    .chart-container:hover {
-      box-shadow: var(--shadow-md);
     }
     
     .chart-container h3 {
@@ -322,8 +270,7 @@
       height: auto;
       display: block;
       margin: 0 auto;
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow-sm);
+      border-radius: 4px;
     }
     
     .chart-description {
@@ -337,27 +284,13 @@
     
     /* Premium Analysis Section */
     .analysis-content {
-      background: linear-gradient(135deg, var(--background-secondary) 0%, #ffffff 100%);
+      background: var(--background-secondary);
       border-left: 5px solid var(--secondary-color);
-      border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+      border-radius: 0 8px 8px 0;
       padding: var(--spacing-xl);
       margin-bottom: var(--spacing-xl);
       font-size: 16px;
       line-height: 1.8;
-      box-shadow: var(--shadow-sm);
-      position: relative;
-    }
-    
-    .analysis-content::before {
-      content: '"';
-      position: absolute;
-      top: var(--spacing-md);
-      left: var(--spacing-md);
-      font-size: 48px;
-      color: var(--secondary-color);
-      opacity: 0.2;
-      font-family: Georgia, serif;
-      line-height: 1;
     }
     
     .analysis-content h1,
@@ -411,13 +344,8 @@
     /* Print Optimization */
     @media print {
       body {
-        background: white;
-        padding: 0;
-      }
-      
-      .report-container {
-        box-shadow: none;
-        border-radius: 0;
+        background: white !important;
+        padding: 10mm !important;
       }
       
       .header,
@@ -426,11 +354,6 @@
       .metric-card {
         break-inside: avoid;
         page-break-inside: avoid;
-      }
-      
-      .metric-card:hover {
-        transform: none;
-        box-shadow: var(--shadow-sm);
       }
       
       .analysis-content {
@@ -487,13 +410,11 @@
   <div class="report-container">
     <!-- Professional Header -->
     <div class="header">
-      <div class="header-content">
-        <h1>{{reportTitle}}</h1>
-        <div class="subtitle">{{timePeriod}}</div>
-        <div class="meta">
-          Generated on {{generatedDate}}
-          {{#if companyInfo}} • {{companyInfo}}{{/if}}
-        </div>
+      <h1>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}}</h1>
+      <div class="subtitle">{{timePeriod}}</div>
+      <div class="meta">
+        Generated on {{generatedDate}}
+        {{#if companyInfo}} • {{companyInfo}}{{/if}}
       </div>
     </div>
     
