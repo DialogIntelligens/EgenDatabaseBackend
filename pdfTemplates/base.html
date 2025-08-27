@@ -1,5 +1,3 @@
-<!-- Backend/EgenDatabaseBackend/reportTemplates/default.html -->
-
 <!DOCTYPE html>
 <html lang="da">
 <head>
@@ -198,69 +196,8 @@
   </div>
   
   <!-- Content Section -->
-<div class="content">
-    <!-- Executive Summary Section -->
-    <div class="section">
-      <h2 class="section-header">Executive Summary</h2>
-      <div class="metric-grid">
-        <div class="metric-card">
-          <h4>Total Messages</h4>
-          <div class="value">{{totalMessages}}</div>
-          <div class="description">User interactions with chatbot</div>
-        </div>
-        <div class="metric-card">
-          <h4>Total Conversations</h4>
-          <div class="value">{{totalConversations}}</div>
-          <div class="description">Unique chat sessions</div>
-        </div>
-        <div class="metric-card">
-          <h4>Customer Satisfaction</h4>
-          <div class="value">{{averageCustomerRating}}</div>
-          <div class="description">User rating average</div>
-        </div>
-        <div class="metric-card">
-          <h4>CSAT Score</h4>
-          <div class="value">{{csatScore}}</div>
-          <div class="description">Customer satisfaction score</div>
-        </div>
-      </div>
-    </div>
-  
-    <!-- AI Analysis Section -->
-    {{#if gptAnalysis}}
-    <div class="section">
-      <h2 class="section-header">AI Analysis Insights</h2>
-      <div class="analysis-content">
-        {{{gptAnalysis}}}
-      </div>
-    </div>
-    {{/if}}
-  
-    <!-- Performance Charts Section -->
-    <div class="section">
-      <h2 class="section-header">Performance Analytics</h2>
-      
-      {{#if dailyChart}}
-      <div class="chart-container">
-        <h3>Message Volume Over Time</h3>
-        <img src="{{dailyChart}}" alt="Daily Message Chart" class="chart-image">
-      </div>
-      {{/if}}
-      
-      {{#if hourlyChart}}
-      <div class="chart-container">
-        <h3>Message Distribution by Time of Day</h3>
-        <img src="{{hourlyChart}}" alt="Hourly Distribution Chart" class="chart-image">
-      </div>
-      {{/if}}
-      
-      {{#if topicChart}}
-      <div class="chart-container">
-        <h3>Conversation Topics Distribution</h3>
-        <img src="{{topicChart}}" alt="Topic Distribution Chart" class="chart-image">
-      </div>
-      {{/if}}
-    </div>
+  <div class="content">
+    {{> @partial-block }}
   </div>
   
   <!-- Footer -->
