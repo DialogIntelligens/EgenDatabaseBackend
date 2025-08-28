@@ -1,380 +1,670 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="da">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatbot Statistics Report</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            line-height: 1.6;
-            color: #1a1a1a;
-            background: #ffffff;
-            font-size: 14px;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 60px;
-        }
-        
-        /* Header Section */
-        .header {
-            text-align: center;
-            margin-bottom: 50px;
-            padding-bottom: 30px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-        
-        .header h1 {
-            font-size: 32px;
-            font-weight: 700;
-            color: #686BF1;
-            margin-bottom: 10px;
-        }
-        
-        .header .subtitle {
-            font-size: 16px;
-            color: #666;
-            font-weight: 400;
-        }
-        
-        .header .time-period {
-            font-size: 14px;
-            color: #888;
-            margin-top: 5px;
-        }
-        
-        /* AI Analysis Section */
-        .ai-analysis {
-            background: linear-gradient(135deg, #f8f9ff 0%, #f0f2ff 100%);
-            border-radius: 16px;
-            padding: 30px;
-            margin-bottom: 40px;
-            border: 1px solid #e8ebff;
-        }
-        
-        .ai-analysis h2 {
-            color: #686BF1;
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-        }
-        
-        .ai-analysis h2::before {
-            content: "🤖";
-            margin-right: 10px;
-        }
-        
-        .ai-analysis-content {
-            color: #333;
-            line-height: 1.7;
-        }
-        
-        .ai-analysis-content h1,
-        .ai-analysis-content h2,
-        .ai-analysis-content h3 {
-            color: #686BF1;
-            margin-top: 25px;
-            margin-bottom: 15px;
-        }
-        
-        .ai-analysis-content h1 {
-            font-size: 20px;
-        }
-        
-        .ai-analysis-content h2 {
-            font-size: 18px;
-        }
-        
-        .ai-analysis-content h3 {
-            font-size: 16px;
-        }
-        
-        .ai-analysis-content p {
-            margin-bottom: 15px;
-        }
-        
-        .ai-analysis-content ul,
-        .ai-analysis-content ol {
-            margin-left: 20px;
-            margin-bottom: 15px;
-        }
-        
-        .ai-analysis-content li {
-            margin-bottom: 5px;
-        }
-        
-        .ai-analysis-content strong {
-            color: #555;
-            font-weight: 600;
-        }
-        
-        /* Statistics Grid */
-        .stats-section {
-            margin-bottom: 50px;
-        }
-        
-        .section-title {
-            font-size: 24px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 25px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: #ffffff;
-            border: 1px solid #e8e8e8;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-            transition: transform 0.2s ease;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-        }
-        
-        .stat-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #686BF1;
-            margin-bottom: 8px;
-        }
-        
-        .stat-label {
-            font-size: 12px;
-            color: #666;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        /* Charts Section */
-        .chart-section {
-            margin-bottom: 50px;
-            page-break-inside: avoid;
-        }
-        
-        .chart-container {
-            background: #ffffff;
-            border: 1px solid #e8e8e8;
-            border-radius: 12px;
-            padding: 25px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-        }
-        
-        .chart-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 20px;
-        }
-        
-        .chart-image {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-        }
-        
-        .chart-placeholder {
-            color: #999;
-            font-style: italic;
-            padding: 60px 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        
-        /* Footer */
-        .footer {
-            text-align: center;
-            padding-top: 30px;
-            border-top: 1px solid #e8e8e8;
-            color: #999;
-            font-size: 12px;
-        }
-        
-        /* Page breaks */
-        .page-break {
-            page-break-before: always;
-        }
-        
-        /* Print styles */
-        @media print {
-            body {
-                font-size: 12px;
-            }
-            
-            .container {
-                padding: 20px;
-            }
-            
-            .header h1 {
-                font-size: 28px;
-            }
-            
-            .stat-value {
-                font-size: 24px;
-            }
-            
-            .chart-section {
-                page-break-inside: avoid;
-            }
-        }
-        
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-            }
-            
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 15px;
-            }
-            
-            .header h1 {
-                font-size: 24px;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}} - Professional Report</title>
+  <style>
+    /* PDF-Optimized Professional Color Palette */
+    :root {
+      --primary-color: #1a365d;
+      --secondary-color: #3182ce;
+      --accent-color: #38a169;
+      --success-color: #48bb78;
+      --warning-color: #ed8936;
+      --danger-color: #e53e3e;
+      --text-primary: #2d3748;
+      --text-secondary: #4a5568;
+      --text-muted: #718096;
+      --background-primary: #ffffff;
+      --background-secondary: #f8f9fa;
+      --background-accent: #e9ecef;
+      --border-color: #dee2e6;
+      --border-light: #f1f3f4;
+      --spacing-xs: 8px;
+      --spacing-sm: 12px;
+      --spacing-md: 20px;
+      --spacing-lg: 30px;
+      --spacing-xl: 40px;
+      --spacing-2xl: 60px;
+    }
+    
+    /* PDF-Optimized Reset and Base */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      color-adjust: exact;
+    }
+    
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text-primary);
+      background: white;
+      margin: 0;
+      padding: 0;
+      font-size: 14px;
+      -webkit-print-color-adjust: exact;
+      color-adjust: exact;
+    }
+    
+    /* PDF Container - A4 optimized */
+    .report-container {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      background: white;
+      min-height: auto;
+      page-break-after: auto;
+    }
+    
+    /* PDF-Friendly Typography */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--primary-color);
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.3;
+      letter-spacing: -0.025em;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    
+    h1 { font-size: 28px; font-weight: 700; }
+    h2 { font-size: 22px; font-weight: 600; }
+    h3 { font-size: 18px; font-weight: 600; }
+    h4 { font-size: 15px; font-weight: 600; }
+    
+    p {
+      margin-bottom: 1em;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      orphans: 3;
+      widows: 3;
+    }
+    
+    /* PDF-Optimized Header */
+    .header {
+      background: var(--primary-color);
+      color: white;
+      padding: 40px 30px;
+      text-align: center;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      color-adjust: exact;
+    }
+    
+    .header-content {
+      position: relative;
+    }
+    
+    .header h1 {
+      color: white;
+      margin-bottom: 12px;
+      font-size: 32px;
+      font-weight: 700;
+    }
+    
+    .header .subtitle {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    
+    .header .meta {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 13px;
+      font-weight: 400;
+    }
+    
+    /* Content Container */
+    .content {
+      padding: 40px 30px;
+    }
+    
+    /* PDF-Safe Section Styling */
+    .section {
+      margin-bottom: 40px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    
+    .section-header {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--secondary-color);
+      padding-bottom: 8px;
+      margin-bottom: 25px;
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .section-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--secondary-color);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    
+    /* PDF-Optimized Executive Summary */
+    .executive-summary {
+      background: var(--background-secondary);
+      border: 1px solid var(--border-color);
+      border-left: 4px solid var(--secondary-color);
+      border-radius: 8px;
+      padding: 30px;
+      margin-bottom: 30px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    
+    .executive-summary h2 {
+      color: var(--primary-color);
+      font-size: 22px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .executive-text {
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      text-align: justify;
+    }
+    
+    /* PDF-Safe Metric Cards */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .metric-card {
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 25px;
+      position: relative;
+      margin-bottom: 15px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      border-top: 4px solid var(--secondary-color);
+    }
+    
+    .metric-card.highlight {
+      border-top-color: var(--accent-color);
+    }
+    
+    .metric-card.warning {
+      border-top-color: var(--warning-color);
+    }
+    
+    .metric-card.success {
+      border-top-color: var(--success-color);
+    }
+    
+    .metric-card h4 {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 15px;
+      margin-top: 0;
+    }
+    
+    .metric-card .value {
+      color: var(--primary-color);
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      line-height: 1.1;
+    }
+    
+    .metric-card .description {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+      font-weight: 500;
+    }
+    
+    /* PDF-Safe Status Indicators */
+    .status-indicator {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success-color);
+    }
+    
+    .status-indicator.warning {
+      background: var(--warning-color);
+    }
+    
+    .status-indicator.critical {
+      background: var(--danger-color);
+    }
+    
+    /* PDF-Optimized Chart Containers */
+    .chart-container {
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 25px;
+      margin-bottom: 25px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    
+    .chart-container h3 {
+      margin-bottom: 20px;
+      text-align: center;
+      color: var(--primary-color);
+      font-size: 18px;
+      font-weight: 600;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-light);
+    }
+    
+    .chart-image {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      border-radius: 4px;
+    }
+    
+    .chart-description {
+      margin-top: 15px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      font-style: italic;
+      font-weight: 500;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-light);
+    }
+    
+    /* PDF-Safe Analysis Section */
+    .analysis-content {
+      background: var(--background-secondary);
+      border-left: 4px solid var(--accent-color);
+      border-radius: 8px;
+      padding: 30px;
+      margin-bottom: 25px;
+      font-size: 14px;
+      line-height: 1.7;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    
+    .analysis-content h1,
+    .analysis-content h2,
+    .analysis-content h3 {
+      margin-top: 20px;
+      margin-bottom: 15px;
+      color: var(--primary-color);
+    }
+    
+    .analysis-content h1:first-child,
+    .analysis-content h2:first-child,
+    .analysis-content h3:first-child {
+      margin-top: 0;
+    }
+    
+    .analysis-content ul,
+    .analysis-content ol {
+      margin-left: 20px;
+      margin-bottom: 15px;
+    }
+    
+    .analysis-content li {
+      margin-bottom: 5px;
+      line-height: 1.6;
+    }
+    
+    .analysis-content strong {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    
+    /* PDF-Optimized Key Insights */
+    .key-insights {
+      background: var(--primary-color);
+      color: white;
+      padding: 30px;
+      border-radius: 8px;
+      margin-bottom: 25px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      color-adjust: exact;
+    }
+    
+    .key-insights h3 {
+      color: white;
+      font-size: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .insights-list {
+      /* Container for insights */
+    }
+    
+    .insight-item {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      border-left: 3px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* PDF-Safe Footer */
+    .footer {
+      background: var(--background-accent);
+      border-top: 3px solid var(--primary-color);
+      padding: 30px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    
+    .footer-brand {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: 8px;
+      letter-spacing: 0.3px;
+    }
+    
+    .footer-tagline {
+      font-style: italic;
+      margin-top: 8px;
+      color: var(--text-secondary);
+    }
+    
+    /* PDF-Safe Data Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      background: white;
+      border: 1px solid var(--border-color);
+    }
+    
+    .data-table th,
+    .data-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-light);
+    }
+    
+    .data-table th {
+      background: var(--background-secondary);
+      font-weight: 600;
+      color: var(--primary-color);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    
+    .data-table tr:nth-child(even) {
+      background: var(--background-secondary);
+    }
+    
+    /* PDF Page Break Control */
+    .page-break-before { page-break-before: always; break-before: page; }
+    .page-break-after { page-break-after: always; break-after: page; }
+    .page-break-avoid { page-break-inside: avoid; break-inside: avoid; }
+    
+    /* Utility Classes */
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .font-bold { font-weight: 700; }
+    .text-success { color: var(--success-color); }
+    .text-warning { color: var(--warning-color); }
+    .text-danger { color: var(--danger-color); }
+    .mb-0 { margin-bottom: 0; }
+    .mt-lg { margin-top: 20px; }
+    .hidden { display: none; }
+    
+    /* PDF-Specific Optimizations */
+    @media print, screen {
+      body {
+        background: white !important;
+        font-size: 13px;
+      }
+      
+      .report-container {
+        box-shadow: none !important;
+        max-width: none !important;
+        margin: 0 !important;
+        background: white !important;
+      }
+      
+      .header,
+      .section,
+      .chart-container,
+      .metric-card,
+      .executive-summary,
+      .analysis-content,
+      .key-insights {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      
+      .chart-container {
+        max-height: 350px;
+      }
+      
+      .chart-image {
+        max-height: 300px;
+      }
+      
+      /* Ensure colors print correctly */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>Chatbot Statistics Report</h1>
-            <div class="subtitle">Performance Analysis & Insights</div>
-            <div class="time-period">{{timePeriod}}</div>
+  <div class="report-container">
+    <!-- Professional Header -->
+    <div class="header">
+      <div class="header-content">
+        <h1>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}}</h1>
+        <div class="subtitle">{{timePeriod}}</div>
+        <div class="meta">
+          Generated on {{generatedDate}}
+          {{#if companyInfo}} • {{companyInfo}}{{/if}}
         </div>
-        
-        {{#if gptAnalysis}}
-        <!-- AI Analysis Section -->
-        <div class="ai-analysis">
-            <h2>AI Analysis & Insights</h2>
-            <div class="ai-analysis-content">
-                {{{gptAnalysis}}}
-            </div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <!-- Executive Summary Section -->
+      <div class="executive-summary">
+        <h2>Executive Summary</h2>
+        <div class="executive-text">
+          Chatbotten leverer stabil kundeservice med en samlet Customer Satisfaction (CSAT) 
+          på {{csatScore}} og en gennemsnitlig rating på {{averageCustomerRating}} ud af 5. 
+          Over tiden er der håndteret {{totalMessages}} samtaler og afsendt {{totalConversations}} 
+          beskeder, svarende til i gennemsnit {{#if dailyAverage}}{{dailyAverage}}{{else}}N/A{{/if}} 
+          beskeder per dag. Dette indikerer, at chatbotten aktivt assisterer besøgende og aflaster supportteamet.
         </div>
-        {{/if}}
-        
-        <!-- Statistics Summary -->
-        <div class="stats-section">
-            <h2 class="section-title">Performance Summary</h2>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value">{{totalMessages}}</div>
-                    <div class="stat-label">Total Messages</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{{averageMessagesPerDay}}</div>
-                    <div class="stat-label">Avg Messages/Day</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{{totalConversations}}</div>
-                    <div class="stat-label">Total Conversations</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{{totalCustomerRatings}}</div>
-                    <div class="stat-label">User Ratings</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{{averageCustomerRating}}</div>
-                    <div class="stat-label">{{#if thumbsRating}}Thumbs Up %{{else}}Avg Rating{{/if}}</div>
-                </div>
-                {{#if csatScore}}
-                <div class="stat-card">
-                    <div class="stat-value">{{csatScore}}</div>
-                    <div class="stat-label">CSAT Score</div>
-                </div>
-                {{/if}}
-                {{#if hasPurchaseTracking}}
-                <div class="stat-card">
-                    <div class="stat-value">{{totalPurchases}}</div>
-                    <div class="stat-label">Total Purchases</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{{totalRevenue}} kr</div>
-                    <div class="stat-label">Total Revenue</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{{conversionRate}}</div>
-                    <div class="stat-label">Conversion Rate</div>
-                </div>
-                {{/if}}
-                {{#if hasGreetingRateData}}
-                <div class="stat-card">
-                    <div class="stat-value">{{greetingRate}}</div>
-                    <div class="stat-label">Greeting Rate</div>
-                </div>
-                {{/if}}
-                {{#if hasFallbackData}}
-                <div class="stat-card">
-                    <div class="stat-value">{{fallbackRate}}</div>
-                    <div class="stat-label">Fallback Rate</div>
-                </div>
-                {{/if}}
-            </div>
+      </div>
+      
+      <!-- Key Insights Section -->
+      <div class="key-insights">
+        <h3>🔍 Key Performance Insights</h3>
+        <div class="insights-list">
+          <div class="insight-item">
+            <strong>High Engagement:</strong> {{totalMessages}} total messages indicate active user interaction
+          </div>
+          <div class="insight-item">
+            <strong>Customer Satisfaction:</strong> {{averageCustomerRating}}/5 rating shows excellent service quality
+          </div>
+          <div class="insight-item">
+            <strong>Consistent Performance:</strong> {{csatScore}} CSAT score demonstrates reliable support
+          </div>
+          {{#if hasPurchaseTracking}}
+          <div class="insight-item">
+            <strong>Business Impact:</strong> {{totalRevenue}} revenue generated through chatbot interactions
+          </div>
+          {{/if}}
         </div>
+      </div>
+      
+      <!-- Executive Metrics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📊</span>
+          Performance Metrics Overview
+        </h2>
+        <div class="metric-grid">
+          <div class="metric-card highlight">
+            <div class="status-indicator"></div>
+            <h4>Total Messages</h4>
+            <div class="value">{{totalMessages}}</div>
+            <div class="description">User interactions with chatbot system</div>
+          </div>
+          
+          <div class="metric-card">
+            <div class="status-indicator"></div>
+            <h4>Total Conversations</h4>
+            <div class="value">{{totalConversations}}</div>
+            <div class="description">Unique customer chat sessions</div>
+          </div>
+          
+          <div class="metric-card success">
+            <div class="status-indicator"></div>
+            <h4>Customer Satisfaction</h4>
+            <div class="value">{{averageCustomerRating}}</div>
+            <div class="description">Average user rating score</div>
+          </div>
+          
+          <div class="metric-card highlight">
+            <div class="status-indicator"></div>
+            <h4>CSAT Score</h4>
+            <div class="value">{{csatScore}}</div>
+            <div class="description">Customer satisfaction percentage</div>
+          </div>
+          
+          {{#if hasPurchaseTracking}}
+          <div class="metric-card success">
+            <div class="status-indicator"></div>
+            <h4>Total Revenue</h4>
+            <div class="value">{{totalRevenue}}</div>
+            <div class="description">Revenue generated through chatbot</div>
+          </div>
+          
+          <div class="metric-card highlight">
+            <div class="status-indicator"></div>
+            <h4>Conversion Rate</h4>
+            <div class="value">{{conversionRate}}</div>
+            <div class="description">Message-to-purchase conversion</div>
+          </div>
+          {{/if}}
+          
+          {{#if hasGreetingRateData}}
+          <div class="metric-card">
+            <div class="status-indicator"></div>
+            <h4>Greeting Success Rate</h4>
+            <div class="value">{{greetingRate}}</div>
+            <div class="description">Successful conversation initiations</div>
+          </div>
+          {{/if}}
+          
+          {{#if hasFallbackData}}
+          <div class="metric-card warning">
+            <div class="status-indicator warning"></div>
+            <h4>Fallback Rate</h4>
+            <div class="value">{{fallbackRate}}</div>
+            <div class="description">Unhandled customer queries</div>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+
+      <!-- AI Analysis Section -->
+      {{#if gptAnalysis}}
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">🤖</span>
+          AI-Powered Business Insights
+        </h2>
+        <div class="analysis-content">
+          {{{gptAnalysis}}}
+        </div>
+      </div>
+      {{/if}}
+
+      <!-- Performance Analytics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📈</span>
+          Performance Analytics Dashboard
+        </h2>
         
-        <!-- Charts Section -->
         {{#if dailyChart}}
-        <div class="chart-section">
-            <h2 class="section-title">Message Volume Over Time</h2>
-            <div class="chart-container">
-                <div class="chart-title">{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Distribution</div>
-                <img src="data:image/png;base64,{{dailyChart}}" alt="Daily Messages Chart" class="chart-image">
-            </div>
+        <div class="chart-container">
+          <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
+          <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
+          <div class="chart-description">
+            Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
+          </div>
         </div>
         {{/if}}
         
         {{#if hourlyChart}}
-        <div class="chart-section">
-            <h2 class="section-title">Time of Day Analysis</h2>
-            <div class="chart-container">
-                <div class="chart-title">Message Distribution by Hour</div>
-                <img src="data:image/png;base64,{{hourlyChart}}" alt="Hourly Messages Chart" class="chart-image">
-            </div>
+        <div class="chart-container">
+          <h3>Peak Activity Hours Analysis</h3>
+          <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
+          <div class="chart-description">
+            Customer engagement patterns throughout the day revealing optimal support hours
+          </div>
         </div>
         {{/if}}
         
         {{#if topicChart}}
-        <div class="chart-section">
-            <h2 class="section-title">Conversation Topics</h2>
-            <div class="chart-container">
-                <div class="chart-title">Topic Distribution</div>
-                <img src="data:image/png;base64,{{topicChart}}" alt="Topic Distribution Chart" class="chart-image">
-            </div>
+        <div class="chart-container">
+          <h3>Customer Inquiry Topic Distribution</h3>
+          <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
+          <div class="chart-description">
+            Most frequently discussed topics and customer interests driving engagement
+          </div>
         </div>
         {{/if}}
-        
-        <!-- Footer -->
-        <div class="footer">
-            <p>Report generated on {{generatedDate}} by Dialog Intelligens</p>
-        </div>
+      </div>
     </div>
+    
+    <!-- Professional Footer -->
+    <div class="footer">
+      <div class="footer-brand">Dialog Intelligens</div>
+      <p>Professional Analytics Report • Generated {{generatedDate}}</p>
+      <div class="footer-tagline">Empowering businesses through intelligent conversation analytics</div>
+    </div>
+  </div>
 </body>
-</html> 
+</html>
