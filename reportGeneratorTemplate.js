@@ -46,43 +46,43 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
       gptAnalysisHtml = mdParser.render(data.gptAnalysis);
     }
     
-       // Prepare template data
-       const templateData = {
-        ...data,
-        timePeriod: formatTimePeriod(timePeriod),
-        gptAnalysis: gptAnalysisHtml,
-        generatedDate: new Date().toLocaleDateString('da-DK', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        // Chart images from chartImages object
-        dailyChart: data.chartImages?.dailyChart,
-        hourlyChart: data.chartImages?.hourlyChart,
-        topicChart: data.chartImages?.topicChart,
-        // Determine if weekly or daily chart
-        isWeekly: data.dailyData?.isWeekly || false,
-        // Report title - use company info or default
-        reportTitle: data.companyInfo || 'Statistics Report',
-        // Calculate daily average from existing data
-        dailyAverage: data.averageMessagesPerDay || (data.totalMessages && data.timePeriodDays ? (data.totalMessages / data.timePeriodDays).toFixed(1) : 'N/A'),
-        // Thumbs rating flag - check if rating system uses thumbs up/down
-        thumbsRating: data.thumbsRating || false,
-        // Purchase tracking flags - check for data from different sources
-        hasPurchaseTracking: data.hasPurchaseTracking || data.purchaseStats?.hasPurchaseTracking || false,
-        totalPurchases: data.totalPurchases || data.purchaseStats?.totalPurchases || 0,
-        totalRevenue: data.totalRevenue || data.purchaseStats?.totalRevenue || 0,
-        averagePurchaseValue: data.averagePurchaseValue || data.purchaseStats?.averagePurchaseValue || 'N/A',
-        conversionRate: data.conversionRate || data.purchaseStats?.conversionRate || 'N/A',
-        // Greeting rate flags - check for data from different sources
-        hasGreetingRateData: data.hasGreetingRateData || data.greetingRateStats?.hasGreetingRateData || false,
-        greetingRate: data.greetingRate || data.greetingRateStats?.greetingRate || 'N/A',
-        // Fallback rate flags - check for data from different sources
-        hasFallbackData: data.hasFallbackData || data.fallbackRateStats?.hasFallbackData || false,
-        fallbackRate: data.fallbackRate || data.fallbackRateStats?.fallbackRate || 'N/A'
-      };
+    // Prepare template data
+    const templateData = {
+      ...data,
+      timePeriod: formatTimePeriod(timePeriod),
+      gptAnalysis: gptAnalysisHtml,
+      generatedDate: new Date().toLocaleDateString('da-DK', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      // Chart images from chartImages object
+      dailyChart: data.chartImages?.dailyChart,
+      hourlyChart: data.chartImages?.hourlyChart,
+      topicChart: data.chartImages?.topicChart,
+      // Determine if weekly or daily chart
+      isWeekly: data.dailyData?.isWeekly || false,
+      // Report title - use company info or default
+      reportTitle: data.companyInfo || 'Statistics Report',
+      // Calculate daily average from existing data
+      dailyAverage: data.averageMessagesPerDay || (data.totalMessages && data.timePeriodDays ? (data.totalMessages / data.timePeriodDays).toFixed(1) : 'N/A'),
+      // Thumbs rating flag - check if rating system uses thumbs up/down
+      thumbsRating: data.thumbsRating || false,
+      // Purchase tracking flags - check for data from different sources
+      hasPurchaseTracking: data.hasPurchaseTracking || data.purchaseStats?.hasPurchaseTracking || false,
+      totalPurchases: data.totalPurchases || data.purchaseStats?.totalPurchases || 0,
+      totalRevenue: data.totalRevenue || data.purchaseStats?.totalRevenue || 0,
+      averagePurchaseValue: data.averagePurchaseValue || data.purchaseStats?.averagePurchaseValue || 'N/A',
+      conversionRate: data.conversionRate || data.purchaseStats?.conversionRate || 'N/A',
+      // Greeting rate flags - check for data from different sources
+      hasGreetingRateData: data.hasGreetingRateData || data.greetingRateStats?.hasGreetingRateData || false,
+      greetingRate: data.greetingRate || data.greetingRateStats?.greetingRate || 'N/A',
+      // Fallback rate flags - check for data from different sources
+      hasFallbackData: data.hasFallbackData || data.fallbackRateStats?.hasFallbackData || false,
+      fallbackRate: data.fallbackRate || data.fallbackRateStats?.fallbackRate || 'N/A'
+    };
     
     // Generate HTML
     const html = template(templateData);
@@ -92,7 +92,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     const browser = await puppeteer.launch({
       headless: true,
       executablePath: process.env.NODE_ENV === 'production' 
-        ? '/usr/bin/chromium-browser' 
+        ? require('chromium').path 
         : undefined,
       args: [
         '--no-sandbox',
@@ -165,4 +165,4 @@ function formatTimePeriod(timePeriod) {
   }
   
   return 'Custom Range';
-} 
+}
