@@ -6,7 +6,6 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "npx puppeteer browsers install chrome",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -17,6 +16,7 @@
     "abort-controller": "^3.0.0",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
+    "chromium": "^3.0.3",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "form-data": "^4.0.3",
@@ -29,7 +29,7 @@
     "openai": "^4.69.0",
     "pdfkit": "^0.14.0",
     "pg": "^8.12.0",
-    "puppeteer": "^23.10.4",
+    "puppeteer-core": "^23.10.4",
     "stats-lite": "^2.2.0",
     "stopword": "^3.1.4"
   }
