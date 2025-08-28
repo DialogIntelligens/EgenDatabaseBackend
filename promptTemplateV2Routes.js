@@ -412,8 +412,6 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       const prompt = await buildPrompt(pool, req.params.chatbot_id, req.params.flow_key);
       res.json({ prompt, flow_key: req.params.flow_key });
     } catch (err) {
-      console.error('GET final prompt error', err);
-      
       // Check if this is an empty template error
       if (err.message.includes('No template content available') || err.message.includes('Template content is empty')) {
         return res.status(400).json({ 
@@ -610,7 +608,6 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   }
   
   const finalSections = [...map.entries()].sort((a, b) => a[0] - b[0]);
-  console.log(`Final prompt has ${finalSections.length} sections`);
   
   // Check if we have any content after applying overrides
   if (finalSections.length === 0) {
