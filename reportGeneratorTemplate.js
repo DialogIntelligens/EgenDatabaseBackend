@@ -2,8 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
-import puppeteer from 'puppeteer';
 import MarkdownIt from 'markdown-it';
+import puppeteer from 'puppeteer-core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +64,12 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
       topicChart: data.chartImages?.topicChart,
       // Determine if weekly or daily chart
       isWeekly: data.dailyData?.isWeekly || false,
+      // Report title - use company info or default
+      reportTitle: data.companyInfo || 'Statistics Report',
+      // Calculate daily average from existing data
+      dailyAverage: data.averageMessagesPerDay || (data.totalMessages && data.timePeriodDays ? (data.totalMessages / data.timePeriodDays).toFixed(1) : 'N/A'),
+      // Thumbs rating flag - check if rating system uses thumbs up/down
+      thumbsRating: data.thumbsRating || false,
       // Purchase tracking flags - check for data from different sources
       hasPurchaseTracking: data.hasPurchaseTracking || data.purchaseStats?.hasPurchaseTracking || false,
       totalPurchases: data.totalPurchases || data.purchaseStats?.totalPurchases || 0,
@@ -85,6 +91,9 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     console.log('Launching puppeteer browser...');
     const browser = await puppeteer.launch({
       headless: true,
+      executablePath: process.env.NODE_ENV === 'production' 
+        ? require('chromium').path 
+        : undefined,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -95,7 +104,8 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
         '--single-process',
         '--disable-gpu',
         '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
+        '--disable-features=VizDisplayCompositor',
+        '--disable-extensions'
       ]
     });
     console.log('Puppeteer browser launched successfully');
@@ -155,4 +165,4 @@ function formatTimePeriod(timePeriod) {
   }
   
   return 'Custom Range';
-} 
+}
