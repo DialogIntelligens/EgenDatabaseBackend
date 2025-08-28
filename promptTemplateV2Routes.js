@@ -413,6 +413,16 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       res.json({ prompt, flow_key: req.params.flow_key });
     } catch (err) {
       console.error('GET final prompt error', err);
+      
+      // Check if this is an empty template error
+      if (err.message.includes('No template content available') || err.message.includes('Template content is empty')) {
+        return res.status(400).json({ 
+          error: 'Template configuration error', 
+          details: err.message,
+          flow_key: req.params.flow_key 
+        });
+      }
+      
       res.status(500).json({ error: 'Server error', details: err.message });
     }
   });
@@ -545,27 +555,9 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   let templateSections = [];
   
   if (flow_key === 'statistics') {
-    // Try V2 system first
     const stats = await pool.query('SELECT sections FROM prompt_templates WHERE is_system_template=TRUE LIMIT 1');
     templateSections = stats.rows[0]?.sections || [];
-    
-    // If no V2 template found, try V1 backward compatibility
-    if (templateSections.length === 0) {
-      try {
-        const v1Stats = await pool.query('SELECT sections FROM statistics_prompt_template LIMIT 1');
-        if (v1Stats.rows[0]?.sections) {
-          // Convert V1 format to V2 format if needed
-          const v1Sections = typeof v1Stats.rows[0].sections === 'string' 
-            ? JSON.parse(v1Stats.rows[0].sections) 
-            : v1Stats.rows[0].sections;
-          templateSections = Array.isArray(v1Sections) ? v1Sections : [];
-        }
-      } catch (err) {
-        console.log('No V1 statistics template found, using empty template');
-      }
-    }
   } else {
-    // Try V2 system first
     const tmpl = await pool.query(
       `SELECT pt.sections
        FROM flow_template_assignments fa
@@ -575,30 +567,11 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
       [chatbot_id, flow_key],
     );
     templateSections = tmpl.rows[0]?.sections || [];
-    
-    // If no V2 assignment found, try V1 backward compatibility
-    if (templateSections.length === 0) {
-      try {
-        const v1TableName = `${flow_key}_prompt_template`;
-        const v1Template = await pool.query(`SELECT sections FROM ${v1TableName} LIMIT 1`);
-        if (v1Template.rows[0]?.sections) {
-          // Convert V1 format to V2 format if needed
-          const v1Sections = typeof v1Template.rows[0].sections === 'string' 
-            ? JSON.parse(v1Template.rows[0].sections) 
-            : v1Template.rows[0].sections;
-          templateSections = Array.isArray(v1Sections) ? v1Sections : [];
-        }
-      } catch (err) {
-        console.log(`No V1 ${flow_key} template found, using empty template`);
-      }
-    }
   }
   
-  // Ensure templateSections is in the correct format for V2
+  // Ensure templateSections is in the correct V2 format
   // V2 expects array of {key: number, content: string}
-  // V1 might have stored it differently
   if (templateSections.length > 0 && templateSections[0] && typeof templateSections[0].key !== 'number') {
-    // If it's not in V2 format, try to convert it
     console.log('Converting template sections to V2 format');
     templateSections = templateSections.map((section, index) => ({
       key: section.key || index,
@@ -641,7 +614,17 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   const finalSections = [...map.entries()].sort((a, b) => a[0] - b[0]);
   console.log(`Final prompt has ${finalSections.length} sections`);
   
-  let finalPrompt = finalSections.map(([, c]) => c.trim()).join('\n\n');
+  // Check if we have any content after applying overrides
+  if (finalSections.length === 0) {
+    throw new Error(`No template content available for flow '${flow_key}'. Please configure a template for this chatbot and flow.`);
+  }
+  
+  let finalPrompt = finalSections.map(([, c]) => c.trim()).join('\n\n').trim();
+  
+  // Additional check for empty content after joining and trimming
+  if (!finalPrompt || finalPrompt.length === 0) {
+    throw new Error(`Template content is empty for flow '${flow_key}'. Please configure proper template content for this flow.`);
+  }
   
   // Resolve module references
   finalPrompt = await resolveModuleReferences(pool, finalPrompt);
