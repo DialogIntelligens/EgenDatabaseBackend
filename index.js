@@ -2674,26 +2674,32 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
             "Please try again with a smaller dataset or fewer conversations.";
           // Continue with report generation even if GPT analysis fails
         }
+      } catch (gptError) {
+        console.error('Error generating GPT analysis:', gptError);
+        // Continue with report generation even if GPT analysis fails
+      }
     }
-    
-    // Generate the PDF report using template-based generator with fallback
-    console.log("Generating PDF report with template...");
-    try {
-      const pdfBuffer = await generateStatisticsReportTemplate(statisticsData, timePeriod);
-      console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
-      
-      // Set appropriate headers for PDF download
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
-      res.setHeader('Content-Length', pdfBuffer.length);
-      
-      // Send the PDF buffer as the response
-      res.send(pdfBuffer);
+     // Generate the PDF report using template-based generator with fallback
+     console.log("Generating PDF report with template...");
+     try {
+       const pdfBuffer = await generateStatisticsReportTemplate(statisticsData, timePeriod);
+       console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+       
+       // Set appropriate headers for PDF download
+       res.setHeader('Content-Type', 'application/pdf');
+       res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+       res.setHeader('Content-Length', pdfBuffer.length);
+       
+       // Send the PDF buffer as the response
+       res.send(pdfBuffer);
     } catch (error) {
+      console.error('Error generating PDF report:', error);
+      res.status(500).json({ error: 'Failed to generate report', details: error.message });
+    }
+  } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report', details: error.message });
   }
-
 });
 
 /* ================================
