@@ -7,7 +7,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
-import { generateStatisticsReport } from './reportGenerator.js'; // Import report generator
 import { generateStatisticsReportTemplate } from './reportGeneratorTemplate.js'; // Import template-based generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
@@ -2667,6 +2666,7 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
           } else {
             console.log("Failed to generate GPT analysis");
           }
+        
         } catch (gptError) {
           console.error('Error generating GPT analysis:', gptError);
           // Add fallback content for the PDF if GPT analysis fails
@@ -2674,10 +2674,6 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
             "Please try again with a smaller dataset or fewer conversations.";
           // Continue with report generation even if GPT analysis fails
         }
-      } catch (gptError) {
-        console.error('Error generating GPT analysis:', gptError);
-        // Continue with report generation even if GPT analysis fails
-      }
     }
     
     // Generate the PDF report using template-based generator with fallback
@@ -2693,35 +2689,11 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       
       // Send the PDF buffer as the response
       res.send(pdfBuffer);
-    } catch (pdfError) {
-      console.error('Error generating template-based PDF report:', pdfError);
-      console.log('Falling back to legacy PDF generator...');
-      
-      // Fallback to the original PDF generator
-      try {
-        const pdfBuffer = await generateStatisticsReport(statisticsData, timePeriod);
-        console.log("Legacy PDF report generated successfully, size:", pdfBuffer.length, "bytes");
-        
-        // Set appropriate headers for PDF download
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
-        res.setHeader('Content-Length', pdfBuffer.length);
-        
-        // Send the PDF buffer as the response
-        res.send(pdfBuffer);
-      } catch (legacyPdfError) {
-        console.error('Error generating legacy PDF report:', legacyPdfError);
-        res.status(500).json({ 
-          error: 'Failed to generate PDF report using both template and legacy methods', 
-          templateError: pdfError.message,
-          legacyError: legacyPdfError.message
-        });
-      }
-    }
-  } catch (error) {
+    } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report', details: error.message });
   }
+
 });
 
 /* ================================
