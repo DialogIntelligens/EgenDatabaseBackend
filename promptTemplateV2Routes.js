@@ -583,11 +583,9 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   
   // Apply overrides
   const ovRows = await pool.query('SELECT section_key, action, content FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2', [chatbot_id, flow_key]);
-  console.log(`Found ${ovRows.rows.length} overrides for chatbot ${chatbot_id}, flow ${flow_key}`);
   
   for (const ov of ovRows.rows) {
     const key = Number(ov.section_key);
-    console.log(`Applying override: ${ov.action} for key ${key}`);
     
     let contentToUse = ov.content;
     
