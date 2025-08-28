@@ -6346,3 +6346,37 @@ function scheduleGdprCleanup() {
 // Start the scheduler
 scheduleGdprCleanup();
 
+/* ================================
+   Agent Typing Status Cleanup
+================================ */
+
+// Function to clean up old agent typing status records
+async function cleanupAgentTypingStatus() {
+  try {
+    const result = await pool.query(`
+      DELETE FROM agent_typing_status 
+      WHERE last_updated < NOW() - INTERVAL '1 hour'
+    `);
+    
+    const deletedCount = result.rowCount;
+    console.log(`Agent typing status cleanup completed. Deleted ${deletedCount} old records.`);
+    return { deletedCount };
+  } catch (error) {
+    console.error('Error cleaning up agent typing status:', error);
+    throw error;
+  }
+}
+
+// Schedule agent typing status cleanup to run daily at midnight
+cron.schedule('0 0 * * *', async () => {
+  try {
+    console.log('Scheduled agent typing status cleanup starting...');
+    const results = await cleanupAgentTypingStatus();
+    console.log('Scheduled agent typing status cleanup completed:', results);
+  } catch (error) {
+    console.error('Scheduled agent typing status cleanup failed:', error);
+  }
+});
+
+console.log('Agent typing status cleanup scheduled to run daily at midnight');
+
