@@ -4555,6 +4555,7 @@ app.post('/api/shopify/orders', async (req, res) => {
         created_at: order.created_at,
         updated_at: order.updated_at,
         customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
+        tags: order.tags ? order.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [],
         line_items: order.line_items ? order.line_items.map(item => ({
           id: item.id,
           name: item.name,
