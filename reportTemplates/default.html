@@ -543,40 +543,82 @@
         <div class="subtitle">{{timePeriod}}</div>
       </div>
     </div>
+
+    <!-- Key Insights Section -->
+    <div class="key-insights">
+      <h3>🔍 Key Performance Insights</h3>
+      <div class="insights-list">
+        <div class="insight-item">
+          <strong>High Engagement:</strong> {{totalMessages}} total messages indicate active user interaction
+        </div>
+        <div class="insight-item">
+          <strong>Customer Satisfaction:</strong> {{averageCustomerRating}}/5 rating shows excellent service quality
+        </div>
+        <div class="insight-item">
+          <strong>Consistent Performance:</strong> {{csatScore}} CSAT score demonstrates reliable support
+        </div>
+        {{#if hasPurchaseTracking}}
+        <div class="insight-item">
+          <strong>Business Impact:</strong> {{totalRevenue}} revenue generated through chatbot interactions
+        </div>
+        {{/if}}
+      </div>
+    </div>
     
     <div class="content">
-      <!-- Executive Summary Section -->
-      <div class="executive-summary">
-        <h2>Executive Summary</h2>
-        <div class="executive-text">
-          Chatbotten leverer stabil kundeservice med en samlet Customer Satisfaction (CSAT) 
-          på {{csatScore}} og en gennemsnitlig rating på {{averageCustomerRating}} ud af 5. 
-          Over tiden er der håndteret {{totalMessages}} samtaler og afsendt {{totalConversations}} 
-          beskeder, svarende til i gennemsnit {{#if dailyAverage}}{{dailyAverage}}{{else}}N/A{{/if}} 
-          beskeder per dag. Dette indikerer, at chatbotten aktivt assisterer besøgende og aflaster supportteamet.
-        </div>
-      </div>
-      
-      <!-- Key Insights Section -->
-      <div class="key-insights">
-        <h3>🔍 Key Performance Insights</h3>
-        <div class="insights-list">
-          <div class="insight-item">
-            <strong>High Engagement:</strong> {{totalMessages}} total messages indicate active user interaction
-          </div>
-          <div class="insight-item">
-            <strong>Customer Satisfaction:</strong> {{averageCustomerRating}}/5 rating shows excellent service quality
-          </div>
-          <div class="insight-item">
-            <strong>Consistent Performance:</strong> {{csatScore}} CSAT score demonstrates reliable support
-          </div>
-          {{#if hasPurchaseTracking}}
-          <div class="insight-item">
-            <strong>Business Impact:</strong> {{totalRevenue}} revenue generated through chatbot interactions
-          </div>
-          {{/if}}
-        </div>
-      </div>
+       <!-- AI Analysis Section -->
+       {{#if gptAnalysis}}
+       <div class="section">
+         <h2 class="section-header">
+           <span class="section-icon">🤖</span>
+           AI-Powered Business Insights
+         </h2>
+         <div class="analysis-content">
+           {{{gptAnalysis}}}
+         </div>
+       </div>
+       {{/if}}
+ 
+       <!-- Performance Analytics Section -->
+       <div class="section">
+         <h2 class="section-header">
+           <span class="section-icon">📈</span>
+           Performance Analytics Dashboard
+         </h2>
+         
+         {{#if dailyChart}}
+         <div class="chart-container">
+           <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
+           <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
+           <div class="chart-description">
+             Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
+           </div>
+         </div>
+         <div class="chart-spacer"></div>
+         {{/if}}
+         
+         {{#if hourlyChart}}
+         <div class="chart-container">
+           <h3>Peak Activity Hours Analysis</h3>
+           <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
+           <div class="chart-description">
+             Customer engagement patterns throughout the day revealing optimal support hours
+           </div>
+         </div>
+         <div class="chart-spacer"></div>
+         {{/if}}
+         
+         {{#if topicChart}}
+         <div class="chart-container">
+           <h3>Customer Inquiry Topic Distribution</h3>
+           <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
+           <div class="chart-description">
+             Most frequently discussed topics and customer interests driving engagement
+           </div>
+         </div>
+         {{/if}}
+       </div>
+     </div>
       
       <!-- Executive Metrics Section -->
       <div class="section">
@@ -649,59 +691,7 @@
         </div>
       </div>
 
-      <!-- AI Analysis Section -->
-      {{#if gptAnalysis}}
-      <div class="section">
-        <h2 class="section-header">
-          <span class="section-icon">🤖</span>
-          AI-Powered Business Insights
-        </h2>
-        <div class="analysis-content">
-          {{{gptAnalysis}}}
-        </div>
-      </div>
-      {{/if}}
-
-      <!-- Performance Analytics Section -->
-      <div class="section">
-        <h2 class="section-header">
-          <span class="section-icon">📈</span>
-          Performance Analytics Dashboard
-        </h2>
-        
-        {{#if dailyChart}}
-        <div class="chart-container">
-          <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
-          <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
-          <div class="chart-description">
-            Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
-          </div>
-        </div>
-        <div class="chart-spacer"></div>
-        {{/if}}
-        
-        {{#if hourlyChart}}
-        <div class="chart-container">
-          <h3>Peak Activity Hours Analysis</h3>
-          <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
-          <div class="chart-description">
-            Customer engagement patterns throughout the day revealing optimal support hours
-          </div>
-        </div>
-        <div class="chart-spacer"></div>
-        {{/if}}
-        
-        {{#if topicChart}}
-        <div class="chart-container">
-          <h3>Customer Inquiry Topic Distribution</h3>
-          <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
-          <div class="chart-description">
-            Most frequently discussed topics and customer interests driving engagement
-          </div>
-        </div>
-        {{/if}}
-      </div>
-    </div>
+     
     
     <!-- Professional Footer -->
     <div class="footer">
