@@ -274,57 +274,7 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
     }
   });
 
-  /* =============================
-     LANGUAGE SETTINGS
-  ============================= */
-  router.get('/language/:chatbot_id', async (req, res) => {
-    try {
-      const { rows } = await pool.query('SELECT * FROM chatbot_language_settings WHERE chatbot_id=$1', [req.params.chatbot_id]);
-      if (rows.length === 0) {
-        // Return default if no setting exists
-        res.json({ chatbot_id: req.params.chatbot_id, language: 'danish' });
-      } else {
-        res.json(rows[0]);
-      }
-    } catch (err) {
-      console.error('GET language setting error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
 
-  router.post('/language', authenticateToken, async (req, res) => {
-    const { chatbot_id, language } = req.body;
-    if (!chatbot_id || !language) return res.status(400).json({ error: 'chatbot_id and language required' });
-    
-    // Validate language value
-    const supportedLanguages = ['danish', 'english', 'swedish', 'norwegian', 'german', 'dutch', 'french', 'italian', 'finnish'];
-    if (!supportedLanguages.includes(language)) {
-      return res.status(400).json({ error: `language must be one of: ${supportedLanguages.join(', ')}` });
-    }
-    
-    try {
-      await pool.query(
-        `INSERT INTO chatbot_language_settings (chatbot_id, language)
-         VALUES ($1, $2)
-         ON CONFLICT (chatbot_id) DO UPDATE SET language=$2, updated_at=NOW()`,
-        [chatbot_id, language],
-      );
-      res.json({ message: 'language setting saved' });
-    } catch (err) {
-      console.error('POST language setting error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
-
-  router.delete('/language/:chatbot_id', authenticateToken, async (req, res) => {
-    try {
-      await pool.query('DELETE FROM chatbot_language_settings WHERE chatbot_id=$1', [req.params.chatbot_id]);
-      res.json({ message: 'language setting deleted' });
-    } catch (err) {
-      console.error('DELETE language setting error', err);
-      res.status(500).json({ error: 'Server error', details: err.message });
-    }
-  });
 
   /* =============================
      OVERRIDES
