@@ -5,22 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title> AI Analysis Insights - Dialog Intelligens </title>
   <style>
-    /* PDF-Optimized Professional Color Palette */
+    /* Updated Design System - Matching Dashboard */
     :root {
-      --primary-color: #1a365d;
-      --secondary-color: #3182ce;
-      --accent-color: #38a169;
+      --primary-color: #686BF1;
+      --secondary-color: #686BF1;
+      --accent-color: #686BF1;
       --success-color: #48bb78;
       --warning-color: #ed8936;
       --danger-color: #e53e3e;
-      --text-primary: #2d3748;
+      --text-primary: #212023;
       --text-secondary: #4a5568;
       --text-muted: #718096;
       --background-primary: #ffffff;
       --background-secondary: #f8f9fa;
       --background-accent: #e9ecef;
-      --border-color: #dee2e6;
-      --border-light: #f1f3f4;
+      --border-color: #DBDCEC;
+      --border-light: #DBDCEC;
+      --shadow-primary: 0px 8px 16px 0px rgba(104, 107, 241, 0.16);
+      --shadow-light: 0px 4px 12px 0px rgba(104, 107, 241, 0.08);
       --spacing-xs: 8px;
       --spacing-sm: 12px;
       --spacing-md: 20px;
@@ -84,7 +86,7 @@
       widows: 3;
     }
     
-    /* PDF-Optimized Header */
+    /* Header - Updated with Dashboard Colors */
     .header {
       background: var(--primary-color);
       color: white;
@@ -94,6 +96,7 @@
       break-inside: avoid;
       -webkit-print-color-adjust: exact;
       color-adjust: exact;
+      box-shadow: var(--shadow-primary);
     }
     
     .header-content {
@@ -158,16 +161,17 @@
       flex-shrink: 0;
     }
     
-    /* PDF-Optimized Executive Summary */
+    /* Executive Summary - Updated with Dashboard Border Radius */
     .executive-summary {
       background: var(--background-secondary);
       border: 1px solid var(--border-color);
       border-left: 4px solid var(--secondary-color);
-      border-radius: 8px;
+      border-radius: 24px;
       padding: 30px;
       margin-bottom: 30px;
       page-break-inside: avoid;
       break-inside: avoid;
+      box-shadow: var(--shadow-light);
     }
     
     .executive-summary h2 {
@@ -184,24 +188,31 @@
       text-align: justify;
     }
     
-    /* PDF-Safe Metric Cards */
+    /* Metric Grid */
     .metric-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: 20px;
       margin-bottom: 30px;
     }
-    
+
+    /* Metric Cards - Updated with Dashboard Styling */
     .metric-card {
       background: white;
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: 24px;
       padding: 25px;
       position: relative;
       margin-bottom: 15px;
       page-break-inside: avoid;
       break-inside: avoid;
       border-top: 4px solid var(--secondary-color);
+      box-shadow: var(--shadow-light);
+      transition: box-shadow 0.2s ease;
+    }
+
+    .metric-card:hover {
+      box-shadow: var(--shadow-primary);
     }
     
     .metric-card.highlight {
@@ -260,17 +271,23 @@
       background: var(--danger-color);
     }
     
-    /* PDF-Optimized Chart Containers */
+    /* Chart Containers - Updated with Dashboard Styling */
     .chart-container {
       background: white;
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: 24px;
       padding: 25px;
-      margin-bottom: 40px; /* Increased margin */
+      margin-bottom: 40px;
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-after: auto; /* Allow page breaks after charts if needed */
-      min-height: 400px; /* Ensure minimum space for each chart */
+      page-break-after: auto;
+      min-height: 400px;
+      box-shadow: var(--shadow-light);
+      transition: box-shadow 0.2s ease;
+    }
+
+    .chart-container:hover {
+      box-shadow: var(--shadow-primary);
     }
     
     .chart-container h3 {
@@ -285,12 +302,12 @@
     
     .chart-image {
       max-width: 100%;
-      max-height: 300px; /* Limit maximum height */
+      max-height: 300px;
       height: auto;
       display: block;
-      margin: 20px auto; /* Added vertical margin */
-      border-radius: 4px;
-      object-fit: contain; /* Ensure proper scaling */
+      margin: 20px auto;
+      border-radius: 12px;
+      object-fit: contain;
     }
     
     .chart-description {
@@ -304,17 +321,18 @@
       border-top: 1px solid var(--border-light);
     }
     
-    /* PDF-Safe Analysis Section */
+    /* Analysis Content - Updated with Dashboard Styling */
     .analysis-content {
       background: var(--background-secondary);
       border-left: 4px solid var(--accent-color);
-      border-radius: 8px;
+      border-radius: 24px;
       padding: 30px;
       margin-bottom: 25px;
       font-size: 14px;
       line-height: 1.7;
       page-break-inside: avoid;
       break-inside: avoid;
+      box-shadow: var(--shadow-light);
     }
     
     .analysis-content h1,
@@ -347,17 +365,18 @@
       font-weight: 600;
     }
     
-    /* PDF-Optimized Key Insights */
+    /* Key Insights - Updated with Dashboard Styling */
     .key-insights {
       background: var(--primary-color);
       color: white;
       padding: 30px;
-      border-radius: 8px;
+      border-radius: 24px;
       margin-bottom: 25px;
       page-break-inside: avoid;
       break-inside: avoid;
       -webkit-print-color-adjust: exact;
       color-adjust: exact;
+      box-shadow: var(--shadow-primary);
     }
     
     .key-insights h3 {
@@ -373,14 +392,14 @@
     .insight-item {
       background: rgba(255, 255, 255, 0.1);
       padding: 15px;
-      border-radius: 6px;
+      border-radius: 16px;
       margin-bottom: 10px;
       font-size: 13px;
       line-height: 1.5;
       border-left: 3px solid rgba(255, 255, 255, 0.3);
     }
     
-    /* PDF-Safe Footer */
+    /* Footer - Updated with Dashboard Styling */
     .footer {
       background: var(--background-accent);
       border-top: 3px solid var(--primary-color);
@@ -390,9 +409,10 @@
       font-size: 12px;
       page-break-inside: avoid;
       break-inside: avoid;
-      margin-top: 60px; /* Add top margin to separate from content */
-      page-break-before: auto; /* Allow page break before footer if needed */
-      position: relative; /* Ensure proper positioning */
+      margin-top: 60px;
+      page-break-before: auto;
+      position: relative;
+      border-radius: 24px 24px 0 0;
     }
     
     .footer-brand {
@@ -409,13 +429,16 @@
       color: var(--text-secondary);
     }
     
-    /* PDF-Safe Data Tables */
+    /* Data Tables - Updated with Dashboard Styling */
     .data-table {
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 20px;
       background: white;
       border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: var(--shadow-light);
     }
     
     .data-table th,
