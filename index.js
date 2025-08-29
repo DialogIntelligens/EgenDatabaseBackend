@@ -2792,9 +2792,9 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
        
        // Set appropriate headers for PDF download
        res.setHeader('Content-Type', 'application/pdf');
-       res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+       res.setHeader('Content-Disposition', 'attachment; filename="statistics-report.pdf"');
        res.setHeader('Content-Length', pdfBuffer.length);
-       
+      
        // Send the PDF buffer as the response
        res.send(pdfBuffer);
     } catch (error) {
