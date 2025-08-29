@@ -2791,12 +2791,12 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
        console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
        
        // Set appropriate headers for PDF download
-       res.setHeader('Content-Type', 'application/pdf');
-       res.setHeader('Content-Disposition', 'attachment; filename="statistics-report.pdf"');
+      res.setHeader('Content-Type', 'application/pdf');
+       res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
        res.setHeader('Content-Length', pdfBuffer.length);
-      
-       // Send the PDF buffer as the response
-       res.send(pdfBuffer);
+       
+       // Send the PDF buffer directly as binary data
+       res.end(pdfBuffer, 'binary');
     } catch (error) {
       console.error('Error generating PDF report:', error);
       res.status(500).json({ error: 'Failed to generate report', details: error.message });
