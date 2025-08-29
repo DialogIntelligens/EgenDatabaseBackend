@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
 import puppeteer from 'puppeteer-core';
+import chromium from 'chromium';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -92,7 +93,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
     const browser = await puppeteer.launch({
       headless: true,
       executablePath: process.env.NODE_ENV === 'production' 
-        ? require('chromium').path 
+        ? chromium.path 
         : undefined,
       args: [
         '--no-sandbox',
