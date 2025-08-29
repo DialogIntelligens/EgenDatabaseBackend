@@ -4591,9 +4591,7 @@ app.post('/api/shopify/orders', async (req, res) => {
           tracking_company: fulfillments[0].tracking_company,
           status: fulfillments[0].status,
           shipment_status: fulfillments[0].shipment_status
-        } : null,
-        // Include tags for preorder detection and other purposes
-        tags: order.tags || []
+        } : null
       };
     })) : [];
 
