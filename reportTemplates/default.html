@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}} - Professional Report</title>
+  <title> AI Analysis Insights - Dialog Intelligens </title>
   <style>
     /* PDF-Optimized Professional Color Palette */
     :root {
@@ -266,9 +266,11 @@
       border: 1px solid var(--border-color);
       border-radius: 8px;
       padding: 25px;
-      margin-bottom: 25px;
+      margin-bottom: 40px; /* Increased margin */
       page-break-inside: avoid;
       break-inside: avoid;
+      page-break-after: auto; /* Allow page breaks after charts if needed */
+      min-height: 400px; /* Ensure minimum space for each chart */
     }
     
     .chart-container h3 {
@@ -283,20 +285,22 @@
     
     .chart-image {
       max-width: 100%;
+      max-height: 300px; /* Limit maximum height */
       height: auto;
       display: block;
-      margin: 0 auto;
+      margin: 20px auto; /* Added vertical margin */
       border-radius: 4px;
+      object-fit: contain; /* Ensure proper scaling */
     }
     
     .chart-description {
-      margin-top: 15px;
+      margin-top: 20px; /* Increased margin */
       font-size: 12px;
       color: var(--text-muted);
       text-align: center;
       font-style: italic;
       font-weight: 500;
-      padding-top: 10px;
+      padding-top: 15px; /* Increased padding */
       border-top: 1px solid var(--border-light);
     }
     
@@ -386,6 +390,9 @@
       font-size: 12px;
       page-break-inside: avoid;
       break-inside: avoid;
+      margin-top: 60px; /* Add top margin to separate from content */
+      page-break-before: auto; /* Allow page break before footer if needed */
+      position: relative; /* Ensure proper positioning */
     }
     
     .footer-brand {
@@ -473,11 +480,21 @@
       }
       
       .chart-container {
-        max-height: 350px;
+        max-height: 450px; /* Increased max height */
+        min-height: 350px; /* Ensure minimum height */
+        margin-bottom: 50px !important; /* Force spacing between charts */
       }
       
       .chart-image {
-        max-height: 300px;
+        max-height: 280px !important; /* Consistent max height */
+        width: auto !important;
+        object-fit: contain !important;
+      }
+      
+      /* Ensure footer positioning */
+      .footer {
+        margin-top: 80px !important;
+        page-break-before: auto !important;
       }
       
       /* Ensure colors print correctly */
@@ -486,6 +503,12 @@
         color-adjust: exact !important;
       }
     }
+
+    /* Chart spacing utilities */
+    .chart-spacer {
+      height: 30px;
+      page-break-inside: avoid;
+    }
   </style>
 </head>
 <body>
@@ -493,12 +516,8 @@
     <!-- Professional Header -->
     <div class="header">
       <div class="header-content">
-        <h1>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}}</h1>
+        <h1>AI Analysis Insights</h1>
         <div class="subtitle">{{timePeriod}}</div>
-        <div class="meta">
-          Generated on {{generatedDate}}
-          {{#if companyInfo}} • {{companyInfo}}{{/if}}
-        </div>
       </div>
     </div>
     
@@ -635,6 +654,7 @@
             Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
           </div>
         </div>
+        <div class="chart-spacer"></div>
         {{/if}}
         
         {{#if hourlyChart}}
@@ -645,6 +665,7 @@
             Customer engagement patterns throughout the day revealing optimal support hours
           </div>
         </div>
+        <div class="chart-spacer"></div>
         {{/if}}
         
         {{#if topicChart}}
