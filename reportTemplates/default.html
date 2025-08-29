@@ -461,10 +461,85 @@
       background: var(--background-secondary);
     }
     
-    /* PDF Page Break Control */
+    /* PDF Page Break Control - Enhanced */
     .page-break-before { page-break-before: always; break-before: page; }
     .page-break-after { page-break-after: always; break-after: page; }
     .page-break-avoid { page-break-inside: avoid; break-inside: avoid; }
+    .page-break-inside-avoid { page-break-inside: avoid; break-inside: avoid; }
+    .force-page-break { page-break-before: always; break-before: page; }
+    .avoid-page-break { page-break-inside: avoid; break-inside: avoid; }
+
+    /* Enhanced Section Spacing for PDF */
+    .section {
+      margin-bottom: 30px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: auto;
+      break-before: auto;
+      page-break-after: auto;
+      break-after: auto;
+    }
+
+    /* Ensure proper spacing between major sections */
+    .content > .section:not(:first-child) {
+      margin-top: 40px;
+    }
+
+    /* Prevent chart containers from being split */
+    .chart-container {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: auto;
+      break-before: auto;
+      margin-bottom: 35px;
+    }
+
+    /* Executive Summary should start on new page if needed */
+    .executive-summary {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: auto;
+      break-before: auto;
+      margin-bottom: 35px;
+    }
+
+    /* Key insights should not be split */
+    .key-insights {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: auto;
+      break-before: auto;
+      margin-bottom: 35px;
+    }
+
+    /* Metric cards should stay together */
+    .metric-grid {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      margin-bottom: 35px;
+    }
+
+    .metric-card {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    /* Analysis content should not be split */
+    .analysis-content {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: auto;
+      break-before: auto;
+    }
+
+    /* Footer should not be split and preferably on its own page if space allows */
+    .footer {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: auto;
+      break-before: auto;
+      margin-top: 50px;
+    }
     
     /* Utility Classes */
     .text-center { text-align: center; }
@@ -477,53 +552,140 @@
     .mt-lg { margin-top: 20px; }
     .hidden { display: none; }
     
-    /* PDF-Specific Optimizations */
+    /* PDF-Specific Optimizations - Enhanced */
     @media print, screen {
       body {
         background: white !important;
         font-size: 13px;
+        line-height: 1.4 !important;
       }
-      
+
       .report-container {
         box-shadow: none !important;
         max-width: none !important;
         margin: 0 !important;
         background: white !important;
+        padding: 0 !important;
       }
-      
+
+      /* Enhanced page break controls for PDF */
       .header,
       .section,
       .chart-container,
       .metric-card,
       .executive-summary,
       .analysis-content,
-      .key-insights {
+      .key-insights,
+      .metric-grid,
+      .data-table {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
       }
-      
-      .chart-container {
-        max-height: 450px; /* Increased max height */
-        min-height: 350px; /* Ensure minimum height */
-        margin-bottom: 50px !important; /* Force spacing between charts */
+
+      /* Prevent sections from being split across pages */
+      .section {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 40px !important;
+        margin-top: 30px !important;
       }
-      
+
+      /* Ensure proper spacing for executive summary */
+      .executive-summary {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 50px !important;
+        margin-top: 20px !important;
+      }
+
+      /* Key insights spacing */
+      .key-insights {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 50px !important;
+        margin-top: 30px !important;
+      }
+
+      /* Chart container optimizations */
+      .chart-container {
+        max-height: 400px !important;
+        min-height: 300px !important;
+        margin-bottom: 45px !important;
+        margin-top: 20px !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-before: auto !important;
+        break-before: auto !important;
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+
       .chart-image {
-        max-height: 280px !important; /* Consistent max height */
+        max-height: 250px !important;
         width: auto !important;
         object-fit: contain !important;
+        margin: 15px auto !important;
       }
-      
-      /* Ensure footer positioning */
+
+      /* Metric grid spacing */
+      .metric-grid {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 45px !important;
+        margin-top: 25px !important;
+      }
+
+      .metric-card {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 20px !important;
+      }
+
+      /* Analysis content spacing */
+      .analysis-content {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 40px !important;
+        margin-top: 25px !important;
+      }
+
+      /* Footer positioning */
       .footer {
-        margin-top: 80px !important;
+        margin-top: 60px !important;
         page-break-before: auto !important;
+        break-before: auto !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
       }
-      
+
+      /* Content area spacing */
+      .content {
+        padding: 30px 25px !important;
+      }
+
       /* Ensure colors print correctly */
       * {
         -webkit-print-color-adjust: exact !important;
         color-adjust: exact !important;
+      }
+
+      /* Force page breaks for major sections if needed */
+      .content > .section:nth-child(n+3) {
+        page-break-before: auto !important;
+        break-before: auto !important;
+      }
+
+      /* Ensure tables don't break awkwardly */
+      .data-table {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 30px !important;
+      }
+
+      /* Adjust spacing for better fit */
+      .chart-spacer {
+        height: 20px !important;
+        page-break-inside: avoid !important;
       }
     }
 
@@ -549,7 +711,7 @@
     <div class="content">
        <!-- AI Analysis Section -->
        {{#if gptAnalysis}}
-       <div class="section">
+       <div class="section page-break-inside-avoid">
          <h2 class="section-header">
            <span class="section-icon">🤖</span>
            AI-Powered Business Insights
@@ -561,7 +723,7 @@
        {{/if}}
 
        <!-- Key Insights Section -->
-    <div class="key-insights">
+    <div class="key-insights page-break-inside-avoid">
       <h3>🔍 Key Performance Insights</h3>
       <div class="insights-list">
         <div class="insight-item">
@@ -581,12 +743,12 @@
       </div>
     </div>
  
-       <!-- Performance Analytics Section -->
-       <div class="section">
-         <h2 class="section-header">
-           <span class="section-icon">📈</span>
-           Performance Analytics Dashboard
-         </h2>
+              <!-- Performance Analytics Section -->
+        <div class="section page-break-inside-avoid">
+          <h2 class="section-header">
+            <span class="section-icon">📈</span>
+            Performance Analytics Dashboard
+          </h2>
          
          {{#if dailyChart}}
          <div class="chart-container">
@@ -623,7 +785,7 @@
      </div>
       
       <!-- Executive Metrics Section -->
-      <div class="section">
+      <div class="section page-break-inside-avoid">
         <h2 class="section-header">
           <span class="section-icon">📊</span>
           Performance Metrics Overview
@@ -696,7 +858,7 @@
      
     
     <!-- Professional Footer -->
-    <div class="footer">
+    <div class="footer page-break-inside-avoid">
       <div class="footer-brand">Dialog Intelligens</div>
       <p>Professional Analytics Report • Generated {{generatedDate}}</p>
       <div class="footer-tagline">Empowering businesses through intelligent conversation analytics</div>
