@@ -4516,40 +4516,9 @@ app.post('/api/shopify/orders', async (req, res) => {
     }
 
     const data = await response.json();
-
-    // Filter orders to ensure they match ALL provided search criteria (AND logic)
-    let filteredOrders = data.orders || [];
-
-    if (email || phone || order_number) {
-      console.log(`🔍 SHOPIFY FILTER: Filtering ${filteredOrders.length} orders with criteria:`, { email, phone, order_number });
-      filteredOrders = filteredOrders.filter(order => {
-        const emailMatches = !email || (order.email && order.email.toLowerCase() === email.toLowerCase());
-        const phoneMatches = !phone || (() => {
-          if (!order.phone) return false;
-          // Normalize both phone numbers by removing all non-digits
-          const normalizedInputPhone = phone.replace(/\D/g, '');
-          const normalizedOrderPhone = order.phone.replace(/\D/g, '');
-          // Match if the last 8 digits are the same (handles country codes)
-          const inputLast8 = normalizedInputPhone.slice(-8);
-          const orderLast8 = normalizedOrderPhone.slice(-8);
-          return inputLast8 === orderLast8 && inputLast8.length === 8;
-        })();
-        const orderNumberMatches = !order_number || (order.name && order.name === order_number) || (order.order_number && order.order_number === order_number);
-
-        const allMatch = emailMatches && phoneMatches && orderNumberMatches;
-
-        if (!allMatch) {
-          console.log(`❌ SHOPIFY FILTER: Excluding order ${order.id} - Email match: ${emailMatches}, Phone match: ${phoneMatches}, Order match: ${orderNumberMatches}`);
-        }
-
-        // Only return orders that match ALL provided criteria (AND logic)
-        return allMatch;
-      });
-      console.log(`✅ SHOPIFY FILTER: After filtering: ${filteredOrders.length} orders remain`);
-    }
-
+    
     // Transform the data and fetch fulfillment information for each order
-    const transformedOrders = filteredOrders ? await Promise.all(filteredOrders.map(async (order) => {
+    const transformedOrders = data.orders ? await Promise.all(data.orders.map(async (order) => {
       // Fetch fulfillments for this order
       let fulfillments = [];
       try {
@@ -4630,8 +4599,7 @@ app.post('/api/shopify/orders', async (req, res) => {
     return res.json({
       success: true,
       orders: transformedOrders,
-      total_count: transformedOrders.length,
-      filtered_from: data.orders ? data.orders.length : 0
+      total_count: data.orders ? data.orders.length : 0
     });
 
   } catch (error) {
