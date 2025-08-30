@@ -4516,9 +4516,23 @@ app.post('/api/shopify/orders', async (req, res) => {
     }
 
     const data = await response.json();
-    
+
+    // Filter orders to ensure they match ALL provided search criteria
+    let filteredOrders = data.orders || [];
+
+    if (email || phone || order_number) {
+      filteredOrders = filteredOrders.filter(order => {
+        const emailMatches = !email || (order.email && order.email.toLowerCase() === email.toLowerCase());
+        const phoneMatches = !phone || (order.phone && order.phone.replace(/[\+\s\-]/g, '') === phone.replace(/[\+\s\-]/g, ''));
+        const orderNumberMatches = !order_number || (order.name && order.name === order_number) || (order.order_number && order.order_number === order_number);
+
+        // Only return orders that match ALL provided criteria (AND logic)
+        return emailMatches && phoneMatches && orderNumberMatches;
+      });
+    }
+
     // Transform the data and fetch fulfillment information for each order
-    const transformedOrders = data.orders ? await Promise.all(data.orders.map(async (order) => {
+    const transformedOrders = filteredOrders ? await Promise.all(filteredOrders.map(async (order) => {
       // Fetch fulfillments for this order
       let fulfillments = [];
       try {
@@ -4599,7 +4613,8 @@ app.post('/api/shopify/orders', async (req, res) => {
     return res.json({
       success: true,
       orders: transformedOrders,
-      total_count: data.orders ? data.orders.length : 0
+      total_count: transformedOrders.length,
+      filtered_from: data.orders ? data.orders.length : 0
     });
 
   } catch (error) {
