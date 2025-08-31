@@ -4522,12 +4522,14 @@ app.post('/api/shopify/orders', async (req, res) => {
     
     if (email || phone || order_number) {
       console.log(`🔍 SHOPIFY FILTER: Filtering ${filteredOrders.length} orders with criteria:`, { email, phone, order_number });
-      console.log(`🔍 SHOPIFY FILTER: Sample order data:`, filteredOrders.length > 0 ? {
+      console.log(`🔍 SHOPIFY FILTER: Sample order data before filtering:`, filteredOrders.length > 0 ? {
         id: filteredOrders[0].id,
         email: filteredOrders[0].email,
         phone: filteredOrders[0].phone,
-        name: filteredOrders[0].name
+        name: filteredOrders[0].name,
+        tags: filteredOrders[0].tags
       } : 'No orders to sample');
+      
       filteredOrders = filteredOrders.filter(order => {
         const emailMatches = !email || (order.email && order.email.toLowerCase() === email.toLowerCase());
         const phoneMatches = !phone || (() => {
@@ -4542,7 +4544,7 @@ app.post('/api/shopify/orders', async (req, res) => {
           const inputLast8 = normalizedInputPhone.slice(-8);
           const orderLast8 = normalizedOrderPhone.slice(-8);
 
-          const matches = inputLast8 === orderLast8 && inputLast8.length >= 8 && orderLast8.length >= 8;
+          const matches = inputLast8 === orderLast8 && inputLast8.length === 8;
           console.log(`📞 PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${normalizedInputPhone}" -> "${inputLast8}", Order: "${order.phone}" -> "${normalizedOrderPhone}" -> "${orderLast8}", Match: ${matches}`);
           return matches;
         })();
@@ -4562,6 +4564,17 @@ app.post('/api/shopify/orders', async (req, res) => {
 
         if (!allMatch) {
           console.log(`❌ SHOPIFY FILTER: Excluding order ${order.id} - Email match: ${emailMatches}, Phone match: ${phoneMatches}, Order match: ${orderNumberMatches}`);
+          console.log(`❌ SHOPIFY FILTER: Order details for ${order.id}:`, {
+            orderEmail: order.email,
+            orderPhone: order.phone,
+            orderName: order.name,
+            orderNumber: order.order_number,
+            searchEmail: email,
+            searchPhone: phone,
+            searchOrderNumber: order_number
+          });
+        } else {
+          console.log(`✅ SHOPIFY FILTER: Order ${order.id} matches all criteria - Email: ${emailMatches}, Phone: ${phoneMatches}, Order: ${orderNumberMatches}`);
         }
 
         // Only return orders that match ALL provided criteria (AND logic)
