@@ -4522,6 +4522,12 @@ app.post('/api/shopify/orders', async (req, res) => {
     
     if (email || phone || order_number) {
       console.log(`🔍 SHOPIFY FILTER: Filtering ${filteredOrders.length} orders with criteria:`, { email, phone, order_number });
+      console.log(`🔍 SHOPIFY FILTER: Sample order data:`, filteredOrders.length > 0 ? {
+        id: filteredOrders[0].id,
+        email: filteredOrders[0].email,
+        phone: filteredOrders[0].phone,
+        name: filteredOrders[0].name
+      } : 'No orders to sample');
       filteredOrders = filteredOrders.filter(order => {
         const emailMatches = !email || (order.email && order.email.toLowerCase() === email.toLowerCase());
         const phoneMatches = !phone || (() => {
@@ -4536,7 +4542,7 @@ app.post('/api/shopify/orders', async (req, res) => {
           const inputLast8 = normalizedInputPhone.slice(-8);
           const orderLast8 = normalizedOrderPhone.slice(-8);
 
-          const matches = inputLast8 === orderLast8 && inputLast8.length === 8;
+          const matches = inputLast8 === orderLast8 && inputLast8.length >= 8 && orderLast8.length >= 8;
           console.log(`📞 PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${normalizedInputPhone}" -> "${inputLast8}", Order: "${order.phone}" -> "${normalizedOrderPhone}" -> "${orderLast8}", Match: ${matches}`);
           return matches;
         })();
