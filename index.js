@@ -4613,7 +4613,9 @@ app.post('/api/shopify/orders', async (req, res) => {
         id: order.id,
         order_number: order.name || order.order_number,
         email: order.email,
-        phone: order.phone || (order.billing_address && order.billing_address.phone),
+        phone: order.phone || 
+               (order.shipping_address && order.shipping_address.phone) || 
+               (order.billing_address && order.billing_address.phone),
         total_price: order.total_price,
         currency: order.currency,
         financial_status: order.financial_status,
