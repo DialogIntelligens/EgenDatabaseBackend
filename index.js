@@ -4532,7 +4532,7 @@ app.post('/api/shopify/orders', async (req, res) => {
             order.billing_address?.phone,
             order.shipping_address?.phone,
             order.customer?.phone
-          ].filter(p => p); // Remove null/undefined values
+          ].filter(p => p && typeof p === 'string'); // Remove null/undefined values and ensure strings
           
           if (phoneLocations.length === 0) {
             console.log(`❌ PHONE MATCH: Order ${order.id} has no phone numbers in any location`);
@@ -4540,12 +4540,12 @@ app.post('/api/shopify/orders', async (req, res) => {
           }
           
           // Normalize input phone by removing all non-digits
-          const normalizedInputPhone = phone.replace(/\D/g, '');
+          const normalizedInputPhone = String(phone).replace(/\D/g, '');
           const inputLast8 = normalizedInputPhone.slice(-8);
           
           // Check if any phone location matches
           for (const orderPhone of phoneLocations) {
-            const normalizedOrderPhone = orderPhone.replace(/\D/g, '');
+            const normalizedOrderPhone = String(orderPhone).replace(/\D/g, '');
             const orderLast8 = normalizedOrderPhone.slice(-8);
             
             if (inputLast8 === orderLast8 && inputLast8.length === 8) {
@@ -4554,7 +4554,7 @@ app.post('/api/shopify/orders', async (req, res) => {
             }
           }
           
-          console.log(`❌ PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phones: [${phoneLocations.map(p => `"${p}" -> "${p.replace(/\D/g, '').slice(-8)}"`).join(', ')}], No match`);
+          console.log(`❌ PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phones: [${phoneLocations.map(p => `"${p}" -> "${String(p).replace(/\D/g, '').slice(-8)}"`).join(', ')}], No match`);
           return false;
         })();
         
@@ -4564,10 +4564,12 @@ app.post('/api/shopify/orders', async (req, res) => {
             return false;
           }
 
-          // Normalize both order numbers by removing # prefix and trimming
-          const normalizedInput = order_number.replace(/^#/, '').trim();
-          const normalizedOrderName = order.name ? order.name.replace(/^#/, '').trim() : '';
-          const normalizedOrderNumber = order.order_number ? order.order_number.replace(/^#/, '').trim() : '';
+          // Normalize input order number by removing # prefix and trimming
+          const normalizedInput = String(order_number).replace(/^#/, '').trim();
+          
+          // Safely convert order fields to strings and normalize
+          const normalizedOrderName = order.name ? String(order.name).replace(/^#/, '').trim() : '';
+          const normalizedOrderNumber = order.order_number ? String(order.order_number).replace(/^#/, '').trim() : '';
 
           // Match if either normalized version equals the input
           const matches = normalizedOrderName === normalizedInput || normalizedOrderNumber === normalizedInput;
