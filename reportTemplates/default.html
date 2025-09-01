@@ -336,13 +336,13 @@
     }
     
     .chart-description {
-      margin-top: 20px;
+      margin-top: 20px; /* Increased margin */
       font-size: 12px;
       color: var(--text-muted);
       text-align: center;
       font-style: italic;
       font-weight: 500;
-      padding-top: 15px;
+      padding-top: 15px; /* Increased padding */
       border-top: 1px solid var(--border-light);
     }
     
@@ -403,7 +403,7 @@
       color: var(--primary-color);
       font-weight: 700;
     }
-    
+
     /* Key Insights - Matching AI Analysis Design */
     .key-insights {
       background: var(--background-secondary);
@@ -647,12 +647,12 @@
       margin-bottom: 35px;
     }
 
-    /* Key insights should start on new page for better alignment */
+    /* Key insights should stay on same page as AI Analysis */
     .key-insights {
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: always;
-      break-before: page;
+      page-break-before: auto;
+      break-before: auto;
       margin-bottom: 35px;
     }
 
@@ -742,12 +742,12 @@
         margin-top: 20px !important;
       }
 
-      /* Key insights spacing - Force new page for alignment */
+      /* Key insights spacing - Keep on same page */
       .key-insights {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
-        page-break-before: always !important;
-        break-before: page !important;
+        page-break-before: auto !important;
+        break-before: auto !important;
         margin-bottom: 30px !important;
         margin-top: 20px !important;
       }
