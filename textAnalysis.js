@@ -298,7 +298,7 @@ export async function analyzeConversations(conversations, progressCallback = nul
   if (ratings.length > 1) {
     try {
       const corr = calculatePearson(ratings, scoresForRatingCorr);
-      ratingScoreCorr = { value: corr, pValue: null, count: ratings.length }; // p-value not readily available
+      ratingScoreCorr = { value: parseFloat(corr.toFixed(3)), pValue: null, count: ratings.length }; // Format to 3 decimal places
       console.log(`Customer Rating vs Score Correlation: r = ${corr?.toFixed(4)}, N = ${ratings.length}`);
     } catch (e) {
       console.error("Error calculating rating-score correlation:", e.message);
@@ -603,7 +603,8 @@ export async function analyzeConversations(conversations, progressCallback = nul
     .slice(0, maxCorrelationsPerCategory)
     .map(item => ({
       ...item,
-      ngram: item.ngram.replace(/^\d+gram:/, '') // Remove "2gram:", "3gram:" etc.
+      ngram: item.ngram.replace(/^\d+gram:/, ''), // Remove "2gram:", "3gram:" etc.
+      correlation: parseFloat(item.correlation.toFixed(3)) // Format to 3 decimal places
     }));
     
   const negativeCorrelations = ngramCorrelations
@@ -612,7 +613,8 @@ export async function analyzeConversations(conversations, progressCallback = nul
     .slice(0, maxCorrelationsPerCategory)
     .map(item => ({
       ...item,
-      ngram: item.ngram.replace(/^\d+gram:/, '') // Remove "2gram:", "3gram:" etc.
+      ngram: item.ngram.replace(/^\d+gram:/, ''), // Remove "2gram:", "3gram:" etc.
+      correlation: parseFloat(item.correlation.toFixed(3)) // Format to 3 decimal places
     }));
 
   console.log("Analysis complete.");
