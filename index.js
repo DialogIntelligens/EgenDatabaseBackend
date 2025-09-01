@@ -4517,8 +4517,93 @@ app.post('/api/shopify/orders', async (req, res) => {
 
     const data = await response.json();
     
+    // Filter orders to ensure they match ALL provided search criteria (AND logic)
+    let filteredOrders = data.orders || [];
+    
+    if (email || phone || order_number) {
+      console.log(`🔍 SHOPIFY FILTER: Filtering ${filteredOrders.length} orders with criteria:`, { email, phone, order_number });
+      filteredOrders = filteredOrders.filter(order => {
+        const emailMatches = !email || (order.email && order.email.toLowerCase() === email.toLowerCase());
+        
+        const phoneMatches = !phone || (() => {
+          // Check multiple phone number locations on the order
+          const phoneLocations = [
+            order.phone,
+            order.billing_address?.phone,
+            order.shipping_address?.phone,
+            order.customer?.phone
+          ].filter(p => p && typeof p === 'string'); // Remove null/undefined values and ensure strings
+          
+          if (phoneLocations.length === 0) {
+            console.log(`❌ PHONE MATCH: Order ${order.id} has no phone numbers in any location`);
+            return false;
+          }
+          
+          // Normalize input phone by removing all non-digits
+          const normalizedInputPhone = String(phone).replace(/\D/g, '');
+          const inputLast8 = normalizedInputPhone.slice(-8);
+          
+          // Check if any phone location matches
+          for (const orderPhone of phoneLocations) {
+            const normalizedOrderPhone = String(orderPhone).replace(/\D/g, '');
+            const orderLast8 = normalizedOrderPhone.slice(-8);
+            
+            if (inputLast8 === orderLast8 && inputLast8.length === 8) {
+              console.log(`✅ PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phone: "${orderPhone}" -> "${orderLast8}", Location matched`);
+              return true;
+            }
+          }
+          
+          console.log(`❌ PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phones: [${phoneLocations.map(p => `"${p}" -> "${String(p).replace(/\D/g, '').slice(-8)}"`).join(', ')}], No match`);
+          return false;
+        })();
+        
+        const orderNumberMatches = !order_number || (() => {
+          if (!order.name && !order.order_number) {
+            console.log(`❌ ORDER MATCH: Order ${order.id} has no order name or number`);
+            return false;
+          }
+
+          // Normalize input order number by removing # prefix and trimming
+          const normalizedInput = String(order_number).replace(/^#/, '').trim();
+          
+          // Safely convert order fields to strings and normalize
+          const normalizedOrderName = order.name ? String(order.name).replace(/^#/, '').trim() : '';
+          const normalizedOrderNumber = order.order_number ? String(order.order_number).replace(/^#/, '').trim() : '';
+
+          // Match if either normalized version equals the input
+          const matches = normalizedOrderName === normalizedInput || normalizedOrderNumber === normalizedInput;
+          console.log(`${matches ? '✅' : '❌'} ORDER MATCH: Order ${order.id} - Input: "${order_number}" -> "${normalizedInput}", Order name: "${order.name || 'N/A'}" -> "${normalizedOrderName}", Order number: "${order.order_number || 'N/A'}" -> "${normalizedOrderNumber}", Match: ${matches}`);
+          return matches;
+        })();
+
+        const allMatch = emailMatches && phoneMatches && orderNumberMatches;
+
+        if (!allMatch) {
+          console.log(`❌ SHOPIFY FILTER: Excluding order ${order.id} (#${order.name || order.order_number || 'N/A'}) - Email match: ${emailMatches}, Phone match: ${phoneMatches}, Order match: ${orderNumberMatches}`);
+          console.log(`❌ EXCLUDED ORDER DETAILS:`, JSON.stringify({
+            id: order.id,
+            name: order.name,
+            email: order.email,
+            phone: order.phone,
+            billing_phone: order.billing_address?.phone,
+            shipping_phone: order.shipping_address?.phone,
+            customer_phone: order.customer?.phone,
+            tags: order.tags,
+            created_at: order.created_at
+          }, null, 2));
+        } else {
+          console.log(`✅ SHOPIFY FILTER: Including order ${order.id} (#${order.name || order.order_number || 'N/A'}) - All criteria matched`);
+        }
+
+        // Only return orders that match ALL provided criteria (AND logic)
+        return allMatch;
+      });
+      console.log(`✅ SHOPIFY FILTER: After filtering: ${filteredOrders.length} orders remain out of ${data.orders.length} total`);
+    }
+    
     // Transform the data and fetch fulfillment information for each order
-    const transformedOrders = data.orders ? await Promise.all(data.orders.map(async (order) => {
+    const transformedOrders = filteredOrders ? await Promise.all(filteredOrders.map(async (order) => {
       // Fetch fulfillments for this order
       let fulfillments = [];
       try {
@@ -4555,6 +4640,7 @@ app.post('/api/shopify/orders', async (req, res) => {
         created_at: order.created_at,
         updated_at: order.updated_at,
         customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
+        tags: order.tags ? order.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [],
         line_items: order.line_items ? order.line_items.map(item => ({
           id: item.id,
           name: item.name,
@@ -4598,7 +4684,8 @@ app.post('/api/shopify/orders', async (req, res) => {
     return res.json({
       success: true,
       orders: transformedOrders,
-      total_count: data.orders ? data.orders.length : 0
+      total_count: transformedOrders.length,
+      filtered_from: data.orders ? data.orders.length : 0
     });
 
   } catch (error) {
