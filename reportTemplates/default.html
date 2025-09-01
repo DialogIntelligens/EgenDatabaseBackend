@@ -346,30 +346,30 @@
       border-top: 1px solid var(--border-light);
     }
     
-    /* Analysis Content - Enhanced Design for Better Readability */
+    /* Analysis Content - Compact for Page 1 */
     .analysis-content {
       background: var(--background-secondary);
       border-left: 4px solid var(--accent-color);
-      border-radius: 20px;
-      padding: 30px;
-      margin-bottom: 25px;
-      font-size: 15px;
-      line-height: 1.7;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 15px;
+      font-size: 13px;
+      line-height: 1.5;
       page-break-inside: avoid;
       break-inside: avoid;
       box-shadow: var(--shadow-light);
       border: 1px solid var(--border-color);
     }
 
-    /* Simple headings with good visibility */
+    /* Compact headings for AI Analysis */
     .analysis-content h1,
     .analysis-content h2,
     .analysis-content h3 {
-      margin-top: 20px;
-      margin-bottom: 12px;
+      margin-top: 15px;
+      margin-bottom: 8px;
       color: var(--primary-color);
-      font-size: 17px;
-      line-height: 1.3;
+      font-size: 15px;
+      line-height: 1.2;
       font-weight: 600;
     }
 
@@ -379,24 +379,22 @@
       margin-top: 0;
     }
 
-    /* Clean list styling */
+    /* Compact list styling */
     .analysis-content ul,
     .analysis-content ol {
-      margin-left: 20px;
-      margin-bottom: 15px;
+      margin-left: 18px;
+      margin-bottom: 10px;
     }
 
     .analysis-content li {
-      margin-bottom: 8px;
-      line-height: 1.7;
+      margin-bottom: 5px;
+      line-height: 1.5;
     }
 
-
-
-    /* Enhanced paragraph styling */
+    /* Compact paragraph styling */
     .analysis-content p {
-      margin-bottom: 15px;
-      line-height: 1.7;
+      margin-bottom: 10px;
+      line-height: 1.5;
       text-align: justify;
     }
 
@@ -406,26 +404,21 @@
       font-weight: 700;
     }
 
-
-    
-
-    
-    /* Key Insights - Updated with Dashboard Styling */
+    /* Key Insights - Matching AI Analysis Design */
     .key-insights {
-      background: var(--primary-color);
-      color: white;
+      background: var(--background-secondary);
+      border-left: 4px solid var(--accent-color);
+      border-radius: 20px;
       padding: 30px;
-      border-radius: 24px;
       margin-bottom: 25px;
       page-break-inside: avoid;
       break-inside: avoid;
-      -webkit-print-color-adjust: exact;
-      color-adjust: exact;
-      box-shadow: var(--shadow-primary);
+      box-shadow: var(--shadow-light);
+      border: 1px solid var(--border-color);
     }
     
     .key-insights h3 {
-      color: white;
+      color: var(--primary-color);
       font-size: 20px;
       margin-bottom: 20px;
     }
@@ -435,24 +428,25 @@
     }
     
     .insight-item {
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(104, 107, 241, 0.1);
       padding: 15px;
       border-radius: 16px;
       margin-bottom: 10px;
       font-size: 13px;
       line-height: 1.5;
-      border-left: 3px solid rgba(255, 255, 255, 0.3);
+      border-left: 3px solid var(--primary-color);
+      color: var(--text-primary);
     }
 
-    /* Text Analysis Styling */
+    /* Text Analysis Styling - Matching Design */
     .text-analysis-section {
       margin-top: 25px;
       padding-top: 20px;
-      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      border-top: 1px solid var(--border-light);
     }
 
     .analysis-subtitle {
-      color: white;
+      color: var(--primary-color);
       font-size: 16px;
       font-weight: 600;
       margin-bottom: 20px;
@@ -461,16 +455,17 @@
 
     .correlation-container {
       margin-bottom: 20px;
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(104, 107, 241, 0.05);
       border-radius: 12px;
       padding: 15px;
+      border: 1px solid var(--border-light);
     }
 
     .correlation-title {
       font-size: 14px;
       font-weight: 600;
       margin-bottom: 8px;
-      color: white;
+      color: var(--text-primary);
     }
 
     .correlation-title.positive {
@@ -483,7 +478,7 @@
 
     .correlation-description {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.8);
+      color: var(--text-secondary);
       margin-bottom: 12px;
       font-style: italic;
     }
@@ -502,14 +497,15 @@
       align-items: center;
       padding: 6px 10px;
       margin-bottom: 4px;
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(104, 107, 241, 0.08);
       border-radius: 6px;
       font-size: 11px;
+      border-left: 2px solid var(--primary-color);
     }
 
     .ngram-text {
       flex: 1;
-      color: white;
+      color: var(--text-primary);
       font-weight: 500;
     }
 
@@ -530,7 +526,7 @@
 
     .doc-count {
       font-size: 10px;
-      color: rgba(255, 255, 255, 0.6);
+      color: var(--text-muted);
       margin-left: 8px;
       min-width: 80px;
       text-align: right;
@@ -539,11 +535,12 @@
     .correlation-summary {
       margin-top: 15px;
       padding: 10px;
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(104, 107, 241, 0.1);
       border-radius: 8px;
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--text-secondary);
       text-align: center;
+      border: 1px solid var(--border-light);
     }
     
     /* Footer - Updated with Dashboard Styling */
@@ -751,8 +748,8 @@
         break-inside: avoid !important;
         page-break-before: always !important;
         break-before: page !important;
-        margin-bottom: 50px !important;
-        margin-top: 30px !important;
+        margin-bottom: 30px !important;
+        margin-top: 20px !important;
       }
 
       /* Chart container optimizations */
@@ -841,49 +838,45 @@
         font-size: 12px !important;
       }
 
-      /* Analysis content - Enhanced design for PDF */
+      /* Analysis content - Ultra compact for PDF */
       .analysis-content {
-        padding: 25px !important;
-        margin-bottom: 25px !important;
-        font-size: 14px !important;
-        line-height: 1.6 !important;
-        border-radius: 18px !important;
+        padding: 15px !important;
+        margin-bottom: 15px !important;
+        font-size: 12px !important;
+        line-height: 1.4 !important;
+        border-radius: 12px !important;
       }
 
       .analysis-content h1,
       .analysis-content h2,
       .analysis-content h3 {
-        margin-top: 15px !important;
-        margin-bottom: 10px !important;
-        font-size: 16px !important;
-        line-height: 1.3 !important;
+        margin-top: 10px !important;
+        margin-bottom: 6px !important;
+        font-size: 14px !important;
+        line-height: 1.2 !important;
         font-weight: 600 !important;
       }
 
       .analysis-content ul,
       .analysis-content ol {
-        margin-left: 20px !important;
-        margin-bottom: 12px !important;
+        margin-left: 16px !important;
+        margin-bottom: 8px !important;
       }
 
       .analysis-content li {
-        margin-bottom: 6px !important;
-        line-height: 1.6 !important;
+        margin-bottom: 3px !important;
+        line-height: 1.4 !important;
       }
 
       .analysis-content p {
-        margin-bottom: 12px !important;
-        line-height: 1.6 !important;
+        margin-bottom: 8px !important;
+        line-height: 1.4 !important;
         text-align: justify !important;
       }
 
       .analysis-content strong {
         font-weight: 700 !important;
       }
-
-
-
-
 
       /* First section (AI Analysis) optimization for PDF - Ultra Compact */
       .content > .section:first-of-type {
@@ -903,12 +896,6 @@
       * {
         -webkit-print-color-adjust: exact !important;
         color-adjust: exact !important;
-      }
-
-      /* Force page breaks for Key Insights specifically */
-      .key-insights {
-        page-break-before: always !important;
-        break-before: page !important;
       }
 
       /* Force page breaks for major sections if needed */
