@@ -647,12 +647,12 @@
       margin-bottom: 35px;
     }
 
-    /* Key insights should stay on same page as AI Analysis */
+    /* Key insights should start on new page for better alignment */
     .key-insights {
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: auto;
-      break-before: auto;
+      page-break-before: always;
+      break-before: page;
       margin-bottom: 35px;
     }
 
@@ -742,12 +742,12 @@
         margin-top: 20px !important;
       }
 
-      /* Key insights spacing - Keep on same page */
+      /* Key insights spacing - Force new page for alignment */
       .key-insights {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
-        page-break-before: auto !important;
-        break-before: auto !important;
+        page-break-before: always !important;
+        break-before: page !important;
         margin-bottom: 30px !important;
         margin-top: 20px !important;
       }
