@@ -647,12 +647,12 @@
       margin-bottom: 35px;
     }
 
-    /* Key insights should stay on same page as AI Analysis */
+    /* Key insights should start on new page */
     .key-insights {
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: auto;
-      break-before: auto;
+      page-break-before: always;
+      break-before: page;
       margin-bottom: 35px;
     }
 
@@ -742,12 +742,12 @@
         margin-top: 20px !important;
       }
 
-      /* Key insights spacing - Keep on same page */
+      /* Key insights spacing - Force new page */
       .key-insights {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
-        page-break-before: auto !important;
-        break-before: auto !important;
+        page-break-before: always !important;
+        break-before: page !important;
         margin-bottom: 30px !important;
         margin-top: 20px !important;
       }
@@ -838,39 +838,39 @@
         font-size: 12px !important;
       }
 
-      /* Analysis content - Enhanced design for PDF */
+      /* Analysis content - Ultra compact for PDF */
       .analysis-content {
-        padding: 25px !important;
-        margin-bottom: 25px !important;
-        font-size: 14px !important;
-        line-height: 1.6 !important;
-        border-radius: 18px !important;
+        padding: 15px !important;
+        margin-bottom: 15px !important;
+        font-size: 12px !important;
+        line-height: 1.4 !important;
+        border-radius: 12px !important;
       }
 
       .analysis-content h1,
       .analysis-content h2,
       .analysis-content h3 {
-        margin-top: 15px !important;
-        margin-bottom: 10px !important;
-        font-size: 16px !important;
-        line-height: 1.3 !important;
+        margin-top: 10px !important;
+        margin-bottom: 6px !important;
+        font-size: 14px !important;
+        line-height: 1.2 !important;
         font-weight: 600 !important;
       }
 
       .analysis-content ul,
       .analysis-content ol {
-        margin-left: 20px !important;
-        margin-bottom: 12px !important;
+        margin-left: 16px !important;
+        margin-bottom: 8px !important;
       }
 
       .analysis-content li {
-        margin-bottom: 6px !important;
-        line-height: 1.6 !important;
+        margin-bottom: 3px !important;
+        line-height: 1.4 !important;
       }
 
       .analysis-content p {
-        margin-bottom: 12px !important;
-        line-height: 1.6 !important;
+        margin-bottom: 8px !important;
+        line-height: 1.4 !important;
         text-align: justify !important;
       }
 
