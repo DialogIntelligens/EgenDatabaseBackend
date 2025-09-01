@@ -3289,6 +3289,63 @@ app.get('/user/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Get user's statistic settings
+app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    const result = await pool.query(
+      'SELECT * FROM userStatisticSettings WHERE user_id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      // Return default settings if none exist
+      return res.json({
+        business_hours_start: '09:00:00',
+        business_hours_end: '15:00:00'
+      });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching user statistic settings:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user's statistic settings
+app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { business_hours_start, business_hours_end } = req.body;
+    
+    // Validate time format (HH:MM or HH:MM:SS)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+    if (!timeRegex.test(business_hours_start) || !timeRegex.test(business_hours_end)) {
+      return res.status(400).json({ error: 'Invalid time format' });
+    }
+    
+    // Use UPSERT (INSERT ... ON CONFLICT)
+    const result = await pool.query(
+      `INSERT INTO userStatisticSettings (user_id, business_hours_start, business_hours_end)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id) 
+       DO UPDATE SET 
+          business_hours_start = EXCLUDED.business_hours_start,
+          business_hours_end = EXCLUDED.business_hours_end,
+          updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [userId, business_hours_start, business_hours_end]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating user statistic settings:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Add this endpoint to update a user's chatbot IDs and filepaths
 app.patch('/users/:id', authenticateToken, async (req, res) => {
   const targetId = parseInt(req.params.id);
