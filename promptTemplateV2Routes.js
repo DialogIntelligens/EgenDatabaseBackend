@@ -400,22 +400,50 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       const template = templateResult.rows[0];
       let sections = template.sections || [];
       
-      // Create the new section
-      const newSection = { key: parseInt(section_key), content: content || '' };
-      
-      // Insert the section in the right position
+      // Insert the section in the right position and calculate the appropriate key
+      let newSection;
       if (insert_after_key !== null && insert_after_key !== undefined) {
         const insertIndex = sections.findIndex(s => s.key === insert_after_key);
         if (insertIndex >= 0) {
+          // Calculate the key based on the insertion position
+          const prevSection = sections[insertIndex];
+          const nextSection = sections[insertIndex + 1];
+
+          let calculatedKey;
+          if (nextSection) {
+            // Insert between two sections
+            const gap = nextSection.key - prevSection.key;
+            if (gap >= 3) {
+              calculatedKey = prevSection.key + 1;
+            } else if (gap === 2) {
+              calculatedKey = prevSection.key + 1;
+            } else {
+              calculatedKey = prevSection.key * 10 + 5;
+            }
+
+            // Ensure the key is unique
+            while (sections.some(s => s.key === calculatedKey)) {
+              calculatedKey += 1;
+            }
+          } else {
+            // Insert at the end
+            calculatedKey = prevSection.key + 1;
+          }
+
+          newSection = { key: calculatedKey, content: content || '' };
           sections.splice(insertIndex + 1, 0, newSection);
         } else {
+          // insert_after_key not found, add to end with provided key or default
+          newSection = { key: parseInt(section_key) || 1000, content: content || '' };
           sections.push(newSection);
         }
       } else {
+        // No insert_after_key provided, add to end
+        newSection = { key: parseInt(section_key), content: content || '' };
         sections.push(newSection);
       }
-      
-      // Sort sections by key
+
+      // Sort sections by key to ensure proper ordering
       sections.sort((a, b) => a.key - b.key);
       
       // Update template with new section
