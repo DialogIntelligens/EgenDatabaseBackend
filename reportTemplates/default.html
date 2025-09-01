@@ -443,6 +443,108 @@
       line-height: 1.5;
       border-left: 3px solid rgba(255, 255, 255, 0.3);
     }
+
+    /* Text Analysis Styling */
+    .text-analysis-section {
+      margin-top: 25px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .analysis-subtitle {
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .correlation-container {
+      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 15px;
+    }
+
+    .correlation-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: white;
+    }
+
+    .correlation-title.positive {
+      color: #48bb78;
+    }
+
+    .correlation-title.negative {
+      color: #ff6b6b;
+    }
+
+    .correlation-description {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      margin-bottom: 12px;
+      font-style: italic;
+    }
+
+    .correlation-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .correlation-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      margin-bottom: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .ngram-text {
+      flex: 1;
+      color: white;
+      font-weight: 500;
+    }
+
+    .correlation-value {
+      font-weight: 600;
+      margin-left: 10px;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    .correlation-value.positive {
+      color: #48bb78;
+    }
+
+    .correlation-value.negative {
+      color: #ff6b6b;
+    }
+
+    .doc-count {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-left: 8px;
+      min-width: 80px;
+      text-align: right;
+    }
+
+    .correlation-summary {
+      margin-top: 15px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
+    }
     
     /* Footer - Updated with Dashboard Styling */
     .footer {
@@ -881,6 +983,60 @@
         </div>
         {{/if}}
       </div>
+
+      <!-- Text Analysis Results -->
+      {{#if textAnalysis}}
+      <div class="text-analysis-section">
+        <h4 class="analysis-subtitle">📊 Customer Language Analysis</h4>
+        
+        {{#if textAnalysis.positiveCorrelations}}
+        <div class="correlation-container">
+          <h5 class="correlation-title positive">✅ Most Positive Language Patterns</h5>
+          <div class="correlation-description">
+            Words and phrases that correlate with higher customer satisfaction scores:
+          </div>
+          <ul class="correlation-list positive">
+            {{#each textAnalysis.positiveCorrelations}}
+            <li class="correlation-item">
+              <span class="ngram-text">{{this.ngram}}</span>
+              <span class="correlation-value positive">+{{this.correlation}}</span>
+              <span class="doc-count">({{this.documentCount}} conversations)</span>
+            </li>
+            {{/each}}
+          </ul>
+        </div>
+        {{/if}}
+
+        {{#if textAnalysis.negativeCorrelations}}
+        <div class="correlation-container">
+          <h5 class="correlation-title negative">⚠️ Most Negative Language Patterns</h5>
+          <div class="correlation-description">
+            Words and phrases that correlate with lower customer satisfaction scores:
+          </div>
+          <ul class="correlation-list negative">
+            {{#each textAnalysis.negativeCorrelations}}
+            <li class="correlation-item">
+              <span class="ngram-text">{{this.ngram}}</span>
+              <span class="correlation-value negative">{{this.correlation}}</span>
+              <span class="doc-count">({{this.documentCount}} conversations)</span>
+            </li>
+            {{/each}}
+          </ul>
+        </div>
+        {{/if}}
+
+        {{#if textAnalysis.ratingScoreCorrelation}}
+        <div class="correlation-summary">
+          <strong>Overall Correlation:</strong> Customer ratings and satisfaction scores show a correlation of 
+          {{#if textAnalysis.ratingScoreCorrelation.value}}
+          {{textAnalysis.ratingScoreCorrelation.value}} ({{textAnalysis.ratingScoreCorrelation.count}} conversations)
+          {{else}}
+          N/A (insufficient data)
+          {{/if}}
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
     </div>
  
               <!-- Performance Analytics Section -->
