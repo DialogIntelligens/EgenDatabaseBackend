@@ -360,14 +360,13 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         }
       }
 
-      // Fallback to user's default popup message
+      // Fallback to user's default popup message by finding the user who owns this chatbot
       const userResult = await pool.query(`
         SELECT u.popup_message
         FROM users u
-        JOIN split_tests st ON u.id = st.user_id
-        WHERE st.chatbot_id = $1
+        WHERE u.chatbot_ids @> $1::jsonb
         LIMIT 1
-      `, [chatbot_id]);
+      `, [JSON.stringify([chatbot_id])]);
 
       if (userResult.rows.length > 0 && userResult.rows[0].popup_message) {
         return res.json({
