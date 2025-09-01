@@ -11,13 +11,6 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
     const userId = req.user.userId;
 
     try {
-      console.log(`Fetching split tests for chatbot_id: ${chatbot_id}, user_id: ${userId}`);
-      
-      // First, let's check if there are ANY split tests in the database for debugging
-      const allSplitTests = await pool.query('SELECT * FROM split_tests');
-      console.log('Total split tests in database:', allSplitTests.rows.length);
-      console.log('All split tests:', allSplitTests.rows);
-      
       // Get split tests with their variants
       const result = await pool.query(`
         SELECT 
@@ -40,14 +33,10 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         ORDER BY st.created_at DESC
       `, [chatbot_id, userId]);
 
-      console.log(`Found ${result.rows.length} split tests for user ${userId}, chatbot ${chatbot_id}`);
-      console.log('Split test results:', result.rows);
-
       res.json(result.rows);
     } catch (error) {
       console.error('Error fetching split tests:', error);
-      console.error('Error details:', error.message);
-      res.status(500).json({ error: 'Failed to fetch split tests', details: error.message });
+      res.status(500).json({ error: 'Failed to fetch split tests' });
     }
   });
 
@@ -55,8 +44,6 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
   app.post('/split-tests', authenticateToken, async (req, res) => {
     const { user_id, chatbot_id, name, variants } = req.body;
     const requestingUserId = req.user.userId;
-
-    console.log('Creating split test with params:', { user_id, chatbot_id, name, variants, requestingUserId });
 
     // Validate input
     if (!chatbot_id || !name || !variants || !Array.isArray(variants)) {
@@ -79,7 +66,6 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       await client.query('BEGIN');
 
       // Create split test
-      console.log('Inserting split test:', { user_id, chatbot_id, name });
       const splitTestResult = await client.query(`
         INSERT INTO split_tests (user_id, chatbot_id, name, is_enabled)
         VALUES ($1, $2, $3, false)
@@ -87,20 +73,21 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       `, [user_id, chatbot_id, name]);
 
       const splitTestId = splitTestResult.rows[0].id;
-      console.log('Split test created with ID:', splitTestId);
 
       // Create variants
+      console.log('Creating variants for split test:', splitTestId, variants);
       for (const variant of variants) {
-        console.log('Inserting variant:', { splitTestId, variant });
-        await client.query(`
+        console.log('Creating variant:', variant);
+        const variantResult = await client.query(`
           INSERT INTO split_test_variants (split_test_id, name, percentage, popup_message)
           VALUES ($1, $2, $3, $4)
+          RETURNING *
         `, [splitTestId, variant.name, variant.percentage, variant.popup_message || '']);
+        console.log('Variant created:', variantResult.rows[0]);
       }
 
       await client.query('COMMIT');
       
-      console.log('Split test creation completed successfully');
       res.status(201).json({
         message: 'Split test created successfully',
         split_test: splitTestResult.rows[0]
@@ -108,8 +95,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error creating split test:', error);
-      console.error('Error details:', error.message);
-      res.status(500).json({ error: 'Failed to create split test', details: error.message });
+      res.status(500).json({ error: 'Failed to create split test' });
     } finally {
       client.release();
     }
