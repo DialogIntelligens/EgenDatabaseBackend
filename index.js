@@ -1058,7 +1058,10 @@ app.post('/register', async (req, res) => {
       ]
     );
 
-    return res.status(201).json({ message: 'User registered successfully' });
+    return res.status(201).json({ 
+      message: 'User registered successfully',
+      user: { id: result.rows[0].id }
+    });
   } catch (err) {
     console.error('Error registering user:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
