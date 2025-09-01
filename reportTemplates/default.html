@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title> AI Analysis Insights - Dialog Intelligens </title>
+  <!-- Google Fonts - Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     /* Updated Design System - Matching Dashboard */
     :root {
@@ -41,7 +45,7 @@
     }
     
     body {
-      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
       color: var(--text-primary);
       background: white;
@@ -50,6 +54,7 @@
       font-size: 14px;
       -webkit-print-color-adjust: exact;
       color-adjust: exact;
+      font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     }
     
     /* PDF Container - A4 optimized */
@@ -136,7 +141,15 @@
 
     /* AI Analysis section specific optimization for first page */
     .content > .section:first-of-type.page-break-inside-avoid {
-      margin-top: 10px;
+      margin-top: 8px;
+    }
+
+    .content > .section:first-of-type .section-header {
+      margin-bottom: 15px;
+    }
+
+    .content > .section:first-of-type .analysis-content {
+      margin-top: 8px;
     }
     
     /* PDF-Safe Section Styling */
@@ -333,49 +346,69 @@
       border-top: 1px solid var(--border-light);
     }
     
-    /* Analysis Content - Updated with Dashboard Styling - More Compact */
+    /* Analysis Content - Enhanced Design for Better Readability */
     .analysis-content {
       background: var(--background-secondary);
       border-left: 4px solid var(--accent-color);
       border-radius: 20px;
-      padding: 20px;
-      margin-bottom: 20px;
-      font-size: 13px;
-      line-height: 1.6;
+      padding: 30px;
+      margin-bottom: 25px;
+      font-size: 15px;
+      line-height: 1.7;
       page-break-inside: avoid;
       break-inside: avoid;
       box-shadow: var(--shadow-light);
+      border: 1px solid var(--border-color);
     }
-    
+
+    /* Simple headings with good visibility */
     .analysis-content h1,
     .analysis-content h2,
     .analysis-content h3 {
       margin-top: 20px;
-      margin-bottom: 15px;
+      margin-bottom: 12px;
       color: var(--primary-color);
+      font-size: 17px;
+      line-height: 1.3;
+      font-weight: 600;
     }
-    
+
     .analysis-content h1:first-child,
     .analysis-content h2:first-child,
     .analysis-content h3:first-child {
       margin-top: 0;
     }
-    
+
+    /* Clean list styling */
     .analysis-content ul,
     .analysis-content ol {
       margin-left: 20px;
       margin-bottom: 15px;
     }
-    
+
     .analysis-content li {
-      margin-bottom: 5px;
-      line-height: 1.6;
+      margin-bottom: 8px;
+      line-height: 1.7;
     }
-    
+
+
+
+    /* Enhanced paragraph styling */
+    .analysis-content p {
+      margin-bottom: 15px;
+      line-height: 1.7;
+      text-align: justify;
+    }
+
+    /* Simple strong text styling */
     .analysis-content strong {
       color: var(--primary-color);
-      font-weight: 600;
+      font-weight: 700;
     }
+
+
+    
+
     
     /* Key Insights - Updated with Dashboard Styling */
     .key-insights {
@@ -409,6 +442,108 @@
       font-size: 13px;
       line-height: 1.5;
       border-left: 3px solid rgba(255, 255, 255, 0.3);
+    }
+
+    /* Text Analysis Styling */
+    .text-analysis-section {
+      margin-top: 25px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .analysis-subtitle {
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .correlation-container {
+      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 15px;
+    }
+
+    .correlation-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: white;
+    }
+
+    .correlation-title.positive {
+      color: #48bb78;
+    }
+
+    .correlation-title.negative {
+      color: #ff6b6b;
+    }
+
+    .correlation-description {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      margin-bottom: 12px;
+      font-style: italic;
+    }
+
+    .correlation-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .correlation-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      margin-bottom: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .ngram-text {
+      flex: 1;
+      color: white;
+      font-weight: 500;
+    }
+
+    .correlation-value {
+      font-weight: 600;
+      margin-left: 10px;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    .correlation-value.positive {
+      color: #48bb78;
+    }
+
+    .correlation-value.negative {
+      color: #ff6b6b;
+    }
+
+    .doc-count {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-left: 8px;
+      min-width: 80px;
+      text-align: right;
+    }
+
+    .correlation-summary {
+      margin-top: 15px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
     }
     
     /* Footer - Updated with Dashboard Styling */
@@ -515,12 +650,12 @@
       margin-bottom: 35px;
     }
 
-    /* Key insights should not be split */
+    /* Key insights should start on new page */
     .key-insights {
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: auto;
-      break-before: auto;
+      page-break-before: always;
+      break-before: page;
       margin-bottom: 35px;
     }
 
@@ -610,10 +745,12 @@
         margin-top: 20px !important;
       }
 
-      /* Key insights spacing */
+      /* Key insights spacing - Force new page */
       .key-insights {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
+        page-break-before: always !important;
+        break-before: page !important;
         margin-bottom: 50px !important;
         margin-top: 30px !important;
       }
@@ -704,27 +841,74 @@
         font-size: 12px !important;
       }
 
-      /* Analysis content more compact for PDF */
+      /* Analysis content - Enhanced design for PDF */
       .analysis-content {
-        padding: 18px !important;
-        margin-bottom: 18px !important;
-        font-size: 12px !important;
-        line-height: 1.5 !important;
+        padding: 25px !important;
+        margin-bottom: 25px !important;
+        font-size: 14px !important;
+        line-height: 1.6 !important;
+        border-radius: 18px !important;
       }
 
-      /* First section (AI Analysis) optimization for PDF */
+      .analysis-content h1,
+      .analysis-content h2,
+      .analysis-content h3 {
+        margin-top: 15px !important;
+        margin-bottom: 10px !important;
+        font-size: 16px !important;
+        line-height: 1.3 !important;
+        font-weight: 600 !important;
+      }
+
+      .analysis-content ul,
+      .analysis-content ol {
+        margin-left: 20px !important;
+        margin-bottom: 12px !important;
+      }
+
+      .analysis-content li {
+        margin-bottom: 6px !important;
+        line-height: 1.6 !important;
+      }
+
+      .analysis-content p {
+        margin-bottom: 12px !important;
+        line-height: 1.6 !important;
+        text-align: justify !important;
+      }
+
+      .analysis-content strong {
+        font-weight: 700 !important;
+      }
+
+
+
+
+
+      /* First section (AI Analysis) optimization for PDF - Ultra Compact */
       .content > .section:first-of-type {
-        margin-top: 8px !important;
+        margin-top: 5px !important;
       }
 
       .content > .section:first-of-type .section-header {
-        margin-bottom: 12px !important;
+        margin-bottom: 8px !important;
+        padding-bottom: 3px !important;
+      }
+
+      .content > .section:first-of-type .analysis-content {
+        margin-top: 5px !important;
       }
 
       /* Ensure colors print correctly */
       * {
         -webkit-print-color-adjust: exact !important;
         color-adjust: exact !important;
+      }
+
+      /* Force page breaks for Key Insights specifically */
+      .key-insights {
+        page-break-before: always !important;
+        break-before: page !important;
       }
 
       /* Force page breaks for major sections if needed */
@@ -799,6 +983,60 @@
         </div>
         {{/if}}
       </div>
+
+      <!-- Text Analysis Results -->
+      {{#if textAnalysis}}
+      <div class="text-analysis-section">
+        <h4 class="analysis-subtitle">📊 Customer Language Analysis</h4>
+        
+        {{#if textAnalysis.positiveCorrelations}}
+        <div class="correlation-container">
+          <h5 class="correlation-title positive">✅ Most Positive Language Patterns</h5>
+          <div class="correlation-description">
+            Words and phrases that correlate with higher customer satisfaction scores:
+          </div>
+          <ul class="correlation-list positive">
+            {{#each textAnalysis.positiveCorrelations}}
+            <li class="correlation-item">
+              <span class="ngram-text">{{this.ngram}}</span>
+              <span class="correlation-value positive">+{{this.correlation}}</span>
+              <span class="doc-count">({{this.documentCount}} conversations)</span>
+            </li>
+            {{/each}}
+          </ul>
+        </div>
+        {{/if}}
+
+        {{#if textAnalysis.negativeCorrelations}}
+        <div class="correlation-container">
+          <h5 class="correlation-title negative">⚠️ Most Negative Language Patterns</h5>
+          <div class="correlation-description">
+            Words and phrases that correlate with lower customer satisfaction scores:
+          </div>
+          <ul class="correlation-list negative">
+            {{#each textAnalysis.negativeCorrelations}}
+            <li class="correlation-item">
+              <span class="ngram-text">{{this.ngram}}</span>
+              <span class="correlation-value negative">{{this.correlation}}</span>
+              <span class="doc-count">({{this.documentCount}} conversations)</span>
+            </li>
+            {{/each}}
+          </ul>
+        </div>
+        {{/if}}
+
+        {{#if textAnalysis.ratingScoreCorrelation}}
+        <div class="correlation-summary">
+          <strong>Overall Correlation:</strong> Customer ratings and satisfaction scores show a correlation of 
+          {{#if textAnalysis.ratingScoreCorrelation.value}}
+          {{textAnalysis.ratingScoreCorrelation.value}} ({{textAnalysis.ratingScoreCorrelation.count}} conversations)
+          {{else}}
+          N/A (insufficient data)
+          {{/if}}
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
     </div>
  
               <!-- Performance Analytics Section -->
