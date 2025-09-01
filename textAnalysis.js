@@ -595,17 +595,25 @@ export async function analyzeConversations(conversations, progressCallback = nul
   // --- Sort and select top correlations ---
   ngramCorrelations.sort((a, b) => b.correlation - a.correlation); // Sort desc
 
-  // Limit to maximum 15 n-grams per category while keeping the strongest correlations
-  const maxCorrelationsPerCategory = 15;
+  // Limit to maximum 5 n-grams per category while keeping the strongest correlations
+  const maxCorrelationsPerCategory = 5;
   
   const positiveCorrelations = ngramCorrelations
     .filter(c => c.correlation > 0)
-    .slice(0, maxCorrelationsPerCategory);
+    .slice(0, maxCorrelationsPerCategory)
+    .map(item => ({
+      ...item,
+      ngram: item.ngram.replace(/^\d+gram:/, '') // Remove "2gram:", "3gram:" etc.
+    }));
     
   const negativeCorrelations = ngramCorrelations
     .filter(c => c.correlation < 0)
     .sort((a, b) => a.correlation - b.correlation) // Sort ascending for negatives
-    .slice(0, maxCorrelationsPerCategory);
+    .slice(0, maxCorrelationsPerCategory)
+    .map(item => ({
+      ...item,
+      ngram: item.ngram.replace(/^\d+gram:/, '') // Remove "2gram:", "3gram:" etc.
+    }));
 
   console.log("Analysis complete.");
 
