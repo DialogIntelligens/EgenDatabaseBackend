@@ -13,6 +13,8 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
+import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
+import { registerSplitTestRoutes } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -178,6 +180,10 @@ async function getPineconeApiKeyForIndex(userId, indexName, namespace) {
     throw error;
   }
 }
+// Register Popup Message routes (Step 1)
+registerPopupMessageRoutes(app, pool, authenticateToken);
+registerSplitTestRoutes(app, pool, authenticateToken);
+
 
 /* ================================
    Bodylab Order API Proxy
