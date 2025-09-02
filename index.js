@@ -3070,6 +3070,575 @@ app.get('/livechat-statistics', authenticateToken, async (req, res) => {
 });
 
 /* ================================
+   Optimized Statistics Endpoints
+================================ */
+
+// Helper function to process daily chart data
+function processDailyChartData(dailyRows) {
+  if (!dailyRows || dailyRows.length === 0) return null;
+  
+  const dailyMessages = {};
+  dailyRows.forEach(row => {
+    const dateKey = row.date.toISOString().split('T')[0];
+    dailyMessages[dateKey] = (dailyMessages[dateKey] || 0) + parseInt(row.total_messages || 0);
+  });
+  
+  // Determine if we should use weekly aggregation
+  if (Object.keys(dailyMessages).length > 50) {
+    const weeklyMessages = {};
+    Object.entries(dailyMessages).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - date.getDay());
+      const weekKey = weekStart.toISOString().split('T')[0];
+      weeklyMessages[weekKey] = (weeklyMessages[weekKey] || 0) + count;
+    });
+    
+    return {
+      labels: Object.keys(weeklyMessages),
+      datasets: [{
+        label: 'Weekly Messages',
+        data: Object.values(weeklyMessages).map(val => Math.round(val)),
+        fill: false,
+        backgroundColor: '#777BFF',
+        borderColor: '#686BF1',
+        borderWidth: 2,
+      }],
+      isWeekly: true
+    };
+  } else {
+    return {
+      labels: Object.keys(dailyMessages),
+      datasets: [{
+        label: 'Daily Messages',
+        data: Object.values(dailyMessages).map(val => Math.round(val)),
+        fill: false,
+        backgroundColor: '#777BFF',
+        borderColor: '#686BF1',
+        borderWidth: 2,
+      }],
+      isWeekly: false
+    };
+  }
+}
+
+// Helper function to process hourly chart data
+function processHourlyChartData(hourlyRows) {
+  const hourlyMessages = Array(24).fill(0);
+  
+  hourlyRows.forEach(row => {
+    const hour = parseInt(row.hour);
+    if (hour >= 0 && hour < 24) {
+      hourlyMessages[hour] += parseInt(row.total_messages || 0);
+    }
+  });
+  
+  return {
+    labels: Array.from({ length: 24 }, (_, i) => `${i}`),
+    datasets: [{
+      label: 'Time of Day',
+      data: hourlyMessages,
+      backgroundColor: '#777BFF',
+      borderColor: '#686BF1',
+      borderWidth: 2,
+    }],
+  };
+}
+
+// Helper function to process topic chart data
+function processTopicChartData(topicRows, isExpanded = false) {
+  if (!topicRows || topicRows.length === 0) return null;
+  
+  const totalCount = topicRows.reduce((sum, row) => sum + parseInt(row.conversation_count || 0), 0);
+  if (totalCount === 0) return null;
+  
+  let displayEntries = topicRows;
+  if (topicRows.length > 10 && !isExpanded) {
+    const top10 = topicRows.slice(0, 10);
+    const othersCount = topicRows.slice(10).reduce((sum, row) => sum + parseInt(row.conversation_count || 0), 0);
+    if (othersCount > 0) {
+      displayEntries = [...top10, { topic: 'other', conversation_count: othersCount }];
+    } else {
+      displayEntries = top10;
+    }
+  }
+  
+  const percentages = displayEntries.map(entry => ({
+    label: entry.topic === 'other' ? 'Other' : entry.topic,
+    value: parseInt(entry.conversation_count || 0),
+    percentage: Math.round((parseInt(entry.conversation_count || 0) / totalCount) * 100)
+  }));
+  
+  return {
+    labels: percentages.map(item => item.label),
+    datasets: [{
+      label: 'Topic Messages',
+      data: percentages.map(item => item.percentage),
+      backgroundColor: percentages.map(item => item.label === 'Other' ? '#959595' : '#777BFF'),
+      borderColor: percentages.map(item => item.label === 'Other' ? '#757575' : '#686BF1'),
+      borderWidth: 2,
+    }],
+    hasOthers: topicRows.length > 10,
+    isPercentage: true
+  };
+}
+
+// 1. Summary Statistics Endpoint
+app.get('/statistics/summary', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      chatbot_id, 
+      start_date, 
+      end_date, 
+      time_filter_enabled = 'false',
+      time_filter_start = '00:00',
+      time_filter_end = '23:59',
+      business_hours_start = '09:00',
+      business_hours_end = '15:00'
+    } = req.query;
+    
+    if (!chatbot_id) {
+      return res.status(400).json({ error: 'chatbot_id is required' });
+    }
+    
+    const chatbotIds = chatbot_id.split(',');
+    const timeFilterEnabled = time_filter_enabled === 'true';
+    
+    // Build the WHERE clause
+    let whereClause = 'WHERE c.chatbot_id = ANY($1)';
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+    
+    if (start_date) {
+      whereClause += ` AND c.created_at >= $${paramIndex}`;
+      queryParams.push(start_date);
+      paramIndex++;
+    }
+    
+    if (end_date) {
+      whereClause += ` AND c.created_at <= $${paramIndex}`;
+      queryParams.push(end_date);
+      paramIndex++;
+    }
+    
+    if (timeFilterEnabled && time_filter_start !== '00:00' || time_filter_end !== '23:59') {
+      whereClause += ` AND EXTRACT(HOUR FROM c.created_at) * 60 + EXTRACT(MINUTE FROM c.created_at) 
+                       BETWEEN EXTRACT(HOUR FROM $${paramIndex}::time) * 60 + EXTRACT(MINUTE FROM $${paramIndex}::time)
+                       AND EXTRACT(HOUR FROM $${paramIndex + 1}::time) * 60 + EXTRACT(MINUTE FROM $${paramIndex + 1}::time)`;
+      queryParams.push(time_filter_start + ':00', time_filter_end + ':00');
+      paramIndex += 2;
+    }
+    
+    // Main statistics query
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_conversations,
+        SUM(
+          CASE 
+            WHEN c.conversation_data IS NOT NULL 
+            THEN (
+              SELECT COUNT(*) 
+              FROM jsonb_array_elements(
+                CASE 
+                  WHEN jsonb_typeof(c.conversation_data::jsonb) = 'array' 
+                  THEN c.conversation_data::jsonb 
+                  ELSE '[]'::jsonb 
+                END
+              ) as msg 
+              WHERE (msg->>'isUser')::boolean = true OR msg->>'sender' = 'user'
+            )
+            ELSE 0 
+          END
+        ) as total_messages,
+        COUNT(CASE WHEN c.customer_rating IS NOT NULL THEN 1 END) as total_ratings,
+        AVG(c.customer_rating) as avg_rating,
+        COUNT(CASE WHEN c.customer_rating >= 4 THEN 1 END) as satisfied_ratings,
+        COUNT(CASE WHEN c.fallback = true THEN 1 END) as fallback_count,
+        COUNT(CASE WHEN c.fallback IS NOT NULL THEN 1 END) as fallback_total,
+        COUNT(DISTINCT DATE(c.created_at)) as unique_days
+      FROM conversations c
+      ${whereClause}
+    `;
+    
+    const result = await pool.query(statsQuery, queryParams);
+    const stats = result.rows[0];
+    
+    // Calculate derived statistics
+    const totalMessages = parseInt(stats.total_messages || 0);
+    const totalConversations = parseInt(stats.total_conversations || 0);
+    const totalRatings = parseInt(stats.total_ratings || 0);
+    const avgRating = parseFloat(stats.avg_rating || 0);
+    const satisfiedRatings = parseInt(stats.satisfied_ratings || 0);
+    const fallbackCount = parseInt(stats.fallback_count || 0);
+    const fallbackTotal = parseInt(stats.fallback_total || 0);
+    const uniqueDays = parseInt(stats.unique_days || 1);
+    
+    // Check if using thumbs rating
+    const thumbsRating = req.user && req.user.thumbs_rating === true;
+    
+    let averageCustomerRating = 'N/A';
+    let csatScore = 'N/A';
+    
+    if (totalRatings > 0) {
+      if (thumbsRating) {
+        // For thumbs rating, assume 5 = thumbs up, 1 = thumbs down
+        const thumbsUpCount = await pool.query(
+          `SELECT COUNT(*) as count FROM conversations c ${whereClause} AND c.customer_rating = 5`,
+          queryParams
+        );
+        const thumbsUp = parseInt(thumbsUpCount.rows[0].count || 0);
+        averageCustomerRating = `${((thumbsUp / totalRatings) * 100).toFixed(1)}%`;
+        csatScore = averageCustomerRating;
+      } else {
+        averageCustomerRating = avgRating.toFixed(2);
+        csatScore = `${((satisfiedRatings / totalRatings) * 100).toFixed(1)}%`;
+      }
+    }
+    
+    const averageMessagesPerDay = uniqueDays > 0 ? (totalMessages / uniqueDays).toFixed(2) : '0.00';
+    
+    // Calculate outside business hours if requested
+    let outsideBusinessHoursStats = {
+      outsideBusinessHoursMessages: 0,
+      outsideBusinessHoursPercentage: 'N/A',
+      hasOutsideBusinessHoursData: false
+    };
+    
+    if (business_hours_start && business_hours_end) {
+      const outsideHoursQuery = `
+        SELECT SUM(
+          CASE 
+            WHEN c.conversation_data IS NOT NULL 
+            THEN (
+              SELECT COUNT(*) 
+              FROM jsonb_array_elements(
+                CASE 
+                  WHEN jsonb_typeof(c.conversation_data::jsonb) = 'array' 
+                  THEN c.conversation_data::jsonb 
+                  ELSE '[]'::jsonb 
+                END
+              ) as msg 
+              WHERE (msg->>'isUser')::boolean = true OR msg->>'sender' = 'user'
+            )
+            ELSE 0 
+          END
+        ) as outside_hours_messages
+        FROM conversations c
+        ${whereClause}
+        AND (
+          EXTRACT(HOUR FROM c.created_at) * 60 + EXTRACT(MINUTE FROM c.created_at) < 
+          EXTRACT(HOUR FROM $${paramIndex}::time) * 60 + EXTRACT(MINUTE FROM $${paramIndex}::time)
+          OR 
+          EXTRACT(HOUR FROM c.created_at) * 60 + EXTRACT(MINUTE FROM c.created_at) >= 
+          EXTRACT(HOUR FROM $${paramIndex + 1}::time) * 60 + EXTRACT(MINUTE FROM $${paramIndex + 1}::time)
+        )
+      `;
+      
+      const outsideHoursResult = await pool.query(outsideHoursQuery, [
+        ...queryParams, 
+        business_hours_start + ':00', 
+        business_hours_end + ':00'
+      ]);
+      
+      const outsideHoursMessages = parseInt(outsideHoursResult.rows[0].outside_hours_messages || 0);
+      
+      if (outsideHoursMessages > 0 && totalMessages > 0) {
+        outsideBusinessHoursStats = {
+          outsideBusinessHoursMessages: outsideHoursMessages,
+          outsideBusinessHoursPercentage: `${((outsideHoursMessages / totalMessages) * 100).toFixed(1)}%`,
+          hasOutsideBusinessHoursData: true
+        };
+      }
+    }
+    
+    res.json({
+      totalMessages,
+      totalConversations,
+      averageMessagesPerDay,
+      totalCustomerRatings: totalRatings,
+      averageCustomerRating,
+      csatScore,
+      fallbackRateStats: {
+        fallbackRate: fallbackTotal > 0 ? `${((fallbackCount / fallbackTotal) * 100).toFixed(1)}%` : 'N/A',
+        hasFallbackData: fallbackTotal > 0
+      },
+      outsideBusinessHoursStats
+    });
+    
+  } catch (error) {
+    console.error('Error fetching summary statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch summary statistics' });
+  }
+});
+
+// 2. Chart Data Endpoint
+app.get('/statistics/charts', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      chatbot_id, 
+      start_date, 
+      end_date,
+      emne_expanded = 'false'
+    } = req.query;
+    
+    if (!chatbot_id) {
+      return res.status(400).json({ error: 'chatbot_id is required' });
+    }
+    
+    const chatbotIds = chatbot_id.split(',');
+    const isEmneExpanded = emne_expanded === 'true';
+    
+    // Build WHERE clause
+    let whereClause = 'WHERE c.chatbot_id = ANY($1)';
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+    
+    if (start_date) {
+      whereClause += ` AND c.created_at >= $${paramIndex}`;
+      queryParams.push(start_date);
+      paramIndex++;
+    }
+    
+    if (end_date) {
+      whereClause += ` AND c.created_at <= $${paramIndex}`;
+      queryParams.push(end_date);
+      paramIndex++;
+    }
+    
+    // Get daily data
+    const dailyQuery = `
+      SELECT 
+        DATE(c.created_at) as date,
+        SUM(
+          CASE 
+            WHEN c.conversation_data IS NOT NULL 
+            THEN (
+              SELECT COUNT(*) 
+              FROM jsonb_array_elements(
+                CASE 
+                  WHEN jsonb_typeof(c.conversation_data::jsonb) = 'array' 
+                  THEN c.conversation_data::jsonb 
+                  ELSE '[]'::jsonb 
+                END
+              ) as msg 
+              WHERE (msg->>'isUser')::boolean = true OR msg->>'sender' = 'user'
+            )
+            ELSE 0 
+          END
+        ) as total_messages
+      FROM conversations c
+      ${whereClause}
+      GROUP BY DATE(c.created_at)
+      ORDER BY date
+    `;
+    
+    // Get hourly data
+    const hourlyQuery = `
+      SELECT 
+        EXTRACT(HOUR FROM c.created_at) as hour,
+        SUM(
+          CASE 
+            WHEN c.conversation_data IS NOT NULL 
+            THEN (
+              SELECT COUNT(*) 
+              FROM jsonb_array_elements(
+                CASE 
+                  WHEN jsonb_typeof(c.conversation_data::jsonb) = 'array' 
+                  THEN c.conversation_data::jsonb 
+                  ELSE '[]'::jsonb 
+                END
+              ) as msg 
+              WHERE (msg->>'isUser')::boolean = true OR msg->>'sender' = 'user'
+            )
+            ELSE 0 
+          END
+        ) as total_messages
+      FROM conversations c
+      ${whereClause}
+      GROUP BY EXTRACT(HOUR FROM c.created_at)
+      ORDER BY hour
+    `;
+    
+    // Get topic data
+    const topicQuery = `
+      SELECT 
+        c.emne as topic,
+        COUNT(*) as conversation_count
+      FROM conversations c
+      ${whereClause} AND c.emne IS NOT NULL
+      GROUP BY c.emne
+      ORDER BY conversation_count DESC
+    `;
+    
+    // Execute all queries in parallel
+    const [dailyResult, hourlyResult, topicResult] = await Promise.all([
+      pool.query(dailyQuery, queryParams),
+      pool.query(hourlyQuery, queryParams),
+      pool.query(topicQuery, queryParams)
+    ]);
+    
+    // Process and format data for charts
+    const dailyData = processDailyChartData(dailyResult.rows);
+    const hourlyData = processHourlyChartData(hourlyResult.rows);
+    const emneData = processTopicChartData(topicResult.rows, isEmneExpanded);
+    
+    res.json({
+      dailyData,
+      hourlyData,
+      emneData,
+      allEmneEntries: topicResult.rows.map(row => [row.topic, parseInt(row.conversation_count)])
+    });
+    
+  } catch (error) {
+    console.error('Error fetching chart data:', error);
+    res.status(500).json({ error: 'Failed to fetch chart data' });
+  }
+});
+
+// 3. Additional Statistics Endpoint
+app.get('/statistics/additional', authenticateToken, async (req, res) => {
+  try {
+    const { chatbot_id, start_date, end_date } = req.query;
+    
+    if (!chatbot_id) {
+      return res.status(400).json({ error: 'chatbot_id is required' });
+    }
+    
+    const chatbotIds = chatbot_id.split(',');
+    
+    // Fetch additional stats in parallel
+    const [purchaseStats, greetingRateStats, leadsStats] = await Promise.all([
+      fetchPurchaseStatsOptimized(chatbotIds, start_date, end_date),
+      fetchGreetingRateStatsOptimized(chatbotIds, start_date, end_date),
+      fetchLeadsStatsOptimized(chatbotIds, start_date, end_date)
+    ]);
+    
+    res.json({
+      purchaseStats,
+      greetingRateStats,
+      leadsStats,
+      fallbackRateStats: { hasFallbackData: false }, // Handled in summary
+      outsideBusinessHoursStats: { hasOutsideBusinessHoursData: false } // Handled in summary
+    });
+    
+  } catch (error) {
+    console.error('Error fetching additional statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch additional statistics' });
+  }
+});
+
+// Helper functions for additional statistics
+async function fetchPurchaseStatsOptimized(chatbotIds, startDate, endDate) {
+  try {
+    let purchaseStats = {
+      totalPurchases: 0,
+      totalRevenue: 0,
+      averagePurchaseValue: 'N/A',
+      conversionRate: 'N/A',
+      hasPurchaseTracking: false
+    };
+
+    // Fetch purchases for each chatbot ID
+    let allPurchases = [];
+    for (const chatbotId of chatbotIds) {
+      try {
+        let purchaseQuery = 'SELECT * FROM purchases WHERE chatbot_id = $1';
+        let purchaseParams = [chatbotId];
+        
+        if (startDate && endDate) {
+          purchaseQuery += ' AND created_at BETWEEN $2 AND $3';
+          purchaseParams.push(startDate, endDate);
+        }
+        
+        const purchaseResult = await pool.query(purchaseQuery, purchaseParams);
+        allPurchases = [...allPurchases, ...purchaseResult.rows];
+      } catch (purchaseError) {
+        // Skip if purchases table doesn't exist or error occurs
+        continue;
+      }
+    }
+
+    if (allPurchases.length > 0) {
+      purchaseStats.hasPurchaseTracking = true;
+      purchaseStats.totalPurchases = allPurchases.length;
+      
+      const totalRevenue = allPurchases.reduce((sum, purchase) => 
+        sum + (parseFloat(purchase.amount) || 0), 0);
+      purchaseStats.totalRevenue = totalRevenue;
+      purchaseStats.averagePurchaseValue = totalRevenue > 0 ? 
+        (totalRevenue / allPurchases.length).toFixed(2) : '0.00';
+      
+      // Calculate conversion rate
+      try {
+        const conversationQuery = `
+          SELECT COUNT(DISTINCT user_id) as unique_users
+          FROM conversations 
+          WHERE chatbot_id = ANY($1) AND purchase_tracking_enabled = true
+          ${startDate && endDate ? 'AND created_at BETWEEN $2 AND $3' : ''}
+        `;
+        const convParams = startDate && endDate ? [chatbotIds, startDate, endDate] : [chatbotIds];
+        const convResult = await pool.query(conversationQuery, convParams);
+        
+        const uniqueConversationUsers = parseInt(convResult.rows[0].unique_users || 0);
+        const uniquePurchaseUsers = new Set(allPurchases.map(p => p.user_id)).size;
+        
+        if (uniqueConversationUsers > 0) {
+          const convRate = (uniquePurchaseUsers / uniqueConversationUsers) * 100;
+          purchaseStats.conversionRate = `${convRate.toFixed(1)}%`;
+        }
+      } catch (convError) {
+        console.log('Could not calculate conversion rate:', convError.message);
+      }
+    }
+
+    return purchaseStats;
+  } catch (error) {
+    console.log('No purchase data available:', error.message);
+    return {
+      totalPurchases: 0,
+      totalRevenue: 0,
+      averagePurchaseValue: 'N/A',
+      conversionRate: 'N/A',
+      hasPurchaseTracking: false
+    };
+  }
+}
+
+async function fetchGreetingRateStatsOptimized(chatbotIds, startDate, endDate) {
+  try {
+    // This would call the existing greeting-rate endpoint logic
+    // For now, return default values
+    return {
+      totalChatbotOpens: 0,
+      greetingRate: 'N/A',
+      hasGreetingRateData: false
+    };
+  } catch (error) {
+    return {
+      totalChatbotOpens: 0,
+      greetingRate: 'N/A',
+      hasGreetingRateData: false
+    };
+  }
+}
+
+async function fetchLeadsStatsOptimized(chatbotIds, startDate, endDate) {
+  try {
+    // This would call the existing leads-count endpoint logic
+    // For now, return default values
+    return {
+      totalLeads: 0,
+      hasLeadsData: false
+    };
+  } catch (error) {
+    return {
+      totalLeads: 0,
+      hasLeadsData: false
+    };
+  }
+}
+
+/* ================================
    Public Live Chat Response Time Endpoint
 ================================ */
 app.get('/public/average-response-time/:chatbot_id', async (req, res) => {
