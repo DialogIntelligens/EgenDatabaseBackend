@@ -233,6 +233,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       const statistics = [];
       
       for (const variant of variantsResult.rows) {
+        console.log('Processing variant:', variant);
         let dateFilter = '';
         let queryParams = [chatbot_id, variant.id];
         let paramIndex = 3;
@@ -266,25 +267,30 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         const ratingCount = parseInt(conversationsResult.rows[0].rating_count) || 0;
         const satisfiedCount = parseInt(conversationsResult.rows[0].satisfied_count) || 0;
 
-        // Calculate conversion rate (impressions -> conversations)
-        const conversionRate = impressions > 0 ? ((conversations / impressions) * 100).toFixed(2) : '0.00';
-        
+        // Calculate usage rate (impressions -> conversations)
+        const usageRate = impressions > 0 ? ((conversations / impressions) * 100).toFixed(2) : '0.00';
+        console.log(`Variant ${variant.name}: impressions=${impressions}, conversations=${conversations}, usageRate=${usageRate}`);
+
         // Calculate CSAT
         const csat = ratingCount > 0 ? ((satisfiedCount / ratingCount) * 100).toFixed(1) : null;
 
-        statistics.push({
+        const variantData = {
           variant_id: variant.id,
           variant_name: variant.name,
           popup_text: variant.config?.popup_text || '',
           impressions,
           conversations,
-          conversion_rate: `${conversionRate}%`,
+          usage_rate: `${usageRate}%`,
           avg_rating: avgRating ? parseFloat(avgRating).toFixed(2) : null,
           csat: csat ? `${csat}%` : null,
           rating_count: ratingCount
-        });
+        };
+        console.log('Variant data:', variantData);
+
+        statistics.push(variantData);
       }
 
+      console.log('Final statistics response:', { enabled, statistics });
       return res.json({ enabled, statistics });
     } catch (err) {
       console.error('GET /split-test-statistics error:', err);
