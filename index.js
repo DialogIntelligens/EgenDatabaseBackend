@@ -13,7 +13,6 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
-import { registerSplitTestRoutes } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -1058,10 +1057,7 @@ app.post('/register', async (req, res) => {
       ]
     );
 
-    return res.status(201).json({ 
-      message: 'User registered successfully',
-      user: { id: result.rows[0].id }
-    });
+    return res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     console.error('Error registering user:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
@@ -1492,7 +1488,8 @@ app.post('/conversations', async (req, res) => {
     tags,
     form_data,
     is_resolved,
-    livechat_email
+    livechat_email,
+    split_test_name
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1518,6 +1515,16 @@ app.post('/conversations', async (req, res) => {
   }
 
   try {
+    // Add split test information to conversation data if provided
+    if (split_test_name && Array.isArray(conversation_data) && conversation_data.length > 0) {
+      // Add split test info to the first message for tracking
+      conversation_data[0] = {
+        ...conversation_data[0],
+        split_name: split_test_name,
+        split_test_enabled: true
+      };
+    }
+
     // Stringify the conversation data (which now includes embedded source chunks)
     conversation_data = JSON.stringify(conversation_data);
 
@@ -4938,7 +4945,6 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
-registerSplitTestRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
@@ -6535,4 +6541,697 @@ cron.schedule('0 0 * * *', async () => {
 });
 
 console.log('Agent typing status cleanup scheduled to run daily at midnight');
+
+// Admin endpoint to migrate popup messages from GitHub to database
+app.post('/admin/migrate-popup-messages', authenticateToken, async (req, res) => {
+  // Only admins can run migration
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    console.log('Starting popup message migration via admin endpoint...');
+    
+    // Helper function to decode base64
+    function base64ToUtf8(str) {
+      return Buffer.from(str, 'base64').toString('utf-8');
+    }
+
+    // Helper function to parse variable declarations
+    function parseVariableDeclaration(scriptString, variableName) {
+      const pattern = new RegExp(`const\\s+${variableName}\\s*=\\s*"([^"]*)"`, 'gs');
+      const match = pattern.exec(scriptString);
+      if (match && match[1]) {
+        return match[1]
+          .replace(/\\"/g, '"')     // Unescape quotes
+          .replace(/\\n/g, '\n')    // Convert \n to actual newlines
+          .replace(/\\r/g, '\r')    // Convert \r to actual carriage returns
+          .replace(/\\t/g, '\t')    // Convert \t to actual tabs
+          .replace(/\\\\/g, '\\');  // Unescape backslashes (do this last)
+      }
+      return '';
+    }
+
+    // Get all users with chatbot filepaths
+    const usersResult = await pool.query(`
+      SELECT id, username, chatbot_ids, chatbot_filepath 
+      FROM users 
+      WHERE chatbot_filepath IS NOT NULL AND array_length(chatbot_filepath, 1) > 0
+    `);
+    
+    console.log(`Found ${usersResult.rows.length} users with chatbot filepaths`);
+    
+    let migratedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    const results = [];
+    
+    for (const user of usersResult.rows) {
+      const chatbotIds = Array.isArray(user.chatbot_ids) ? user.chatbot_ids : JSON.parse(user.chatbot_ids || '[]');
+      const filepaths = Array.isArray(user.chatbot_filepath) ? user.chatbot_filepath : user.chatbot_filepath;
+      
+      // Process each chatbot for this user
+      for (let i = 0; i < filepaths.length; i++) {
+        const filepath = filepaths[i];
+        const chatbotId = chatbotIds[i] || `chatbot_${i}`;
+        
+        try {
+          // Check if popup message already exists in database
+          const existingResult = await pool.query(
+            'SELECT id FROM popup_messages WHERE user_id = $1 AND chatbot_id = $2',
+            [user.id, chatbotId]
+          );
+          
+          if (existingResult.rows.length > 0) {
+            skippedCount++;
+            results.push({
+              user: user.username,
+              chatbot_id: chatbotId,
+              status: 'skipped',
+              reason: 'Already exists in database'
+            });
+            continue;
+          }
+          
+          // Fetch script from GitHub
+          const url = `https://api.github.com/repos/DialogIntelligens/scripts/contents/${filepath}`;
+          const response = await fetch(url, {
+            headers: {
+              Authorization: `Bearer ${process.env.REACT_APP_GITHUB_TOKEN}`,
+              Accept: 'application/vnd.github.v3+json',
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ${filepath}: ${response.status}`);
+          }
+          
+          const fileData = await response.json();
+          const scriptContent = base64ToUtf8(fileData.content);
+          
+          // Parse popup message from script
+          const popupText = parseVariableDeclaration(scriptContent, 'popupText');
+          
+          if (popupText && popupText.trim() !== '') {
+            // Save to database
+            await pool.query(`
+              INSERT INTO popup_messages (user_id, chatbot_id, popup_message, is_active)
+              VALUES ($1, $2, $3, true)
+              ON CONFLICT (user_id, chatbot_id) DO NOTHING
+            `, [user.id, chatbotId, popupText]);
+            
+            migratedCount++;
+            results.push({
+              user: user.username,
+              chatbot_id: chatbotId,
+              status: 'migrated',
+              popup_message: popupText
+            });
+          } else {
+            skippedCount++;
+            results.push({
+              user: user.username,
+              chatbot_id: chatbotId,
+              status: 'skipped',
+              reason: 'No popup message in script'
+            });
+          }
+          
+        } catch (error) {
+          errorCount++;
+          results.push({
+            user: user.username,
+            chatbot_id: chatbotId,
+            status: 'error',
+            error: error.message
+          });
+        }
+      }
+    }
+    
+    res.json({
+      message: 'Migration completed',
+      summary: {
+        migrated: migratedCount,
+        skipped: skippedCount,
+        errors: errorCount,
+        total: migratedCount + skippedCount + errorCount
+      },
+      results: results
+    });
+    
+  } catch (error) {
+    console.error('Migration failed:', error);
+    res.status(500).json({ error: 'Migration failed', details: error.message });
+  }
+});
+
+/* ================================
+   Split Test Management Endpoints
+================================ */
+
+// GET split test settings for a chatbot
+app.get('/split-test-settings/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const user_id = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM split_test_settings WHERE user_id = $1 AND chatbot_id = $2',
+      [user_id, chatbot_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({
+        is_enabled: false,
+        chatbot_id: chatbot_id,
+        user_id: user_id
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching split test settings:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// POST/PUT split test settings
+app.post('/split-test-settings', authenticateToken, async (req, res) => {
+  const { chatbot_id, is_enabled } = req.body;
+  const user_id = req.user.userId;
+
+  if (!chatbot_id || typeof is_enabled !== 'boolean') {
+    return res.status(400).json({ error: 'chatbot_id and is_enabled (boolean) are required' });
+  }
+
+  try {
+    const result = await pool.query(`
+      INSERT INTO split_test_settings (user_id, chatbot_id, is_enabled, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (user_id, chatbot_id)
+      DO UPDATE SET 
+        is_enabled = EXCLUDED.is_enabled,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [user_id, chatbot_id, is_enabled]);
+
+    res.json({
+      message: 'Split test settings saved successfully',
+      settings: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error saving split test settings:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET split test popup messages for a chatbot
+app.get('/split-test-popups/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const user_id = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM split_test_popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND is_active = true ORDER BY split_name',
+      [user_id, chatbot_id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching split test popups:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// POST create/update split test popup messages
+app.post('/split-test-popups', authenticateToken, async (req, res) => {
+  const { chatbot_id, splits } = req.body;
+  const user_id = req.user.userId;
+
+  if (!chatbot_id || !Array.isArray(splits)) {
+    return res.status(400).json({ error: 'chatbot_id and splits array are required' });
+  }
+
+  // Validate percentages add up to 100
+  const totalPercentage = splits.reduce((sum, split) => sum + (split.percentage || 0), 0);
+  if (Math.abs(totalPercentage - 100) > 0.01) {
+    return res.status(400).json({ error: 'Split percentages must add up to 100%' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Delete existing splits for this chatbot
+    await client.query(
+      'DELETE FROM split_test_popup_messages WHERE user_id = $1 AND chatbot_id = $2',
+      [user_id, chatbot_id]
+    );
+
+    // Insert new splits
+    for (const split of splits) {
+      if (!split.split_name || !split.popup_message || split.percentage === undefined) {
+        throw new Error('Each split must have split_name, popup_message, and percentage');
+      }
+
+      await client.query(`
+        INSERT INTO split_test_popup_messages (user_id, chatbot_id, split_name, popup_message, percentage, is_active)
+        VALUES ($1, $2, $3, $4, $5, true)
+      `, [user_id, chatbot_id, split.split_name, split.popup_message, split.percentage]);
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: 'Split test popups saved successfully',
+      splits_count: splits.length
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error saving split test popups:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE split test popup
+app.delete('/split-test-popups/:chatbot_id/:split_name', authenticateToken, async (req, res) => {
+  const { chatbot_id, split_name } = req.params;
+  const user_id = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM split_test_popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND split_name = $3 RETURNING *',
+      [user_id, chatbot_id, split_name]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Split test popup not found' });
+    }
+
+    res.json({
+      message: 'Split test popup deleted successfully',
+      deleted: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error deleting split test popup:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Public endpoint for integration script to get split test popup message
+app.get('/public/split-test-popup/:chatbot_id', async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { user_id } = req.query;
+
+  try {
+    // First check if split testing is enabled for this chatbot
+    let ownerUserId = null;
+    
+    if (user_id) {
+      ownerUserId = user_id;
+    } else {
+      // Find the user who owns this chatbot
+      const userResult = await pool.query(`
+        SELECT id FROM users 
+        WHERE chatbot_ids @> $1::jsonb OR $2 = ANY(chatbot_ids)
+      `, [JSON.stringify([chatbot_id]), chatbot_id]);
+      
+      if (userResult.rows.length > 0) {
+        ownerUserId = userResult.rows[0].id;
+      }
+    }
+
+    if (!ownerUserId) {
+      return res.json({
+        popup_message: 'Har du brug for hjælp?',
+        source: 'default_no_owner',
+        chatbot_id: chatbot_id
+      });
+    }
+
+    // Check if split testing is enabled
+    const settingsResult = await pool.query(
+      'SELECT is_enabled FROM split_test_settings WHERE user_id = $1 AND chatbot_id = $2',
+      [ownerUserId, chatbot_id]
+    );
+
+    if (settingsResult.rows.length === 0 || !settingsResult.rows[0].is_enabled) {
+      // Split testing not enabled, fall back to regular popup message system
+      return res.redirect(`/popup-message/${chatbot_id}?user_id=${ownerUserId}`);
+    }
+
+    // Get all active split test popups for this chatbot
+    const splitsResult = await pool.query(
+      'SELECT split_name, popup_message, percentage FROM split_test_popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND is_active = true ORDER BY split_name',
+      [ownerUserId, chatbot_id]
+    );
+
+    if (splitsResult.rows.length === 0) {
+      // No splits configured, fall back to regular system
+      return res.redirect(`/popup-message/${chatbot_id}?user_id=${ownerUserId}`);
+    }
+
+    // Determine which split to show based on user session
+    // Use a simple hash-based approach for consistent assignment
+    const sessionKey = req.query.session_id || req.ip || 'anonymous';
+    const hash = sessionKey.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    
+    const randomValue = Math.abs(hash) % 100;
+    let cumulativePercentage = 0;
+    let selectedSplit = splitsResult.rows[0]; // Default to first split
+
+    for (const split of splitsResult.rows) {
+      cumulativePercentage += split.percentage;
+      if (randomValue < cumulativePercentage) {
+        selectedSplit = split;
+        break;
+      }
+    }
+
+    res.json({
+      popup_message: selectedSplit.popup_message,
+      source: 'split_test',
+      split_name: selectedSplit.split_name,
+      chatbot_id: chatbot_id
+    });
+
+  } catch (err) {
+    console.error('Error fetching split test popup:', err);
+    // Return default message on error to not break the chatbot
+    res.json({
+      popup_message: 'Har du brug for hjælp?',
+      source: 'default_error',
+      chatbot_id: chatbot_id
+    });
+  }
+});
+
+// GET split test statistics comparison
+app.get('/split-test-statistics/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { start_date, end_date } = req.query;
+  const user_id = req.user.userId;
+
+  try {
+    // First check if split testing is enabled
+    const settingsResult = await pool.query(
+      'SELECT is_enabled FROM split_test_settings WHERE user_id = $1 AND chatbot_id = $2',
+      [user_id, chatbot_id]
+    );
+
+    if (settingsResult.rows.length === 0 || !settingsResult.rows[0].is_enabled) {
+      return res.status(400).json({ error: 'Split testing is not enabled for this chatbot' });
+    }
+
+    // Get all splits for this chatbot
+    const splitsResult = await pool.query(
+      'SELECT * FROM split_test_popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND is_active = true ORDER BY split_name',
+      [user_id, chatbot_id]
+    );
+
+    if (splitsResult.rows.length === 0) {
+      return res.json({
+        splits: [],
+        message: 'No split tests configured'
+      });
+    }
+
+    // Build query to get conversations with split test data
+    let queryText = `
+      SELECT 
+        c.*,
+        CASE 
+          WHEN c.conversation_data::text LIKE '%"split_name"%' THEN
+            (c.conversation_data->0->>'split_name')
+          ELSE NULL
+        END as split_name
+      FROM conversations c
+      WHERE c.chatbot_id = $1
+    `;
+    let queryParams = [chatbot_id];
+    let paramIndex = 2;
+
+    // Add date filtering if provided
+    if (start_date && end_date) {
+      queryText += ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    // Only include conversations that have split test data
+    queryText += ` AND c.conversation_data::text LIKE '%"split_name"%'`;
+
+    const conversationsResult = await pool.query(queryText, queryParams);
+
+    // Process statistics for each split
+    const splitStats = {};
+    
+    // Initialize stats for each configured split
+    splitsResult.rows.forEach(split => {
+      splitStats[split.split_name] = {
+        split_name: split.split_name,
+        popup_message: split.popup_message,
+        percentage: split.percentage,
+        total_conversations: 0,
+        total_messages: 0,
+        average_rating: 'N/A',
+        csat_score: 'N/A',
+        conversion_rate: 'N/A',
+        greeting_rate: 'N/A'
+      };
+    });
+
+    // Process conversations for each split
+    conversationsResult.rows.forEach(conv => {
+      const splitName = conv.split_name;
+      if (!splitName || !splitStats[splitName]) return;
+
+      const stats = splitStats[splitName];
+      stats.total_conversations++;
+
+      // Count messages
+      let conversationData = conv.conversation_data || [];
+      if (typeof conversationData === 'string') {
+        try {
+          conversationData = JSON.parse(conversationData);
+        } catch (e) {
+          conversationData = [];
+        }
+      }
+
+      if (Array.isArray(conversationData)) {
+        const userMessages = conversationData.filter(msg => msg && (msg.isUser === true || msg.sender === 'user'));
+        stats.total_messages += userMessages.length;
+      }
+
+      // Process ratings (simplified for now)
+      if (conv.customer_rating !== null && conv.customer_rating !== undefined) {
+        // This would need more sophisticated aggregation in a real implementation
+        // For now, we'll just count that there are ratings
+      }
+    });
+
+    // Calculate derived statistics
+    Object.values(splitStats).forEach(stats => {
+      if (stats.total_conversations > 0) {
+        stats.average_messages_per_conversation = (stats.total_messages / stats.total_conversations).toFixed(2);
+      }
+    });
+
+    res.json({
+      splits: Object.values(splitStats),
+      total_split_conversations: conversationsResult.rows.length,
+      date_range: start_date && end_date ? { start_date, end_date } : null
+    });
+
+  } catch (err) {
+    console.error('Error fetching split test statistics:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+/* ================================
+   Popup Message Management Endpoints
+================================ */
+
+// GET popup message for a specific chatbot (with GitHub fallback)
+app.get('/popup-message/:chatbot_id', async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { user_id } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    let popupMessage = 'Har du brug for hjælp?'; // Default fallback
+    let source = 'default';
+
+    // First, try to get from database if user_id is provided
+    if (user_id) {
+      const dbResult = await pool.query(
+        'SELECT popup_message FROM popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND is_active = true',
+        [user_id, chatbot_id]
+      );
+
+      if (dbResult.rows.length > 0) {
+        popupMessage = dbResult.rows[0].popup_message;
+        source = 'database';
+      }
+    }
+
+    res.json({
+      popup_message: popupMessage,
+      source: source
+    });
+  } catch (err) {
+    console.error('Error fetching popup message:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// POST/PUT popup message for a specific chatbot
+app.post('/popup-message', authenticateToken, async (req, res) => {
+  const { chatbot_id, popup_message } = req.body;
+  const user_id = req.user.userId;
+
+  if (!chatbot_id || !popup_message) {
+    return res.status(400).json({ error: 'chatbot_id and popup_message are required' });
+  }
+
+  try {
+    // Use UPSERT to create or update popup message
+    const result = await pool.query(`
+      INSERT INTO popup_messages (user_id, chatbot_id, popup_message, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (user_id, chatbot_id)
+      DO UPDATE SET 
+        popup_message = EXCLUDED.popup_message,
+        updated_at = CURRENT_TIMESTAMP,
+        is_active = true
+      RETURNING *
+    `, [user_id, chatbot_id, popup_message]);
+
+    res.json({
+      message: 'Popup message saved successfully',
+      popup_message: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error saving popup message:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// DELETE popup message for a specific chatbot (revert to GitHub/default)
+app.delete('/popup-message/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+  const user_id = req.user.userId;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    // Mark as inactive instead of deleting (for audit trail)
+    const result = await pool.query(`
+      UPDATE popup_messages 
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = $1 AND chatbot_id = $2
+      RETURNING *
+    `, [user_id, chatbot_id]);
+
+    res.json({
+      message: 'Popup message deactivated, will fallback to GitHub script',
+      affected_rows: result.rowCount
+    });
+  } catch (err) {
+    console.error('Error deactivating popup message:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET all popup messages for a user
+app.get('/popup-messages', authenticateToken, async (req, res) => {
+  const user_id = req.user.userId;
+
+  try {
+    const result = await pool.query(`
+      SELECT pm.*, u.username 
+      FROM popup_messages pm
+      JOIN users u ON pm.user_id = u.id
+      WHERE pm.user_id = $1 AND pm.is_active = true
+      ORDER BY pm.updated_at DESC
+    `, [user_id]);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching popup messages:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Public endpoint for integration script to get popup message
+app.get('/public/popup-message/:chatbot_id', async (req, res) => {
+  const { chatbot_id } = req.params;
+  const { user_id } = req.query;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    let popupMessage = 'Har du brug for hjælp?'; // Default fallback
+    let source = 'default';
+
+    // Try to find the user who owns this chatbot
+    let ownerUserId = null;
+    
+    if (user_id) {
+      // If user_id is provided, use it directly
+      ownerUserId = user_id;
+    } else {
+      // Otherwise, find the user who owns this chatbot
+      const userResult = await pool.query(`
+        SELECT id FROM users 
+        WHERE chatbot_ids @> $1::jsonb OR $2 = ANY(chatbot_ids)
+      `, [JSON.stringify([chatbot_id]), chatbot_id]);
+      
+      if (userResult.rows.length > 0) {
+        ownerUserId = userResult.rows[0].id;
+      }
+    }
+
+    // If we found an owner, try to get their popup message from database
+    if (ownerUserId) {
+      const dbResult = await pool.query(
+        'SELECT popup_message FROM popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND is_active = true',
+        [ownerUserId, chatbot_id]
+      );
+
+      if (dbResult.rows.length > 0) {
+        popupMessage = dbResult.rows[0].popup_message;
+        source = 'database';
+      }
+    }
+
+    res.json({
+      popup_message: popupMessage,
+      source: source,
+      chatbot_id: chatbot_id
+    });
+  } catch (err) {
+    console.error('Error fetching public popup message:', err);
+    // Return default message on error to not break the chatbot
+    res.json({
+      popup_message: 'Har du brug for hjælp?',
+      source: 'default_error',
+      chatbot_id: chatbot_id
+    });
+  }
+});
 
