@@ -374,70 +374,28 @@
       padding-bottom: 20px;
     }
 
-    /* Blue Header Section with Rounded Borders */
+    /* Blue Header Section Only */
     .front-page-header {
-      background: linear-gradient(135deg, var(--primary-color), #7c7ff7);
+      background: var(--primary-color);
       color: white;
-      padding: 80px 40px;
+      padding: 60px 40px;
       text-align: center;
-      box-shadow: 0 8px 32px rgba(104, 107, 241, 0.3);
-      border-radius: 0 0 32px 32px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    /* Subtle background pattern */
-    .front-page-header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-                  radial-gradient(circle at 70% 80%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
-      pointer-events: none;
-    }
-
-    /* Logo Styling */
-    .front-page-logo {
-      width: 120px;
-      height: auto;
-      margin-bottom: 30px;
-      filter: brightness(0) invert(1);
-      opacity: 0.95;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* Logo container for better positioning */
-    .logo-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
-      position: relative;
-      z-index: 1;
+      box-shadow: var(--shadow-primary);
     }
 
     .report-title {
-      font-size: 52px;
+      font-size: 48px;
       font-weight: 700;
       color: white;
-      margin-bottom: 20px;
+      margin-bottom: 15px;
       line-height: 1.1;
-      position: relative;
-      z-index: 1;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     .report-subtitle {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 400;
-      color: rgba(255, 255, 255, 0.95);
+      color: rgba(255, 255, 255, 0.9);
       margin: 0;
-      position: relative;
-      z-index: 1;
     }
 
     /* White Body Section */
@@ -449,55 +407,61 @@
       gap: 30px;
     }
 
+    .company-section {
+      text-align: center;
+      margin-bottom: 20px;
+    }
 
+    .company-section h2 {
+      color: var(--primary-color);
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0;
+    }
 
     .overview-section {
       background: var(--background-secondary);
       border-left: 4px solid var(--accent-color);
       border-radius: 20px;
-      padding: 30px;
+      padding: 40px;
       box-shadow: var(--shadow-light);
       border: 1px solid var(--border-color);
+      text-align: center;
     }
 
     .overview-section h3 {
       color: var(--primary-color);
-      font-size: 20px;
+      font-size: 24px;
       font-weight: 600;
-      margin-bottom: 15px;
-      border-bottom: 2px solid var(--primary-color);
-      padding-bottom: 8px;
+      margin-bottom: 20px;
     }
 
     .overview-section p {
-      color: var(--text-primary);
+      color: var(--text-secondary);
+      font-size: 16px;
       line-height: 1.6;
+      text-align: justify;
       margin: 0;
-      font-size: 15px;
+      max-width: 600px;
+      margin: 0 auto;
     }
 
     .meta-section {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-top: 10px;
+      display: flex;
+      justify-content: center;
+      gap: 60px;
+      margin-top: 20px;
     }
 
     .meta-item {
-      background: white;
-      padding: 20px;
-      border-radius: 16px;
-      border: 1px solid var(--border-color);
-      box-shadow: var(--shadow-light);
       text-align: center;
+      color: var(--text-secondary);
+      font-size: 16px;
     }
 
     .meta-item strong {
       color: var(--primary-color);
       font-weight: 600;
-      display: block;
-      margin-bottom: 8px;
-      font-size: 14px;
     }
 
     /* Key Insights - Matching AI Analysis Design */
@@ -959,15 +923,17 @@
     <div class="front-page">
       <!-- Blue Header Section -->
       <div class="front-page-header">
-        <div class="logo-container">
-          <img src="/pngs/logo.png" alt="Dialogintelligens Logo" class="front-page-logo">
-          <h1 class="report-title">AI Analysis Insights</h1>
-          <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
-        </div>
+        <h1 class="report-title">AI Analysis Insights</h1>
+        <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
       </div>
 
       <!-- White Content Section -->
       <div class="front-page-body">
+        {{#if companyInfo}}
+        <div class="company-section">
+          <h2>{{companyInfo}}</h2>
+        </div>
+        {{/if}}
 
         <div class="overview-section">
           <h3>Report Overview</h3>
