@@ -543,34 +543,171 @@
       border: 1px solid var(--border-light);
     }
     
-    /* Footer - Updated with Dashboard Styling */
-    .footer {
-      background: var(--background-accent);
-      border-top: 3px solid var(--primary-color);
-      padding: 30px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 12px;
+    /* Professional Front Page Styling */
+    .front-page {
+      min-height: 100vh;
+      background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+      color: white;
+      padding: 60px 50px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
       page-break-inside: avoid;
       break-inside: avoid;
-      margin-top: 60px;
-      page-break-before: auto;
-      position: relative;
-      border-radius: 24px 24px 0 0;
+      page-break-after: always;
+      break-after: page;
     }
-    
-    .footer-brand {
-      font-size: 16px;
+
+    .front-page-header {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+
+    .company-name {
+      font-size: 18px;
+      font-weight: 300;
+      color: rgba(255, 255, 255, 0.8);
+      margin-bottom: 30px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    .report-title {
+      font-size: 52px;
       font-weight: 700;
-      color: var(--primary-color);
+      color: white;
+      margin-bottom: 15px;
+      line-height: 1.1;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .report-subtitle {
+      font-size: 22px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.9);
+      margin-bottom: 40px;
+      line-height: 1.3;
+    }
+
+    .report-period {
+      font-size: 18px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.95);
       margin-bottom: 8px;
-      letter-spacing: 0.3px;
+    }
+
+    .report-date {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.8);
+      font-style: italic;
+    }
+
+    .front-page-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 40px;
+    }
+
+    .intro-section, .report-sections, .key-findings {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 30px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .intro-title, .sections-title, .findings-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .intro-text {
+      font-size: 16px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
+      margin: 0;
+    }
+
+    .sections-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .section-preview {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .preview-icon {
+      font-size: 28px;
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    .section-preview h4 {
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 10px;
+      line-height: 1.3;
+    }
+
+    .section-preview p {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .findings-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .finding-item {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.9);
+      border-left: 3px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .finding-item strong {
+      color: white;
+      font-weight: 600;
+    }
+
+    .front-page-footer {
+      text-align: center;
+      margin-top: 40px;
+    }
+
+    .powered-by {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: 1px;
+    }
+
+    /* Remove old header and footer */
+    .header {
+      display: none;
     }
     
-    .footer-tagline {
-      font-style: italic;
-      margin-top: 8px;
-      color: var(--text-secondary);
+    .footer {
+      display: none;
     }
     
     /* Data Tables - Updated with Dashboard Styling */
@@ -927,16 +1064,89 @@
 </head>
 <body>
   <div class="report-container">
-    <!-- Professional Header -->
-    <div class="header">
-      <div class="header-content">
-        <h1>AI Analysis Insights</h1>
-        <div class="subtitle">{{timePeriod}}</div>
+    <!-- Professional Front Page -->
+    <div class="front-page">
+      <div class="front-page-header">
+        {{#if companyInfo}}
+        <div class="company-name">{{companyInfo}}</div>
+        {{/if}}
+        
+        <h1 class="report-title">AI Analysis Insights</h1>
+        <h2 class="report-subtitle">Chatbot Performance & Customer Intelligence Report</h2>
+        <div class="report-period">Analysis Period: {{timePeriod}}</div>
+        <div class="report-date">Generated {{generatedDate}}</div>
+      </div>
+
+      <div class="front-page-content">
+        <div class="intro-section">
+          <h3 class="intro-title">📋 Report Overview</h3>
+          <p class="intro-text">
+            This comprehensive analysis provides deep insights into your chatbot's performance, 
+            customer interactions, and satisfaction metrics. The report combines advanced AI analysis 
+            with statistical correlation studies to deliver actionable business intelligence.
+          </p>
+        </div>
+
+        <div class="report-sections">
+          <h3 class="sections-title">📚 What's Inside</h3>
+          <div class="sections-grid">
+            <div class="section-preview">
+              <div class="preview-icon">🤖</div>
+              <h4>AI-Powered Business Insights</h4>
+              <p>Advanced GPT analysis of conversation patterns, customer behavior, and strategic recommendations.</p>
+            </div>
+            
+            <div class="section-preview">
+              <div class="preview-icon">🔍</div>
+              <h4>Key Performance Insights</h4>
+              <p>Essential metrics and KPIs showing engagement levels, satisfaction scores, and business impact.</p>
+            </div>
+            
+            <div class="section-preview">
+              <div class="preview-icon">📊</div>
+              <h4>Customer Language Analysis</h4>
+              <p>Statistical analysis of language patterns that correlate with customer satisfaction.</p>
+            </div>
+            
+            <div class="section-preview">
+              <div class="preview-icon">📈</div>
+              <h4>Performance Analytics</h4>
+              <p>Visual charts and trends showing message volume, peak hours, and topic distribution.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="key-findings">
+          <h3 class="findings-title">🎯 Key Highlights</h3>
+          <div class="findings-list">
+            <div class="finding-item">
+              <strong>{{totalMessages}} messages</strong> processed across {{totalConversations}} conversations
+            </div>
+            <div class="finding-item">
+              <strong>{{averageCustomerRating}}/5 average rating</strong> demonstrates strong customer satisfaction
+            </div>
+            <div class="finding-item">
+              <strong>{{csatScore}} CSAT score</strong> indicates reliable service quality
+            </div>
+            {{#if hasPurchaseTracking}}
+            <div class="finding-item">
+              <strong>{{totalRevenue}} revenue</strong> generated through chatbot interactions
+            </div>
+            {{/if}}
+          </div>
+        </div>
+      </div>
+
+      <div class="front-page-footer">
+        <div class="powered-by">
+          <span>Powered by Dialog Intelligens AI Analytics Platform</span>
+        </div>
       </div>
     </div>
 
-  
-    
+    <!-- Force page break after front page -->
+    <div class="page-break-after"></div>
+
     <div class="content">
        <!-- AI Analysis Section -->
        {{#if gptAnalysis}}
