@@ -366,22 +366,47 @@
       font-weight: 700;
     }
 
-    /* Simple Front Page Styling */
+    /* Clean Front Page Styling */
     .front-page {
       background: white;
       page-break-inside: avoid;
       break-inside: avoid;
-      padding-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 90vh;
     }
 
-    /* Blue Header Section Only */
+    /* Enhanced Blue Header Section */
     .front-page-header {
-      background: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-color) 0%, #7c7ff7 100%);
       color: white;
-      padding: 60px 40px;
+      padding: 100px 60px;
       text-align: center;
-      box-shadow: var(--shadow-primary);
-      border-radius: 0 0 24px 24px;
+      box-shadow: 0 10px 30px rgba(104, 107, 241, 0.3);
+      border-radius: 32px;
+      position: relative;
+      overflow: hidden;
+      max-width: 800px;
+      width: 100%;
+    }
+
+    /* Subtle background pattern */
+    .front-page-header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .header-content {
+      position: relative;
+      z-index: 1;
     }
 
     .report-title {
@@ -396,69 +421,36 @@
       font-size: 18px;
       font-weight: 400;
       color: rgba(255, 255, 255, 0.9);
-      margin: 0;
+      margin: 0 0 30px 0;
     }
 
-    /* White Body Section */
-    .front-page-body {
-      background: white;
-      padding: 40px 40px 60px 40px;
-      display: flex;
-      flex-direction: column;
-      gap: 30px;
-    }
-
-    .company-section h2 {
-      color: var(--primary-color);
-      font-size: 24px;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .overview-section {
-      background: var(--background-secondary);
-      border-left: 4px solid var(--accent-color);
-      border-radius: 20px;
-      padding: 40px;
-      box-shadow: var(--shadow-light);
-      border: 1px solid var(--border-color);
-      text-align: center;
-    }
-
-    .overview-section h3 {
-      color: var(--primary-color);
-      font-size: 24px;
-      font-weight: 600;
-      margin-bottom: 20px;
-    }
-
-    .overview-section p {
-      color: var(--text-secondary);
-      font-size: 16px;
-      line-height: 1.6;
-      text-align: justify;
-      margin: 0;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    .meta-section {
+    /* Header Meta Information */
+    .header-meta {
       display: flex;
       justify-content: center;
-      gap: 60px;
-      margin-top: 20px;
+      gap: 40px;
+      margin-top: 30px;
+      padding-top: 25px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
     }
 
-    .meta-item {
+    .meta-info {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 14px;
       text-align: center;
-      color: var(--text-secondary);
-      font-size: 16px;
     }
 
-    .meta-item strong {
-      color: var(--primary-color);
+    .meta-info strong {
+      color: white;
       font-weight: 600;
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
+
+
 
     /* Key Insights - Matching AI Analysis Design */
     .key-insights {
@@ -915,32 +907,22 @@
 </head>
 <body>
   <div class="report-container">
-    <!-- Simple Front Page -->
+    <!-- Clean Front Page -->
     <div class="front-page">
-      <!-- Blue Header Section -->
+      <!-- Enhanced Blue Header Section -->
       <div class="front-page-header">
-        <h1 class="report-title">AI Analysis Insights</h1>
-        <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
-      </div>
-
-      <!-- White Content Section -->
-      <div class="front-page-body">
-        
-        <div class="overview-section">
-          <h3>Report Overview</h3>
-          <p>
-            This analysis provides insights into your chatbot's performance and customer satisfaction metrics. 
-            The report includes AI-powered analysis, language pattern correlations, and performance analytics 
-            to help optimize your customer service operations.
-          </p>
-        </div>
-
-        <div class="meta-section">
-          <div class="meta-item">
-            <strong>Analysis Period:</strong> {{timePeriod}}
-          </div>
-          <div class="meta-item">
-            <strong>Generated:</strong> {{generatedDate}}
+        <div class="header-content">
+          <h1 class="report-title">AI Analysis Insights</h1>
+          <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
+          
+          <!-- Meta Information in Header -->
+          <div class="header-meta">
+            <div class="meta-info">
+              <strong>Analysis Period:</strong> {{timePeriod}}
+            </div>
+            <div class="meta-info">
+              <strong>Generated:</strong> {{generatedDate}}
+            </div>
           </div>
         </div>
       </div>
