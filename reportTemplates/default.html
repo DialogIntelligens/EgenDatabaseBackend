@@ -91,44 +91,6 @@
       widows: 3;
     }
     
-    /* Header - Updated with Dashboard Colors - More Compact */
-    .header {
-      background: var(--primary-color);
-      color: white;
-      padding: 25px 30px;
-      text-align: center;
-      page-break-inside: avoid;
-      break-inside: avoid;
-      -webkit-print-color-adjust: exact;
-      color-adjust: exact;
-      box-shadow: var(--shadow-primary);
-    }
-
-    .header-content {
-      position: relative;
-    }
-
-    .header h1 {
-      color: white;
-      margin-bottom: 8px;
-      font-size: 28px;
-      font-weight: 700;
-      line-height: 1.2;
-    }
-
-    .header .subtitle {
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-
-    .header .meta {
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 12px;
-      font-weight: 400;
-    }
-    
     /* Content Container - More Compact */
     .content {
       padding: 30px 25px;
@@ -404,6 +366,110 @@
       font-weight: 700;
     }
 
+    /* Simple Front Page Styling */
+    .front-page {
+      min-height: 100vh;
+      background: white;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: always;
+      break-after: page;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Blue Header Section Only */
+    .front-page-header {
+      background: var(--primary-color);
+      color: white;
+      padding: 60px 40px;
+      text-align: center;
+      box-shadow: var(--shadow-primary);
+    }
+
+    .report-title {
+      font-size: 48px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 15px;
+      line-height: 1.1;
+    }
+
+    .report-subtitle {
+      font-size: 18px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.9);
+      margin: 0;
+    }
+
+    /* White Body Section */
+    .front-page-body {
+      flex: 1;
+      background: white;
+      padding: 60px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 40px;
+    }
+
+    .company-section {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .company-section h2 {
+      color: var(--primary-color);
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .overview-section {
+      background: var(--background-secondary);
+      border-left: 4px solid var(--accent-color);
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: var(--shadow-light);
+      border: 1px solid var(--border-color);
+      text-align: center;
+    }
+
+    .overview-section h3 {
+      color: var(--primary-color);
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .overview-section p {
+      color: var(--text-secondary);
+      font-size: 16px;
+      line-height: 1.6;
+      text-align: justify;
+      margin: 0;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .meta-section {
+      display: flex;
+      justify-content: center;
+      gap: 60px;
+      margin-top: 20px;
+    }
+
+    .meta-item {
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 16px;
+    }
+
+    .meta-item strong {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+
     /* Key Insights - Matching AI Analysis Design */
     .key-insights {
       background: var(--background-secondary);
@@ -541,173 +607,6 @@
       color: var(--text-secondary);
       text-align: center;
       border: 1px solid var(--border-light);
-    }
-    
-    /* Professional Front Page Styling */
-    .front-page {
-      min-height: 100vh;
-      background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-      color: white;
-      padding: 60px 50px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      page-break-inside: avoid;
-      break-inside: avoid;
-      page-break-after: always;
-      break-after: page;
-    }
-
-    .front-page-header {
-      text-align: center;
-      margin-bottom: 50px;
-    }
-
-    .company-name {
-      font-size: 18px;
-      font-weight: 300;
-      color: rgba(255, 255, 255, 0.8);
-      margin-bottom: 30px;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-    }
-
-    .report-title {
-      font-size: 52px;
-      font-weight: 700;
-      color: white;
-      margin-bottom: 15px;
-      line-height: 1.1;
-      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
-
-    .report-subtitle {
-      font-size: 22px;
-      font-weight: 400;
-      color: rgba(255, 255, 255, 0.9);
-      margin-bottom: 40px;
-      line-height: 1.3;
-    }
-
-    .report-period {
-      font-size: 18px;
-      font-weight: 600;
-      color: rgba(255, 255, 255, 0.95);
-      margin-bottom: 8px;
-    }
-
-    .report-date {
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.8);
-      font-style: italic;
-    }
-
-    .front-page-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 40px;
-    }
-
-    .intro-section, .report-sections, .key-findings {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 20px;
-      padding: 30px;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .intro-title, .sections-title, .findings-title {
-      font-size: 20px;
-      font-weight: 600;
-      color: white;
-      margin-bottom: 20px;
-      text-align: center;
-    }
-
-    .intro-text {
-      font-size: 16px;
-      line-height: 1.6;
-      color: rgba(255, 255, 255, 0.9);
-      text-align: center;
-      margin: 0;
-    }
-
-    .sections-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-    }
-
-    .section-preview {
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      padding: 20px;
-      text-align: center;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .preview-icon {
-      font-size: 28px;
-      margin-bottom: 12px;
-      display: block;
-    }
-
-    .section-preview h4 {
-      font-size: 16px;
-      font-weight: 600;
-      color: white;
-      margin-bottom: 10px;
-      line-height: 1.3;
-    }
-
-    .section-preview p {
-      font-size: 13px;
-      color: rgba(255, 255, 255, 0.8);
-      line-height: 1.4;
-      margin: 0;
-    }
-
-    .findings-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .finding-item {
-      background: rgba(255, 255, 255, 0.05);
-      padding: 15px 20px;
-      border-radius: 10px;
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.9);
-      border-left: 3px solid rgba(255, 255, 255, 0.3);
-    }
-
-    .finding-item strong {
-      color: white;
-      font-weight: 600;
-    }
-
-    .front-page-footer {
-      text-align: center;
-      margin-top: 40px;
-    }
-
-    .powered-by {
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 12px;
-      font-weight: 400;
-      letter-spacing: 1px;
-    }
-
-    /* Remove old header and footer */
-    .header {
-      display: none;
-    }
-    
-    .footer {
-      display: none;
     }
     
     /* Data Tables - Updated with Dashboard Styling */
@@ -850,7 +749,6 @@
       }
 
       /* Enhanced page break controls for PDF */
-      .header,
       .section,
       .chart-container,
       .metric-card,
@@ -858,7 +756,8 @@
       .analysis-content,
       .key-insights,
       .metric-grid,
-      .data-table {
+      .data-table,
+      .front-page {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
       }
@@ -932,47 +831,9 @@
         margin-top: 25px !important;
       }
 
-      /* Footer positioning */
-      .footer {
-        margin-top: 60px !important;
-        page-break-before: auto !important;
-        break-before: auto !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-      }
-
       /* Content area spacing - More Compact */
       .content {
         padding: 25px 20px !important;
-      }
-
-      /* Header compact for PDF */
-      .header {
-        padding: 20px 25px !important;
-      }
-
-      .header h1 {
-        font-size: 24px !important;
-        margin-bottom: 6px !important;
-      }
-
-      .header .subtitle {
-        font-size: 13px !important;
-        margin-bottom: 3px !important;
-      }
-
-      /* Section headers more compact for PDF */
-      .section-header {
-        font-size: 16px !important;
-        padding-bottom: 5px !important;
-        margin-bottom: 15px !important;
-        gap: 6px !important;
-      }
-
-      .section-icon {
-        width: 24px !important;
-        height: 24px !important;
-        font-size: 12px !important;
       }
 
       /* Analysis content - Ultra compact for PDF */
@@ -1064,82 +925,38 @@
 </head>
 <body>
   <div class="report-container">
-    <!-- Professional Front Page -->
+    <!-- Simple Front Page -->
     <div class="front-page">
+      <!-- Blue Header Section -->
       <div class="front-page-header">
-        {{#if companyInfo}}
-        <div class="company-name">{{companyInfo}}</div>
-        {{/if}}
-        
         <h1 class="report-title">AI Analysis Insights</h1>
-        <h2 class="report-subtitle">Chatbot Performance & Customer Intelligence Report</h2>
-        <div class="report-period">Analysis Period: {{timePeriod}}</div>
-        <div class="report-date">Generated {{generatedDate}}</div>
+        <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
       </div>
 
-      <div class="front-page-content">
-        <div class="intro-section">
-          <h3 class="intro-title">📋 Report Overview</h3>
-          <p class="intro-text">
-            This comprehensive analysis provides deep insights into your chatbot's performance, 
-            customer interactions, and satisfaction metrics. The report combines advanced AI analysis 
-            with statistical correlation studies to deliver actionable business intelligence.
+      <!-- White Content Section -->
+      <div class="front-page-body">
+        {{#if companyInfo}}
+        <div class="company-section">
+          <h2>{{companyInfo}}</h2>
+        </div>
+        {{/if}}
+
+        <div class="overview-section">
+          <h3>Report Overview</h3>
+          <p>
+            This analysis provides insights into your chatbot's performance and customer satisfaction metrics. 
+            The report includes AI-powered analysis, language pattern correlations, and performance analytics 
+            to help optimize your customer service operations.
           </p>
         </div>
 
-        <div class="report-sections">
-          <h3 class="sections-title">📚 What's Inside</h3>
-          <div class="sections-grid">
-            <div class="section-preview">
-              <div class="preview-icon">🤖</div>
-              <h4>AI-Powered Business Insights</h4>
-              <p>Advanced GPT analysis of conversation patterns, customer behavior, and strategic recommendations.</p>
-            </div>
-            
-            <div class="section-preview">
-              <div class="preview-icon">🔍</div>
-              <h4>Key Performance Insights</h4>
-              <p>Essential metrics and KPIs showing engagement levels, satisfaction scores, and business impact.</p>
-            </div>
-            
-            <div class="section-preview">
-              <div class="preview-icon">📊</div>
-              <h4>Customer Language Analysis</h4>
-              <p>Statistical analysis of language patterns that correlate with customer satisfaction.</p>
-            </div>
-            
-            <div class="section-preview">
-              <div class="preview-icon">📈</div>
-              <h4>Performance Analytics</h4>
-              <p>Visual charts and trends showing message volume, peak hours, and topic distribution.</p>
-            </div>
+        <div class="meta-section">
+          <div class="meta-item">
+            <strong>Analysis Period:</strong> {{timePeriod}}
           </div>
-        </div>
-
-        <div class="key-findings">
-          <h3 class="findings-title">🎯 Key Highlights</h3>
-          <div class="findings-list">
-            <div class="finding-item">
-              <strong>{{totalMessages}} messages</strong> processed across {{totalConversations}} conversations
-            </div>
-            <div class="finding-item">
-              <strong>{{averageCustomerRating}}/5 average rating</strong> demonstrates strong customer satisfaction
-            </div>
-            <div class="finding-item">
-              <strong>{{csatScore}} CSAT score</strong> indicates reliable service quality
-            </div>
-            {{#if hasPurchaseTracking}}
-            <div class="finding-item">
-              <strong>{{totalRevenue}} revenue</strong> generated through chatbot interactions
-            </div>
-            {{/if}}
+          <div class="meta-item">
+            <strong>Generated:</strong> {{generatedDate}}
           </div>
-        </div>
-      </div>
-
-      <div class="front-page-footer">
-        <div class="powered-by">
-          <span>Powered by Dialog Intelligens AI Analytics Platform</span>
         </div>
       </div>
     </div>
@@ -1347,14 +1164,6 @@
           {{/if}}
         </div>
       </div>
-
-     
-    
-    <!-- Professional Footer -->
-    <div class="footer page-break-inside-avoid">
-      <div class="footer-brand">Dialog Intelligens</div>
-      <p>Professional Analytics Report • Generated {{generatedDate}}</p>
-      <div class="footer-tagline">Empowering businesses through intelligent conversation analytics</div>
     </div>
   </div>
 </body>
