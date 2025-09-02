@@ -13,7 +13,6 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
-import { registerSplitTestRoutes, assignUserToSplitTest, trackSplitTestEvent } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -1058,25 +1057,6 @@ app.post('/register', async (req, res) => {
       ]
     );
 
-    const newUserId = result.rows[0].id;
-    
-    // Create default popup messages for each chatbot
-    if (chatbotIdsArray && Array.isArray(chatbotIdsArray)) {
-      for (const chatbotId of chatbotIdsArray) {
-        try {
-          await pool.query(
-            `INSERT INTO popup_messages (user_id, chatbot_id, popup_message)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id, chatbot_id) DO NOTHING`,
-            [newUserId, chatbotId, 'Har du brug for hjælp?']
-          );
-        } catch (popupError) {
-          console.error('Error creating default popup message:', popupError);
-          // Don't fail user creation if popup message creation fails
-        }
-      }
-    }
-
     return res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     console.error('Error registering user:', err);
@@ -1446,25 +1426,6 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
           }
         }
 
-        // Get split test assignment for this user if conversation is starting
-        let splitTestId = null;
-        let splitTestVariantId = null;
-        
-        try {
-          const { assignUserToSplitTest, trackSplitTestEvent } = await import('./splitTestRoutes.js');
-          const assignment = await assignUserToSplitTest(pool, user_id, chatbot_id);
-          if (assignment) {
-            splitTestId = assignment.split_test_id;
-            splitTestVariantId = assignment.variant_id;
-            
-            // Track conversation started event
-            await trackSplitTestEvent(pool, user_id, chatbot_id, 'conversation_started');
-          }
-        } catch (splitTestError) {
-          console.error('Error handling split test assignment:', splitTestError);
-          // Continue without split test tracking
-        }
-
         const updateResult = await client.query(
           `UPDATE conversations
            SET conversation_data = $3,
@@ -1479,24 +1440,22 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $20 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $19 THEN FALSE ELSE viewed END,
+               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
+               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
                livechat_email = COALESCE($16, livechat_email),
-               split_test_id = COALESCE($17, split_test_id),
-               split_test_variant_id = COALESCE($18, split_test_variant_id),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, splitTestId, splitTestVariantId, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email, split_test_id, split_test_variant_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email, splitTestId, splitTestVariantId]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1667,7 +1626,7 @@ app.post('/track-chatbot-open', async (req, res) => {
   CHANGED: /conversations now uses comma-separated chatbot_id to match multiple IDs via ANY($1).
 */
 app.get('/conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, lacking_info, start_date, end_date, split_test_only, no_split_test, split_test_id } = req.query;
+  const { chatbot_id, lacking_info, start_date, end_date } = req.query;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
@@ -1693,18 +1652,6 @@ app.get('/conversations', authenticateToken, async (req, res) => {
     if (start_date && end_date) {
       queryText += ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
-    }
-
-    // Add split test filtering
-    if (split_test_only === 'true') {
-      queryText += ` AND c.split_test_id IS NOT NULL`;
-    } else if (no_split_test === 'true') {
-      queryText += ` AND c.split_test_id IS NULL`;
-    }
-    
-    if (split_test_id) {
-      queryText += ` AND c.split_test_id = $${paramIndex++}`;
-      queryParams.push(parseInt(split_test_id));
     }
 
     const result = await pool.query(queryText, queryParams);
@@ -3475,23 +3422,6 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
     
     console.log('User update result:', result.rows[0]);
     
-    // Create popup messages for any new chatbot IDs
-    if (chatbot_ids && Array.isArray(chatbot_ids)) {
-      for (const chatbotId of chatbot_ids) {
-        try {
-          await pool.query(
-            `INSERT INTO popup_messages (user_id, chatbot_id, popup_message)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id, chatbot_id) DO NOTHING`,
-            [targetId, chatbotId, 'Har du brug for hjælp?']
-          );
-        } catch (popupError) {
-          console.error('Error creating popup message for new chatbot:', popupError);
-          // Don't fail user update if popup message creation fails
-        }
-      }
-    }
-    
     res.status(200).json({ 
       message: 'User updated successfully',
       user: result.rows[0]
@@ -5004,103 +4934,6 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
-registerSplitTestRoutes(app, pool, authenticateToken);
-
-/* ================================
-   Popup Message with Backwards Compatibility
-================================ */
-
-// GET popup message for chatbot with backwards compatibility and split testing
-app.get('/api/popup-message/:chatbot_id', async (req, res) => {
-  const { chatbot_id } = req.params;
-  const { user_id } = req.query;
-  
-  if (!chatbot_id || !user_id) {
-    return res.status(400).json({ error: 'chatbot_id and user_id are required' });
-  }
-  
-  try {
-    const { assignUserToSplitTest, trackSplitTestEvent } = await import('./splitTestRoutes.js');
-    
-    // Check for active split test assignment
-    const splitTestAssignment = await assignUserToSplitTest(pool, user_id, chatbot_id);
-    
-    if (splitTestAssignment) {
-      // User is part of a split test - track popup shown event
-      await trackSplitTestEvent(pool, user_id, chatbot_id, 'popup_shown');
-      
-      console.log(`User ${user_id} assigned to split test variant: ${splitTestAssignment.variant_name}`);
-      return res.json({
-        popup_message: splitTestAssignment.popup_message,
-        split_test_id: splitTestAssignment.split_test_id,
-        variant_id: splitTestAssignment.variant_id,
-        variant_name: splitTestAssignment.variant_name,
-        test_name: splitTestAssignment.test_name,
-        is_split_test: true
-      });
-    }
-    
-    // No split test, check for user-specific popup message in database
-    try {
-      // First try to find user by chatbot ownership
-      const userResult = await pool.query(
-        `SELECT u.id 
-         FROM users u 
-         WHERE $1 = ANY(u.chatbot_ids)`,
-        [chatbot_id]
-      );
-      
-      if (userResult.rows.length > 0) {
-        const ownerId = userResult.rows[0].id;
-        
-        // Check if there's a database popup message
-        const dbResult = await pool.query(
-          'SELECT popup_message FROM popup_messages WHERE user_id = $1 AND chatbot_id = $2 AND is_active = true',
-          [ownerId, chatbot_id]
-        );
-        
-        if (dbResult.rows.length > 0) {
-          return res.json({ 
-            popup_message: dbResult.rows[0].popup_message,
-            is_split_test: false,
-            source: 'database'
-          });
-        }
-      }
-    } catch (dbError) {
-      console.error('Error checking database popup message:', dbError);
-    }
-    
-    // Fallback to default (backwards compatibility with GitHub scripts)
-    return res.json({ 
-      popup_message: 'Har du brug for hjælp?',
-      is_split_test: false,
-      source: 'default'
-    });
-    
-  } catch (error) {
-    console.error('Error getting popup message:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST track popup click event
-app.post('/api/track-popup-click', async (req, res) => {
-  const { user_id, chatbot_id } = req.body;
-  
-  if (!user_id || !chatbot_id) {
-    return res.status(400).json({ error: 'user_id and chatbot_id are required' });
-  }
-  
-  try {
-    const { trackSplitTestEvent } = await import('./splitTestRoutes.js');
-    await trackSplitTestEvent(pool, user_id, chatbot_id, 'popup_clicked');
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error tracking popup click:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 /* ================================
    Error Logging Endpoints
