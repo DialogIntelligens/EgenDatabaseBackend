@@ -1451,6 +1451,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
         let splitTestVariantId = null;
         
         try {
+          const { assignUserToSplitTest, trackSplitTestEvent } = await import('./splitTestRoutes.js');
           const assignment = await assignUserToSplitTest(pool, user_id, chatbot_id);
           if (assignment) {
             splitTestId = assignment.split_test_id;
@@ -5019,7 +5020,7 @@ app.get('/api/popup-message/:chatbot_id', async (req, res) => {
   }
   
   try {
-    const { assignUserToSplitTest, trackSplitTestEvent } = require('./splitTestRoutes.js');
+    const { assignUserToSplitTest, trackSplitTestEvent } = await import('./splitTestRoutes.js');
     
     // Check for active split test assignment
     const splitTestAssignment = await assignUserToSplitTest(pool, user_id, chatbot_id);
@@ -5092,7 +5093,7 @@ app.post('/api/track-popup-click', async (req, res) => {
   }
   
   try {
-    const { trackSplitTestEvent } = require('./splitTestRoutes.js');
+    const { trackSplitTestEvent } = await import('./splitTestRoutes.js');
     await trackSplitTestEvent(pool, user_id, chatbot_id, 'popup_clicked');
     res.json({ success: true });
   } catch (error) {
