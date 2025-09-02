@@ -374,14 +374,34 @@
       padding-bottom: 20px;
     }
 
-    /* Blue Header Section Only */
+    /* Enhanced Blue Header Section */
     .front-page-header {
-      background: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-color) 0%, #7c7ff7 100%);
       color: white;
-      padding: 60px 40px;
+      padding: 80px 40px;
       text-align: center;
-      box-shadow: var(--shadow-primary);
-      border-radius: 0 0 24px 24px;
+      box-shadow: 0 10px 30px rgba(104, 107, 241, 0.3);
+      border-radius: 0 0 32px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle background pattern */
+    .front-page-header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .header-content {
+      position: relative;
+      z-index: 1;
     }
 
     .report-title {
@@ -415,14 +435,32 @@
       margin: 0;
     }
 
+    /* Enhanced Overview Section */
     .overview-section {
-      background: var(--background-secondary);
-      border-left: 4px solid var(--accent-color);
-      border-radius: 20px;
-      padding: 40px;
-      box-shadow: var(--shadow-light);
+      background: linear-gradient(135deg, var(--background-secondary) 0%, #f1f3f8 100%);
       border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 50px;
+      box-shadow: var(--shadow-light);
       text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .overview-section::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(104, 107, 241, 0.03) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .overview-content {
+      position: relative;
+      z-index: 1;
     }
 
     .overview-section h3 {
@@ -442,22 +480,91 @@
       margin: 0 auto;
     }
 
+    /* Enhanced Meta Section */
     .meta-section {
-      display: flex;
-      justify-content: center;
-      gap: 60px;
-      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 30px;
+      margin-top: 40px;
     }
 
     .meta-item {
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 25px;
       text-align: center;
-      color: var(--text-secondary);
-      font-size: 16px;
+      box-shadow: var(--shadow-light);
+      transition: transform 0.2s ease;
     }
 
-    .meta-item strong {
-      color: var(--primary-color);
+    .meta-item:hover {
+      transform: translateY(-1px);
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-size: 12px;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .meta-value {
+      color: var(--primary-color);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    /* Key Highlights Section */
+    .highlights-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 25px;
+      margin: 40px 0;
+    }
+
+    .highlight-card {
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 30px;
+      text-align: center;
+      box-shadow: var(--shadow-light);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      border-top: 4px solid var(--primary-color);
+    }
+
+    .highlight-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-primary);
+    }
+
+    .highlight-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, var(--primary-color), #7c7ff7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 24px;
+      color: white;
+    }
+
+    .highlight-title {
+      color: var(--primary-color);
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .highlight-description {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
     }
 
     /* Key Insights - Matching AI Analysis Design */
@@ -915,32 +1022,66 @@
 </head>
 <body>
   <div class="report-container">
-    <!-- Simple Front Page -->
+    <!-- Enhanced Front Page -->
     <div class="front-page">
-      <!-- Blue Header Section -->
+      <!-- Enhanced Blue Header Section -->
       <div class="front-page-header">
-        <h1 class="report-title">AI Analysis Insights</h1>
-        <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
+        <div class="header-content">
+          <h1 class="report-title">AI Analysis Insights</h1>
+          <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
+        </div>
       </div>
 
       <!-- White Content Section -->
       <div class="front-page-body">
         
-        <div class="overview-section">
-          <h3>Report Overview</h3>
-          <p>
-            This analysis provides insights into your chatbot's performance and customer satisfaction metrics. 
-            The report includes AI-powered analysis, language pattern correlations, and performance analytics 
-            to help optimize your customer service operations.
-          </p>
+        <!-- Key Highlights Section -->
+        <div class="highlights-section">
+          <div class="highlight-card">
+            <div class="highlight-icon">🤖</div>
+            <div class="highlight-title">AI-Powered Analysis</div>
+            <div class="highlight-description">Advanced machine learning insights into customer interactions and satisfaction patterns</div>
+          </div>
+          
+          <div class="highlight-card">
+            <div class="highlight-icon">📊</div>
+            <div class="highlight-title">Performance Metrics</div>
+            <div class="highlight-description">Comprehensive tracking of engagement, conversion, and customer satisfaction scores</div>
+          </div>
+          
+          <div class="highlight-card">
+            <div class="highlight-icon">💬</div>
+            <div class="highlight-title">Language Analysis</div>
+            <div class="highlight-description">Text correlation analysis identifying positive and negative conversation patterns</div>
+          </div>
         </div>
 
+        <!-- Enhanced Overview Section -->
+        <div class="overview-section">
+          <div class="overview-content">
+            <h3>📋 Comprehensive Report Overview</h3>
+            <p>
+              This comprehensive analysis provides deep insights into your chatbot's performance and customer satisfaction metrics. 
+              Our AI-powered system analyzes conversation patterns, identifies key performance indicators, and correlates language 
+              usage with customer satisfaction scores to help you optimize your customer service operations.
+            </p>
+            <br>
+            <p>
+              The report includes detailed performance analytics, language pattern correlations, conversion tracking, 
+              and actionable recommendations to enhance your chatbot's effectiveness and customer experience.
+            </p>
+          </div>
+        </div>
+
+        <!-- Enhanced Meta Section -->
         <div class="meta-section">
           <div class="meta-item">
-            <strong>Analysis Period:</strong> {{timePeriod}}
+            <div class="meta-label">Analysis Period</div>
+            <div class="meta-value">{{timePeriod}}</div>
           </div>
           <div class="meta-item">
-            <strong>Generated:</strong> {{generatedDate}}
+            <div class="meta-label">Generated</div>
+            <div class="meta-value">{{generatedDate}}</div>
           </div>
         </div>
       </div>
