@@ -13,7 +13,6 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
-import { registerSplitTestRoutes } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -1402,9 +1401,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       form_data = null,
       is_flagged = false,
       is_resolved = false,
-      livechat_email = null,
-      split_test_id = null,
-      split_test_variant_id = null
+      livechat_email = null
     ) {
       const client = await pool.connect();
       try {
@@ -1443,24 +1440,22 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $20 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $19 THEN FALSE ELSE viewed END,
+               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
+               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
                livechat_email = COALESCE($16, livechat_email),
-               split_test_id = COALESCE($17, split_test_id),
-               split_test_variant_id = COALESCE($18, split_test_variant_id),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, split_test_id, split_test_variant_id, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email, split_test_id, split_test_variant_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email, split_test_id, split_test_variant_id]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1493,9 +1488,7 @@ app.post('/conversations', async (req, res) => {
     tags,
     form_data,
     is_resolved,
-    livechat_email,
-    split_test_id,
-    split_test_variant_id
+    livechat_email
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1544,9 +1537,7 @@ app.post('/conversations', async (req, res) => {
       form_data,
       false, // is_flagged - default to false
       is_resolved || false, // is_resolved - default to false
-      livechat_email,
-      split_test_id,
-      split_test_variant_id
+      livechat_email
     );
     res.status(201).json(result);
   } catch (err) {
@@ -4943,7 +4934,6 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
-registerSplitTestRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
