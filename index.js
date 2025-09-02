@@ -6773,10 +6773,12 @@ app.post('/split-test-popups', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'chatbot_id and splits array are required' });
   }
 
-  // Validate percentages add up to 100
+  // Validate percentages add up to 100 (with some tolerance for rounding)
   const totalPercentage = splits.reduce((sum, split) => sum + (split.percentage || 0), 0);
-  if (Math.abs(totalPercentage - 100) > 0.01) {
-    return res.status(400).json({ error: 'Split percentages must add up to 100%' });
+  if (Math.abs(totalPercentage - 100) > 1) {
+    return res.status(400).json({ 
+      error: `Split percentages must add up to approximately 100%. Current total: ${totalPercentage}%` 
+    });
   }
 
   const client = await pool.connect();
