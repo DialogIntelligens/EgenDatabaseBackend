@@ -292,7 +292,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
     }
   });
 
-  app.use('/', router);
+  app.use('/api', router);
 }
 
 
