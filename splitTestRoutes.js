@@ -23,6 +23,26 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
           position INTEGER NOT NULL DEFAULT 0
         )
       `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS split_test_impressions (
+          id SERIAL PRIMARY KEY,
+          chatbot_id TEXT NOT NULL,
+          variant_id INTEGER REFERENCES split_test_variants(id) ON DELETE CASCADE,
+          visitor_key TEXT NOT NULL,
+          user_id TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS split_test_assignments (
+          id SERIAL PRIMARY KEY,
+          chatbot_id TEXT NOT NULL,
+          visitor_key TEXT NOT NULL,
+          variant_id INTEGER NOT NULL REFERENCES split_test_variants(id) ON DELETE CASCADE,
+          assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          UNIQUE(chatbot_id, visitor_key)
+        )
+      `);
     } catch (err) {
       console.error('Error ensuring split test tables:', err);
     }
@@ -94,11 +114,28 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
     }
   });
 
-  // Assign a variant deterministically by percentage buckets
+  // Assign a variant deterministically by percentage buckets with sticky assignment
   router.get('/split-assign', async (req, res) => {
     try {
       const { chatbot_id, visitor_key } = req.query;
       if (!chatbot_id || !visitor_key) return res.status(400).json({ error: 'chatbot_id and visitor_key required' });
+
+      // Check for existing assignment first (sticky behavior)
+      const existingAssignment = await pool.query(
+        'SELECT variant_id FROM split_test_assignments WHERE chatbot_id=$1 AND visitor_key=$2',
+        [chatbot_id, visitor_key]
+      );
+
+      if (existingAssignment.rows.length > 0) {
+        const variantId = existingAssignment.rows[0].variant_id;
+        const variantResult = await pool.query(
+          'SELECT id, name, percentage, config FROM split_test_variants WHERE id=$1',
+          [variantId]
+        );
+        if (variantResult.rows.length > 0) {
+          return res.json({ enabled: true, variant_id: variantId, variant: variantResult.rows[0] });
+        }
+      }
 
       const testResult = await pool.query('SELECT id, enabled FROM split_tests WHERE chatbot_id=$1', [chatbot_id]);
       if (testResult.rows.length === 0 || !testResult.rows[0].enabled) {
@@ -130,9 +167,127 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         if (roll < cumulative) { chosen = v; break; }
       }
 
+      // Store assignment for stickiness
+      if (chosen) {
+        try {
+          await pool.query(
+            `INSERT INTO split_test_assignments (chatbot_id, visitor_key, variant_id)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (chatbot_id, visitor_key) DO NOTHING`,
+            [chatbot_id, visitor_key, chosen.id]
+          );
+        } catch (assignErr) {
+          console.error('Error storing assignment:', assignErr);
+        }
+      }
+
       return res.json({ enabled: true, variant_id: chosen?.id || null, variant: chosen || null });
     } catch (err) {
       console.error('GET /split-assign error:', err);
+      return res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  // Log impression (popup shown)
+  router.post('/split-impression', async (req, res) => {
+    try {
+      const { chatbot_id, variant_id, visitor_key, user_id } = req.body;
+      if (!chatbot_id || !variant_id || !visitor_key) {
+        return res.status(400).json({ error: 'chatbot_id, variant_id, visitor_key required' });
+      }
+
+      await pool.query(
+        `INSERT INTO split_test_impressions (chatbot_id, variant_id, visitor_key, user_id)
+         VALUES ($1, $2, $3, $4)`,
+        [chatbot_id, variant_id, visitor_key, user_id || null]
+      );
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('POST /split-impression error:', err);
+      return res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  // Get split test statistics for comparison
+  router.get('/split-test-statistics/:chatbot_id', authenticateToken, async (req, res) => {
+    try {
+      const { chatbot_id } = req.params;
+      const { start_date, end_date } = req.query;
+
+      // Get test configuration
+      const testResult = await pool.query('SELECT id, enabled FROM split_tests WHERE chatbot_id=$1', [chatbot_id]);
+      if (testResult.rows.length === 0) {
+        return res.json({ enabled: false, statistics: [] });
+      }
+
+      const splitTestId = testResult.rows[0].id;
+      const enabled = testResult.rows[0].enabled;
+
+      // Get variants
+      const variantsResult = await pool.query(
+        'SELECT id, name, config FROM split_test_variants WHERE split_test_id=$1 ORDER BY position, id',
+        [splitTestId]
+      );
+
+      const statistics = [];
+      
+      for (const variant of variantsResult.rows) {
+        let dateFilter = '';
+        let queryParams = [chatbot_id, variant.id];
+        let paramIndex = 3;
+
+        if (start_date && end_date) {
+          dateFilter = ` AND sti.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+          queryParams.push(start_date, end_date);
+        }
+
+        // Get impressions (popup shows)
+        const impressionsResult = await pool.query(
+          `SELECT COUNT(*) as impressions FROM split_test_impressions sti 
+           WHERE sti.chatbot_id = $1 AND sti.variant_id = $2${dateFilter}`,
+          queryParams
+        );
+
+        // Get conversations for this variant
+        const conversationsResult = await pool.query(
+          `SELECT COUNT(*) as conversations, 
+                  AVG(CASE WHEN customer_rating IS NOT NULL THEN customer_rating END) as avg_rating,
+                  COUNT(CASE WHEN customer_rating IS NOT NULL THEN 1 END) as rating_count,
+                  COUNT(CASE WHEN customer_rating >= 4 THEN 1 END) as satisfied_count
+           FROM conversations c 
+           WHERE c.chatbot_id = $1 AND c.split_test_id = $2${dateFilter.replace('sti.', 'c.')}`,
+          queryParams
+        );
+
+        const impressions = parseInt(impressionsResult.rows[0].impressions) || 0;
+        const conversations = parseInt(conversationsResult.rows[0].conversations) || 0;
+        const avgRating = conversationsResult.rows[0].avg_rating || null;
+        const ratingCount = parseInt(conversationsResult.rows[0].rating_count) || 0;
+        const satisfiedCount = parseInt(conversationsResult.rows[0].satisfied_count) || 0;
+
+        // Calculate conversion rate (impressions -> conversations)
+        const conversionRate = impressions > 0 ? ((conversations / impressions) * 100).toFixed(2) : '0.00';
+        
+        // Calculate CSAT
+        const csat = ratingCount > 0 ? ((satisfiedCount / ratingCount) * 100).toFixed(1) : null;
+
+        statistics.push({
+          variant_id: variant.id,
+          variant_name: variant.name,
+          popup_text: variant.config?.popup_text || '',
+          impressions,
+          conversations,
+          conversion_rate: `${conversionRate}%`,
+          avg_rating: avgRating ? parseFloat(avgRating).toFixed(2) : null,
+          csat: csat ? `${csat}%` : null,
+          rating_count: ratingCount
+        });
+      }
+
+      return res.json({ enabled, statistics });
+    } catch (err) {
+      console.error('GET /split-test-statistics error:', err);
       return res.status(500).json({ error: 'Server error', details: err.message });
     }
   });
