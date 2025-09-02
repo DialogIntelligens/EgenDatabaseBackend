@@ -371,9 +371,7 @@
       background: white;
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-after: always;
-      break-after: page;
-      padding-bottom: 40px;
+      padding-bottom: 20px;
     }
 
     /* Blue Header Section Only */
@@ -957,13 +955,10 @@
       </div>
     </div>
 
-    <!-- Force page break after front page -->
-    <div class="page-break-after"></div>
-
     <div class="content">
        <!-- AI Analysis Section -->
        {{#if gptAnalysis}}
-       <div class="section page-break-inside-avoid">
+       <div class="section page-break-inside-avoid page-break-before">
          <h2 class="section-header">
            <span class="section-icon">🤖</span>
            AI-Powered Business Insights
