@@ -63,5 +63,3 @@ export function registerPopupMessageRoutes(app, pool, authenticateToken) {
 
   app.use('/', router);
 }
-
-
