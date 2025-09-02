@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
   <title> AI Analysis Insights - Dialog Intelligens </title>
   <!-- Google Fonts - Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -27,6 +28,26 @@
       --border-light: #DBDCEC;
       --shadow-primary: 0px 8px 16px 0px rgba(104, 107, 241, 0.16);
       --shadow-light: 0px 4px 12px 0px rgba(104, 107, 241, 0.08);
+=======
+  <title>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}} - Professional Report</title>
+  <style>
+    /* Professional Color Palette */
+    :root {
+      --primary-color: #1a365d;
+      --secondary-color: #3182ce;
+      --accent-color: #38a169;
+      --success-color: #48bb78;
+      --warning-color: #ed8936;
+      --danger-color: #e53e3e;
+      --text-primary: #2d3748;
+      --text-secondary: #4a5568;
+      --text-muted: #718096;
+      --background-primary: #ffffff;
+      --background-secondary: #f7fafc;
+      --background-accent: #edf2f7;
+      --border-color: #e2e8f0;
+      --border-light: #f1f5f9;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       --spacing-xs: 8px;
       --spacing-sm: 12px;
       --spacing-md: 20px;
@@ -35,11 +56,16 @@
       --spacing-2xl: 60px;
     }
     
+<<<<<<< HEAD
     /* PDF-Optimized Reset and Base */
+=======
+    /* Reset and Professional Base */
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+<<<<<<< HEAD
       -webkit-print-color-adjust: exact;
       color-adjust: exact;
     }
@@ -68,12 +94,37 @@
     }
     
     /* PDF-Friendly Typography */
+=======
+    }
+    
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text-primary);
+      background: var(--background-secondary);
+      margin: 0;
+      padding: 0;
+      font-size: 14px;
+    }
+    
+    /* Main Container with Professional Layout */
+    .report-container {
+      max-width: 210mm;
+      margin: 0 auto;
+      background: var(--background-primary);
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      min-height: 297mm;
+    }
+    
+    /* Professional Typography Scale */
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     h1, h2, h3, h4, h5, h6 {
       color: var(--primary-color);
       margin-bottom: 0.5em;
       font-weight: 600;
       line-height: 1.3;
       letter-spacing: -0.025em;
+<<<<<<< HEAD
       page-break-after: avoid;
       break-after: avoid;
     }
@@ -82,10 +133,31 @@
     h2 { font-size: 22px; font-weight: 600; }
     h3 { font-size: 18px; font-weight: 600; }
     h4 { font-size: 15px; font-weight: 600; }
+=======
+    }
+    
+    h1 { 
+      font-size: 32px; 
+      font-weight: 700; 
+    }
+    h2 { 
+      font-size: 24px; 
+      font-weight: 600;
+    }
+    h3 { 
+      font-size: 20px; 
+      font-weight: 600;
+    }
+    h4 { 
+      font-size: 16px; 
+      font-weight: 600;
+    }
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     
     p {
       margin-bottom: 1em;
       color: var(--text-secondary);
+<<<<<<< HEAD
       line-height: 1.6;
       orphans: 3;
       widows: 3;
@@ -118,11 +190,76 @@
     .section {
       margin-bottom: 40px;
       page-break-inside: avoid;
+=======
+      line-height: 1.7;
+    }
+    
+    /* Premium Header Design */
+    .header {
+      background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+      color: white;
+      padding: var(--spacing-2xl);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* Subtle pattern overlay */
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        radial-gradient(circle at 25% 25%, rgba(255,255,255,0.1) 1px, transparent 1px),
+        radial-gradient(circle at 75% 75%, rgba(255,255,255,0.1) 1px, transparent 1px);
+      background-size: 20px 20px;
+      opacity: 0.3;
+    }
+    
+    .header-content {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+    }
+    
+    .header h1 {
+      color: white;
+      margin-bottom: var(--spacing-sm);
+      font-size: 36px;
+      font-weight: 700;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .header .subtitle {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: var(--spacing-sm);
+    }
+    
+    .header .meta {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 14px;
+      font-weight: 400;
+    }
+    
+    /* Content Container */
+    .content {
+      padding: var(--spacing-2xl) var(--spacing-xl);
+    }
+    
+    /* Professional Section Styling */
+    .section {
+      margin-bottom: var(--spacing-2xl);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       break-inside: avoid;
     }
     
     .section-header {
       color: var(--primary-color);
+<<<<<<< HEAD
       border-bottom: 2px solid var(--secondary-color);
       padding-bottom: 6px;
       margin-bottom: 18px;
@@ -137,12 +274,40 @@
     .section-icon {
       width: 26px;
       height: 26px;
+=======
+      border-bottom: 3px solid var(--secondary-color);
+      padding-bottom: var(--spacing-sm);
+      margin-bottom: var(--spacing-xl);
+      font-size: 24px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      position: relative;
+    }
+    
+    .section-header::after {
+      content: '';
+      position: absolute;
+      bottom: -3px;
+      left: 0;
+      width: 60px;
+      height: 3px;
+      background: var(--accent-color);
+      border-radius: 2px;
+    }
+    
+    .section-icon {
+      width: 32px;
+      height: 32px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       background: var(--secondary-color);
       border-radius: 50%;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       color: white;
+<<<<<<< HEAD
       font-size: 13px;
       font-weight: bold;
       flex-shrink: 0;
@@ -159,22 +324,49 @@
       page-break-inside: avoid;
       break-inside: avoid;
       box-shadow: var(--shadow-light);
+=======
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: 0 4px 8px rgba(49, 130, 206, 0.3);
+    }
+    
+    /* Executive Summary Box */
+    .executive-summary {
+      background: linear-gradient(135deg, var(--background-secondary) 0%, rgba(49, 130, 206, 0.05) 100%);
+      border: 2px solid var(--border-light);
+      border-left: 6px solid var(--secondary-color);
+      border-radius: 12px;
+      padding: var(--spacing-2xl);
+      margin-bottom: var(--spacing-2xl);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .executive-summary h2 {
       color: var(--primary-color);
+<<<<<<< HEAD
       font-size: 22px;
       margin-bottom: 20px;
+=======
+      font-size: 26px;
+      margin-bottom: var(--spacing-lg);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       text-align: center;
     }
     
     .executive-text {
+<<<<<<< HEAD
       font-size: 15px;
       line-height: 1.7;
+=======
+      font-size: 16px;
+      line-height: 1.8;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       color: var(--text-secondary);
       text-align: justify;
     }
     
+<<<<<<< HEAD
     /* Metric Grid */
     .metric-grid {
       display: grid;
@@ -212,28 +404,93 @@
     
     .metric-card.success {
       border-top-color: var(--success-color);
+=======
+    /* Premium Metric Cards */
+    .metric-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-lg);
+      margin-bottom: var(--spacing-xl);
+    }
+    
+    .metric-grid .metric-card {
+      flex: 1;
+      min-width: 280px;
+    }
+    
+    .metric-card {
+      background: white;
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: var(--spacing-xl);
+      position: relative;
+      margin-bottom: var(--spacing-md);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: var(--secondary-color);
+      border-radius: 12px 12px 0 0;
+    }
+    
+    .metric-card.highlight::before {
+      background: linear-gradient(90deg, var(--accent-color), var(--success-color));
+    }
+    
+    .metric-card.warning::before {
+      background: linear-gradient(90deg, var(--warning-color), #f6ad55);
+    }
+    
+    .metric-card.success::before {
+      background: linear-gradient(90deg, var(--success-color), #68d391);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .metric-card h4 {
       color: var(--text-muted);
+<<<<<<< HEAD
       font-size: 12px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 15px;
       margin-top: 0;
+=======
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: var(--spacing-md);
+      margin-top: var(--spacing-sm);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .metric-card .value {
       color: var(--primary-color);
+<<<<<<< HEAD
       font-size: 28px;
       font-weight: 700;
       margin-bottom: 8px;
       line-height: 1.1;
+=======
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: var(--spacing-sm);
+      line-height: 1.1;
+      font-feature-settings: 'tnum';
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .metric-card .description {
       color: var(--text-secondary);
+<<<<<<< HEAD
       font-size: 12px;
       line-height: 1.4;
       font-weight: 500;
@@ -246,6 +503,20 @@
       right: 15px;
       width: 10px;
       height: 10px;
+=======
+      font-size: 13px;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+    
+    /* Status Indicators */
+    .status-indicator {
+      position: absolute;
+      top: var(--spacing-md);
+      right: var(--spacing-md);
+      width: 12px;
+      height: 12px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       border-radius: 50%;
       background: var(--success-color);
     }
@@ -258,6 +529,7 @@
       background: var(--danger-color);
     }
     
+<<<<<<< HEAD
     /* Chart Containers - Updated with Dashboard Styling */
     .chart-container {
       background: white;
@@ -285,10 +557,32 @@
       font-weight: 600;
       padding-bottom: 10px;
       border-bottom: 1px solid var(--border-light);
+=======
+    /* Professional Chart Containers */
+    .chart-container {
+      background: white;
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: var(--spacing-xl);
+      margin-bottom: var(--spacing-xl);
+      break-inside: avoid;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    
+    .chart-container h3 {
+      margin-bottom: var(--spacing-lg);
+      text-align: center;
+      color: var(--primary-color);
+      font-size: 20px;
+      font-weight: 600;
+      padding-bottom: var(--spacing-sm);
+      border-bottom: 2px solid var(--border-light);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .chart-image {
       max-width: 100%;
+<<<<<<< HEAD
       max-height: 300px;
       height: auto;
       display: block;
@@ -300,10 +594,23 @@
     .chart-description {
       margin-top: 20px; /* Increased margin */
       font-size: 12px;
+=======
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .chart-description {
+      margin-top: var(--spacing-md);
+      font-size: 13px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       color: var(--text-muted);
       text-align: center;
       font-style: italic;
       font-weight: 500;
+<<<<<<< HEAD
       padding-top: 15px; /* Increased padding */
       border-top: 1px solid var(--border-light);
     }
@@ -613,11 +920,146 @@
       border-radius: 16px;
       overflow: hidden;
       box-shadow: var(--shadow-light);
+=======
+      padding-top: var(--spacing-sm);
+      border-top: 1px solid var(--border-light);
+    }
+    
+    /* Premium Analysis Section */
+    .analysis-content {
+      background: linear-gradient(135deg, var(--background-secondary) 0%, rgba(56, 161, 105, 0.05) 100%);
+      border-left: 6px solid var(--accent-color);
+      border-radius: 12px;
+      padding: var(--spacing-2xl);
+      margin-bottom: var(--spacing-xl);
+      font-size: 15px;
+      line-height: 1.8;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      position: relative;
+    }
+    
+    .analysis-content::before {
+      content: '💡';
+      position: absolute;
+      top: var(--spacing-lg);
+      right: var(--spacing-lg);
+      font-size: 24px;
+      opacity: 0.3;
+    }
+    
+    .analysis-content h1,
+    .analysis-content h2,
+    .analysis-content h3 {
+      margin-top: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+      color: var(--primary-color);
+    }
+    
+    .analysis-content ul,
+    .analysis-content ol {
+      margin-left: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+    }
+    
+    .analysis-content li {
+      margin-bottom: var(--spacing-xs);
+      line-height: 1.7;
+    }
+    
+    .analysis-content strong {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    
+    /* Key Insights Section */
+    .key-insights {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: var(--spacing-2xl);
+      border-radius: 12px;
+      margin-bottom: var(--spacing-xl);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .key-insights::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100px;
+      height: 100px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 50%;
+      transform: translate(30px, -30px);
+    }
+    
+    .key-insights h3 {
+      color: white;
+      font-size: 22px;
+      margin-bottom: var(--spacing-lg);
+      position: relative;
+      z-index: 2;
+    }
+    
+    .insights-list {
+      position: relative;
+      z-index: 2;
+    }
+    
+    .insight-item {
+      background: rgba(255, 255, 255, 0.15);
+      padding: var(--spacing-md);
+      border-radius: 8px;
+      margin-bottom: var(--spacing-sm);
+      font-size: 14px;
+      line-height: 1.6;
+      border-left: 4px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* Professional Footer */
+    .footer {
+      background: var(--background-accent);
+      border-top: 4px solid var(--primary-color);
+      padding: var(--spacing-xl);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    
+    .footer-brand {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: var(--spacing-sm);
+      letter-spacing: 0.5px;
+    }
+    
+    .footer-tagline {
+      font-style: italic;
+      margin-top: var(--spacing-sm);
+      color: var(--text-secondary);
+    }
+    
+    /* Data Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: var(--spacing-lg);
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .data-table th,
     .data-table td {
+<<<<<<< HEAD
       padding: 12px;
+=======
+      padding: var(--spacing-md);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       text-align: left;
       border-bottom: 1px solid var(--border-light);
     }
@@ -626,15 +1068,22 @@
       background: var(--background-secondary);
       font-weight: 600;
       color: var(--primary-color);
+<<<<<<< HEAD
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
+=======
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .data-table tr:nth-child(even) {
       background: var(--background-secondary);
     }
     
+<<<<<<< HEAD
     /* PDF Page Break Control - Enhanced */
     .page-break-before { page-break-before: always; break-before: page; }
     .page-break-after { page-break-after: always; break-after: page; }
@@ -716,6 +1165,65 @@
     }
     
     /* Utility Classes */
+=======
+    /* Print Optimization */
+    @media print {
+      body {
+        background: white !important;
+        padding: 0 !important;
+      }
+      
+      .report-container {
+        box-shadow: none !important;
+        max-width: none !important;
+        margin: 0 !important;
+      }
+      
+      .header,
+      .section,
+      .chart-container,
+      .metric-card,
+      .executive-summary,
+      .analysis-content {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      
+      .analysis-content {
+        font-size: 14px;
+      }
+      
+      .chart-container {
+        max-height: 400px;
+      }
+      
+      .key-insights {
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+      }
+    }
+    
+    /* Responsive Design */
+    @media screen and (max-width: 768px) {
+      .content {
+        padding: var(--spacing-lg);
+      }
+      
+      .metric-grid {
+        flex-direction: column;
+      }
+      
+      .metric-grid .metric-card {
+        min-width: auto;
+      }
+      
+      .header h1 {
+        font-size: 28px;
+      }
+    }
+    
+    /* Professional Utility Classes */
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     .text-center { text-align: center; }
     .text-right { text-align: right; }
     .font-bold { font-weight: 700; }
@@ -723,6 +1231,7 @@
     .text-warning { color: var(--warning-color); }
     .text-danger { color: var(--danger-color); }
     .mb-0 { margin-bottom: 0; }
+<<<<<<< HEAD
     .mt-lg { margin-top: 20px; }
     .hidden { display: none; }
     
@@ -915,10 +1424,15 @@
       height: 30px;
       page-break-inside: avoid;
     }
+=======
+    .mt-lg { margin-top: var(--spacing-lg); }
+    .hidden { display: none; }
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
   </style>
 </head>
 <body>
   <div class="report-container">
+<<<<<<< HEAD
     <!-- Simple Front Page -->
     <div class="front-page">
       <!-- Blue Header Section -->
@@ -1159,3 +1673,183 @@
   </div>
 </body>
 </html>
+=======
+    <!-- Professional Header -->
+    <div class="header">
+      <div class="header-content">
+        <h1>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}}</h1>
+        <div class="subtitle">{{timePeriod}}</div>
+        <div class="meta">
+          Generated on {{generatedDate}}
+          {{#if companyInfo}} • {{companyInfo}}{{/if}}
+        </div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <!-- Executive Summary Section -->
+      <div class="executive-summary">
+        <h2>Executive Summary</h2>
+        <div class="executive-text">
+          Chatbotten leverer stabil kundeservice med en samlet Customer Satisfaction (CSAT) 
+          på {{csatScore}} og en gennemsnitlig rating på {{averageCustomerRating}} ud af 5. 
+          Over tiden er der håndteret {{totalMessages}} samtaler og afsendt {{totalConversations}} 
+          beskeder, svarende til i gennemsnit {{#if dailyAverage}}{{dailyAverage}}{{else}}N/A{{/if}} 
+          beskeder per dag. Dette indikerer, at chatbotten aktivt assisterer besøgende og aflaster supportteamet.
+        </div>
+      </div>
+      
+      <!-- Key Insights Section -->
+      <div class="key-insights">
+        <h3>🔍 Key Performance Insights</h3>
+        <div class="insights-list">
+          <div class="insight-item">
+            <strong>High Engagement:</strong> {{totalMessages}} total messages indicate active user interaction
+          </div>
+          <div class="insight-item">
+            <strong>Customer Satisfaction:</strong> {{averageCustomerRating}}/5 rating shows excellent service quality
+          </div>
+          <div class="insight-item">
+            <strong>Consistent Performance:</strong> {{csatScore}} CSAT score demonstrates reliable support
+          </div>
+          {{#if hasPurchaseTracking}}
+          <div class="insight-item">
+            <strong>Business Impact:</strong> {{totalRevenue}} revenue generated through chatbot interactions
+          </div>
+          {{/if}}
+        </div>
+      </div>
+      
+      <!-- Executive Metrics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📊</span>
+          Performance Metrics Overview
+        </h2>
+        <div class="metric-grid">
+          <div class="metric-card highlight">
+            <div class="status-indicator"></div>
+            <h4>Total Messages</h4>
+            <div class="value">{{totalMessages}}</div>
+            <div class="description">User interactions with chatbot system</div>
+          </div>
+          
+          <div class="metric-card">
+            <div class="status-indicator"></div>
+            <h4>Total Conversations</h4>
+            <div class="value">{{totalConversations}}</div>
+            <div class="description">Unique customer chat sessions</div>
+          </div>
+          
+          <div class="metric-card success">
+            <div class="status-indicator"></div>
+            <h4>Customer Satisfaction</h4>
+            <div class="value">{{averageCustomerRating}}</div>
+            <div class="description">Average user rating score</div>
+          </div>
+          
+          <div class="metric-card highlight">
+            <div class="status-indicator"></div>
+            <h4>CSAT Score</h4>
+            <div class="value">{{csatScore}}</div>
+            <div class="description">Customer satisfaction percentage</div>
+          </div>
+          
+          {{#if hasPurchaseTracking}}
+          <div class="metric-card success">
+            <div class="status-indicator"></div>
+            <h4>Total Revenue</h4>
+            <div class="value">{{totalRevenue}}</div>
+            <div class="description">Revenue generated through chatbot</div>
+          </div>
+          
+          <div class="metric-card highlight">
+            <div class="status-indicator"></div>
+            <h4>Conversion Rate</h4>
+            <div class="value">{{conversionRate}}</div>
+            <div class="description">Message-to-purchase conversion</div>
+          </div>
+          {{/if}}
+          
+          {{#if hasGreetingRateData}}
+          <div class="metric-card">
+            <div class="status-indicator"></div>
+            <h4>Greeting Success Rate</h4>
+            <div class="value">{{greetingRate}}</div>
+            <div class="description">Successful conversation initiations</div>
+          </div>
+          {{/if}}
+          
+          {{#if hasFallbackData}}
+          <div class="metric-card warning">
+            <div class="status-indicator warning"></div>
+            <h4>Fallback Rate</h4>
+            <div class="value">{{fallbackRate}}</div>
+            <div class="description">Unhandled customer queries</div>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+
+      <!-- AI Analysis Section -->
+      {{#if gptAnalysis}}
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">🤖</span>
+          AI-Powered Business Insights
+        </h2>
+        <div class="analysis-content">
+          {{{gptAnalysis}}}
+        </div>
+      </div>
+      {{/if}}
+
+      <!-- Performance Analytics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📈</span>
+          Performance Analytics Dashboard
+        </h2>
+        
+        {{#if dailyChart}}
+        <div class="chart-container">
+          <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
+          <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
+          <div class="chart-description">
+            Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
+          </div>
+        </div>
+        {{/if}}
+        
+        {{#if hourlyChart}}
+        <div class="chart-container">
+          <h3>Peak Activity Hours Analysis</h3>
+          <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
+          <div class="chart-description">
+            Customer engagement patterns throughout the day revealing optimal support hours
+          </div>
+        </div>
+        {{/if}}
+        
+        {{#if topicChart}}
+        <div class="chart-container">
+          <h3>Customer Inquiry Topic Distribution</h3>
+          <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
+          <div class="chart-description">
+            Most frequently discussed topics and customer interests driving engagement
+          </div>
+        </div>
+        {{/if}}
+      </div>
+    </div>
+    
+    <!-- Professional Footer -->
+    <div class="footer">
+      <div class="footer-brand">Dialog Intelligens</div>
+      <p>Professional Analytics Report • Generated {{generatedDate}}</p>
+      <div class="footer-tagline">Empowering businesses through intelligent conversation analytics</div>
+    </div>
+  </div>
+</body>
+</html>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
