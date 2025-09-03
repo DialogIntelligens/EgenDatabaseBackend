@@ -17,6 +17,34 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
           UNIQUE(chatbot_id, version)
         )
       `);
+
+      // Migration: Add version column if it doesn't exist and set default values
+      try {
+        await pool.query('ALTER TABLE split_tests ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1');
+        await pool.query('ALTER TABLE split_tests ADD COLUMN IF NOT EXISTS name TEXT');
+        await pool.query('ALTER TABLE split_tests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()');
+        
+        // Update existing records without version
+        await pool.query('UPDATE split_tests SET version = 1 WHERE version IS NULL');
+        
+        // Drop old unique constraint if it exists
+        await pool.query('ALTER TABLE split_tests DROP CONSTRAINT IF EXISTS split_tests_chatbot_id_key');
+        
+        // Add new unique constraint if it doesn't exist
+        await pool.query(`
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.table_constraints 
+              WHERE constraint_name = 'split_tests_chatbot_id_version_unique'
+            ) THEN
+              ALTER TABLE split_tests ADD CONSTRAINT split_tests_chatbot_id_version_unique UNIQUE(chatbot_id, version);
+            END IF;
+          END $$;
+        `);
+      } catch (migrationError) {
+        console.log('Migration already applied or failed:', migrationError.message);
+      }
       await pool.query(`
         CREATE TABLE IF NOT EXISTS split_test_variants (
           id SERIAL PRIMARY KEY,
@@ -213,8 +241,11 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       }
 
       // Get the currently enabled split test (there should only be one enabled at a time)
-      const testResult = await pool.query('SELECT id, enabled FROM split_tests WHERE chatbot_id=$1 AND enabled=TRUE ORDER BY version DESC LIMIT 1', [chatbot_id]);
+      console.log('Looking for enabled split test for chatbot:', chatbot_id);
+      const testResult = await pool.query('SELECT id, version, enabled FROM split_tests WHERE chatbot_id=$1 AND enabled=TRUE ORDER BY version DESC LIMIT 1', [chatbot_id]);
+      console.log('Found enabled tests:', testResult.rows);
       if (testResult.rows.length === 0) {
+        console.log('No enabled split test found');
         return res.json({ enabled: false, variant_id: null });
       }
       const splitTestId = testResult.rows[0].id;
