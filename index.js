@@ -1397,6 +1397,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       purchase_tracking_enabled,
       is_livechat = false,
       fallback = null,
+      ligegyldig = null,
       tags = null,
       form_data = null,
       is_flagged = false,
@@ -1437,25 +1438,26 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                purchase_tracking_enabled = COALESCE($9, purchase_tracking_enabled),
                is_livechat = COALESCE($10, is_livechat),
                fallback = COALESCE($11, fallback),
-               tags = COALESCE($12, tags),
-               form_data = COALESCE($13, form_data),
-               is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
-               livechat_email = COALESCE($16, livechat_email),
+               ligegyldig = COALESCE($12, ligegyldig),
+               tags = COALESCE($13, tags),
+               form_data = COALESCE($14, form_data),
+               is_flagged = COALESCE($15, is_flagged),
+               is_resolved = CASE WHEN $19 THEN FALSE ELSE COALESCE($16, is_resolved) END,
+               viewed = CASE WHEN $18 THEN FALSE ELSE viewed END,
+               livechat_email = COALESCE($17, livechat_email),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, ligegyldig, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, ligegyldig, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, ligegyldig, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1485,6 +1487,7 @@ app.post('/conversations', async (req, res) => {
     purchase_tracking_enabled,
     is_livechat,
     fallback,
+    ligegyldig,
     tags,
     form_data,
     is_resolved,
@@ -1520,7 +1523,7 @@ app.post('/conversations', async (req, res) => {
     // Normalize is_livechat: only update when explicitly provided as boolean; otherwise leave unchanged (null)
     const normalizedIsLivechat = (typeof is_livechat === 'boolean') ? is_livechat : null;
 
-    // Call upsertConversation with is_livechat, fallback, tags, form_data, is_flagged, and is_resolved parameters
+    // Call upsertConversation with is_livechat, fallback, ligegyldig, tags, form_data, is_flagged, and is_resolved parameters
     const result = await upsertConversation(
       user_id,
       chatbot_id,
@@ -1533,6 +1536,7 @@ app.post('/conversations', async (req, res) => {
       purchase_tracking_enabled,
       normalizedIsLivechat,
       fallback,
+      ligegyldig,
       tags,
       form_data,
       false, // is_flagged - default to false
@@ -2318,18 +2322,20 @@ const getEmneAndScore = async (conversationText, userId, chatbotId) => {
     const scoreMatch = text.match(/Happy\(([^)]+)\)/);
     const infoMatch = text.match(/info\(([^)]+)\)/i);
     const fallbackMatch = text.match(/fallback\(([^)]+)\)/i);
+    const ligegyldigMatch = text.match(/ligegyldig\(([^)]+)\)/i);
     const tagsMatch = text.match(/tags\(([^)]+)\)/i);
 
     const emne = emneMatch ? emneMatch[1] : null;
     const score = scoreMatch ? scoreMatch[1] : null;
     const lacking_info = infoMatch && infoMatch[1].toLowerCase() === 'yes' ? true : false;
     const fallback = fallbackMatch ? fallbackMatch[1].toLowerCase() === 'yes' : null;
+    const ligegyldig = ligegyldigMatch ? ligegyldigMatch[1].toLowerCase() === 'yes' : null;
     const tags = tagsMatch ? tagsMatch[1].split(',').map(tag => tag.trim()) : null;
 
-    return { emne, score, lacking_info, fallback, tags };
+    return { emne, score, lacking_info, fallback, ligegyldig, tags };
   } catch (error) {
     console.error('Error getting emne, score, and lacking_info:', error);
-    return { emne: null, score: null, lacking_info: false, fallback: null, tags: null };
+    return { emne: null, score: null, lacking_info: false, fallback: null, ligegyldig: null, tags: null };
   }
 };
 
@@ -2416,6 +2422,10 @@ function transformStatisticsForPDF(rawData) {
     hasFallbackData: Boolean(rawData.hasFallbackData),
     fallbackRate: Number(rawData.fallbackRate) || 0,
     
+    // Ligegyldig rate statistics
+    hasLigegyldigData: Boolean(rawData.hasLigegyldigData),
+    ligegyldigRate: Number(rawData.ligegyldigRate) || 0,
+    
     // Response time data
     hasResponseTimeData: Boolean(rawData.hasResponseTimeData),
     avgResponseTime: rawData.avgResponseTime || 'N/A',
@@ -2443,8 +2453,8 @@ function transformStatisticsForPDF(rawData) {
             'dailyData', 'hourlyData', 'topTopics', 'sentimentAnalysis', 'hasPurchaseTracking',
             'totalPurchases', 'totalRevenue', 'averagePurchaseValue', 'conversionRate',
             'hasGreetingRateData', 'greetingRate', 'hasFallbackData', 'fallbackRate',
-            'hasResponseTimeData', 'avgResponseTime', 'totalLivechatConversations',
-            'avgLivechatPerDay', 'chartImages', 'companyInfo', 'gptAnalysis'].includes(key)) {
+            'hasLigegyldigData', 'ligegyldigRate', 'hasResponseTimeData', 'avgResponseTime', 
+            'totalLivechatConversations', 'avgLivechatPerDay', 'chartImages', 'companyInfo', 'gptAnalysis'].includes(key)) {
         acc[key] = rawData[key];
       }
       return acc;
@@ -3742,7 +3752,8 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             chatbot_id,
             customer_rating,
             purchase_tracking_enabled,
-            fallback
+            fallback,
+            ligegyldig
           FROM conversations 
           WHERE chatbot_id = ANY($1)
         `;
@@ -3762,6 +3773,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         let thumbsUpCount = 0;
         let satisfiedCount = 0;
         let fallbackCount = 0;
+        let ligegyldigCount = 0;
         let conversationsWithPurchaseTracking = 0;
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -3807,6 +3819,9 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           }
           if (conv.fallback === true) {
             fallbackCount += 1;
+          }
+          if (conv.ligegyldig === true) {
+            ligegyldigCount += 1;
           }
 
           // Ensure it's an array
@@ -3875,7 +3890,13 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           fallbackRate = `${((fallbackCount / conversations.length) * 100).toFixed(1)}%`;
         }
 
-        console.log(`User ${user.username}: ${totalMessages} total msgs, ${Math.round(averageMonthlyMessages)} avg monthly msgs, purchases ${purchasesCount}, ratings ${totalRatingsCount}, csat ${csat}, convRate ${conversionRate}, fallback ${fallbackRate}`);
+        // Compute per-user ligegyldig rate
+        let ligegyldigRate = 'N/A';
+        if (conversations.length > 0) {
+          ligegyldigRate = `${((ligegyldigCount / conversations.length) * 100).toFixed(1)}%`;
+        }
+
+        console.log(`User ${user.username}: ${totalMessages} total msgs, ${Math.round(averageMonthlyMessages)} avg monthly msgs, purchases ${purchasesCount}, ratings ${totalRatingsCount}, csat ${csat}, convRate ${conversionRate}, fallback ${fallbackRate}, ligegyldig ${ligegyldigRate}`);
 
         return {
           ...user,
@@ -3891,6 +3912,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           csat: csat,
           conversion_rate: conversionRate,
           fallback_rate: fallbackRate,
+          ligegyldig_rate: ligegyldigRate,
           ...trackingData
         };
       } catch (error) {
@@ -5646,7 +5668,8 @@ async function saveConversationToDatabase(
   formData = {},
   bugStatus = undefined,
   isLivechat = false,
-  fallback = null
+  fallback = null,
+  ligegyldig = null
 ) {
   try {
     const response = await fetch(
@@ -5669,6 +5692,7 @@ async function saveConversationToDatabase(
           purchase_tracking_enabled: purchaseTrackingEnabled,
           is_livechat: isLivechat,
           fallback: fallback,
+          ligegyldig: ligegyldig,
         }),
       }
     );
