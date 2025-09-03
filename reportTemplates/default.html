@@ -450,8 +450,6 @@
       letter-spacing: 0.5px;
     }
 
-
-
     /* Key Insights - Matching AI Analysis Design */
     .key-insights {
       background: var(--background-secondary);
@@ -580,15 +578,56 @@
       text-align: right;
     }
 
-    .correlation-summary {
-      margin-top: 15px;
-      padding: 10px;
-      background: rgba(104, 107, 241, 0.1);
-      border-radius: 8px;
-      font-size: 12px;
-      color: var(--text-secondary);
+    /* N-grams Explanation Section */
+    .ngrams-explanation {
+      background: var(--background-secondary);
+      border-left: 4px solid var(--accent-color);
+      border-radius: 20px;
+      padding: 30px;
+      margin-top: 40px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-before: always;
+      break-before: page;
+      box-shadow: var(--shadow-light);
+      border: 1px solid var(--border-color);
+    }
+
+    .explanation-header {
+      color: var(--primary-color);
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
       text-align: center;
-      border: 1px solid var(--border-light);
+      border-bottom: 2px solid var(--primary-color);
+      padding-bottom: 10px;
+    }
+
+    .explanation-content {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-primary);
+    }
+
+    .explanation-content h4 {
+      color: var(--primary-color);
+      font-size: 16px;
+      font-weight: 600;
+      margin: 20px 0 10px 0;
+    }
+
+    .explanation-content p {
+      margin-bottom: 15px;
+      text-align: justify;
+    }
+
+    .key-takeaway {
+      background: rgba(104, 107, 241, 0.1);
+      border-left: 3px solid var(--primary-color);
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 12px;
+      font-weight: 500;
     }
     
     /* Data Tables - Updated with Dashboard Styling */
@@ -1002,17 +1041,46 @@
           </ul>
         </div>
         {{/if}}
+      </div>
 
-        {{#if textAnalysis.ratingScoreCorrelation}}
-        <div class="correlation-summary">
-          <strong>Overall Correlation:</strong> Customer ratings and satisfaction scores show a correlation of 
-          {{#if textAnalysis.ratingScoreCorrelation.value}}
-          {{textAnalysis.ratingScoreCorrelation.value}} ({{textAnalysis.ratingScoreCorrelation.count}} conversations)
-          {{else}}
-          N/A (insufficient data)
-          {{/if}}
+      <!-- N-grams Analysis Explanation - Separate Page -->
+      <div class="ngrams-explanation">
+        <h3 class="explanation-header">🧠 Language Pattern Analysis & Insights</h3>
+        
+        <div class="explanation-content">
+          <h4>📊 Customer Communication Analysis</h4>
+          <p>
+            Based on the correlation analysis of {{textAnalysis.ratingScoreCorrelation.count}} conversations, 
+            we've identified significant language patterns that influence customer satisfaction. 
+            The overall correlation between language patterns and ratings is 
+            {{textAnalysis.ratingScoreCorrelation.value}}, indicating a meaningful relationship 
+            between customer communication and their satisfaction levels.
+          </p>
+
+          <div class="key-takeaway">
+            <h4>🏆 Business Improvement Opportunities</h4>
+            <p>
+              <strong>Customer Service Excellence:</strong> Your company can leverage these language insights 
+              to enhance customer service training programs. Focus on understanding what communication styles 
+              and approaches lead to higher customer satisfaction in your industry.
+            </p>
+            <p>
+              <strong>Process Optimization:</strong> The identified patterns reveal opportunities to streamline 
+              customer service processes, reduce response times, and improve first-contact resolution rates. 
+              This data can guide operational improvements and staff training initiatives.
+            </p>
+            <p>
+              <strong>Strategic Decision Making:</strong> These insights provide valuable data for strategic 
+              decisions about customer service investments, technology upgrades, and service delivery 
+              improvements that will have the most positive impact on customer satisfaction.
+            </p>
+            <p>
+              <strong>Competitive Advantage:</strong> Understanding these communication patterns gives your 
+              company a data-driven advantage in delivering superior customer experiences compared to competitors 
+              who rely on intuition rather than analytical insights.
+            </p>
+          </div>
         </div>
-        {{/if}}
       </div>
       {{/if}}
     </div>
