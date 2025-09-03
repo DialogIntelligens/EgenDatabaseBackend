@@ -8,9 +8,13 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS split_tests (
           id SERIAL PRIMARY KEY,
-          chatbot_id TEXT UNIQUE NOT NULL,
+          chatbot_id TEXT NOT NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          name TEXT,
           enabled BOOLEAN NOT NULL DEFAULT FALSE,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          UNIQUE(chatbot_id, version)
         )
       `);
       await pool.query(`
@@ -50,20 +54,61 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
 
   ensureSplitTables();
 
-  // Fetch configuration for a chatbot
+  // Fetch all split test versions for a chatbot
   router.get('/split-tests/:chatbot_id', authenticateToken, async (req, res) => {
     try {
       const { chatbot_id } = req.params;
-      const testResult = await pool.query('SELECT id, chatbot_id, enabled, updated_at FROM split_tests WHERE chatbot_id=$1', [chatbot_id]);
-      if (testResult.rows.length === 0) {
-        return res.json({ chatbot_id, enabled: false, variants: [] });
+      const { version } = req.query;
+      
+      if (version) {
+        // Get specific version
+        const testResult = await pool.query('SELECT id, chatbot_id, version, name, enabled, created_at, updated_at FROM split_tests WHERE chatbot_id=$1 AND version=$2', [chatbot_id, version]);
+        if (testResult.rows.length === 0) {
+          return res.json({ chatbot_id, version, enabled: false, variants: [] });
+        }
+        const splitTest = testResult.rows[0];
+        const variantsResult = await pool.query(
+          'SELECT id, name, percentage, config, position FROM split_test_variants WHERE split_test_id=$1 ORDER BY position, id',
+          [splitTest.id]
+        );
+        return res.json({ 
+          chatbot_id, 
+          version: splitTest.version,
+          name: splitTest.name,
+          enabled: splitTest.enabled, 
+          variants: variantsResult.rows,
+          created_at: splitTest.created_at,
+          updated_at: splitTest.updated_at
+        });
+      } else {
+        // Get latest version or all versions
+        const testResult = await pool.query('SELECT id, chatbot_id, version, name, enabled, created_at, updated_at FROM split_tests WHERE chatbot_id=$1 ORDER BY version DESC LIMIT 1', [chatbot_id]);
+        if (testResult.rows.length === 0) {
+          return res.json({ chatbot_id, enabled: false, variants: [], versions: [] });
+        }
+        const splitTest = testResult.rows[0];
+        const variantsResult = await pool.query(
+          'SELECT id, name, percentage, config, position FROM split_test_variants WHERE split_test_id=$1 ORDER BY position, id',
+          [splitTest.id]
+        );
+        
+        // Also get all versions for this chatbot
+        const allVersionsResult = await pool.query(
+          'SELECT version, name, enabled, created_at FROM split_tests WHERE chatbot_id=$1 ORDER BY version DESC',
+          [chatbot_id]
+        );
+        
+        return res.json({ 
+          chatbot_id, 
+          version: splitTest.version,
+          name: splitTest.name,
+          enabled: splitTest.enabled, 
+          variants: variantsResult.rows,
+          versions: allVersionsResult.rows,
+          created_at: splitTest.created_at,
+          updated_at: splitTest.updated_at
+        });
       }
-      const splitTest = testResult.rows[0];
-      const variantsResult = await pool.query(
-        'SELECT id, name, percentage, config, position FROM split_test_variants WHERE split_test_id=$1 ORDER BY position, id',
-        [splitTest.id]
-      );
-      return res.json({ chatbot_id, enabled: splitTest.enabled, variants: variantsResult.rows });
     } catch (err) {
       console.error('GET /split-tests error:', err);
       return res.status(500).json({ error: 'Server error', details: err.message });
@@ -74,7 +119,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
   router.post('/split-tests', authenticateToken, async (req, res) => {
     const client = await pool.connect();
     try {
-      const { chatbot_id, enabled, variants } = req.body;
+      const { chatbot_id, enabled, variants, name, version, create_new_version } = req.body;
       if (!chatbot_id) return res.status(400).json({ error: 'chatbot_id required' });
       if (!Array.isArray(variants)) return res.status(400).json({ error: 'variants must be array' });
       const sum = variants.reduce((s, v) => s + (parseInt(v.percentage, 10) || 0), 0);
@@ -82,17 +127,47 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
 
       await client.query('BEGIN');
 
-      const upsertTest = await client.query(
-        `INSERT INTO split_tests (chatbot_id, enabled, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (chatbot_id)
-         DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()
-         RETURNING id`,
-        [chatbot_id, !!enabled]
-      );
-      const splitTestId = upsertTest.rows[0].id;
+      let splitTestId;
+      let finalVersion;
 
-      // Replace variants for simplicity
+      if (create_new_version) {
+        // Disable all previous versions for this chatbot
+        await client.query(
+          'UPDATE split_tests SET enabled = FALSE WHERE chatbot_id = $1',
+          [chatbot_id]
+        );
+
+        // Get next version number
+        const maxVersionResult = await client.query(
+          'SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM split_tests WHERE chatbot_id = $1',
+          [chatbot_id]
+        );
+        finalVersion = maxVersionResult.rows[0].next_version;
+
+        // Create new version
+        const newTestResult = await client.query(
+          `INSERT INTO split_tests (chatbot_id, version, name, enabled, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, NOW(), NOW())
+           RETURNING id`,
+          [chatbot_id, finalVersion, name || `Split Test v${finalVersion}`, !!enabled]
+        );
+        splitTestId = newTestResult.rows[0].id;
+      } else {
+        // Update existing version
+        const targetVersion = version || 1;
+        const upsertTest = await client.query(
+          `INSERT INTO split_tests (chatbot_id, version, name, enabled, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (chatbot_id, version)
+           DO UPDATE SET name = EXCLUDED.name, enabled = EXCLUDED.enabled, updated_at = NOW()
+           RETURNING id`,
+          [chatbot_id, targetVersion, name || `Split Test v${targetVersion}`, !!enabled]
+        );
+        splitTestId = upsertTest.rows[0].id;
+        finalVersion = targetVersion;
+      }
+
+      // Replace variants for this version
       await client.query('DELETE FROM split_test_variants WHERE split_test_id=$1', [splitTestId]);
       for (let i = 0; i < variants.length; i++) {
         const v = variants[i];
@@ -104,7 +179,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       }
 
       await client.query('COMMIT');
-      return res.json({ success: true, id: splitTestId });
+      return res.json({ success: true, id: splitTestId, version: finalVersion });
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('POST /split-tests error:', err);
@@ -137,8 +212,9 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         }
       }
 
-      const testResult = await pool.query('SELECT id, enabled FROM split_tests WHERE chatbot_id=$1', [chatbot_id]);
-      if (testResult.rows.length === 0 || !testResult.rows[0].enabled) {
+      // Get the currently enabled split test (there should only be one enabled at a time)
+      const testResult = await pool.query('SELECT id, enabled FROM split_tests WHERE chatbot_id=$1 AND enabled=TRUE ORDER BY version DESC LIMIT 1', [chatbot_id]);
+      if (testResult.rows.length === 0) {
         return res.json({ enabled: false, variant_id: null });
       }
       const splitTestId = testResult.rows[0].id;
@@ -213,16 +289,31 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
   router.get('/split-test-statistics/:chatbot_id', authenticateToken, async (req, res) => {
     try {
       const { chatbot_id } = req.params;
-      const { start_date, end_date } = req.query;
+      const { start_date, end_date, version } = req.query;
 
-      // Get test configuration
-      const testResult = await pool.query('SELECT id, enabled FROM split_tests WHERE chatbot_id=$1', [chatbot_id]);
-      if (testResult.rows.length === 0) {
-        return res.json({ enabled: false, statistics: [] });
+      // Get test configuration (specific version or latest)
+      let testQuery, testParams;
+      if (version) {
+        testQuery = 'SELECT id, version, name, enabled FROM split_tests WHERE chatbot_id=$1 AND version=$2';
+        testParams = [chatbot_id, version];
+      } else {
+        testQuery = 'SELECT id, version, name, enabled FROM split_tests WHERE chatbot_id=$1 ORDER BY version DESC LIMIT 1';
+        testParams = [chatbot_id];
       }
 
-      const splitTestId = testResult.rows[0].id;
-      const enabled = testResult.rows[0].enabled;
+      const testResult = await pool.query(testQuery, testParams);
+      if (testResult.rows.length === 0) {
+        return res.json({ enabled: false, statistics: [], versions: [] });
+      }
+
+      const splitTest = testResult.rows[0];
+      const splitTestId = splitTest.id;
+
+      // Get all versions for version selector
+      const allVersionsResult = await pool.query(
+        'SELECT version, name, enabled, created_at FROM split_tests WHERE chatbot_id=$1 ORDER BY version DESC',
+        [chatbot_id]
+      );
 
       // Get variants
       const variantsResult = await pool.query(
@@ -290,8 +381,14 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         statistics.push(variantData);
       }
 
-      console.log('Final statistics response:', { enabled, statistics });
-      return res.json({ enabled, statistics });
+      console.log('Final statistics response:', { enabled: splitTest.enabled, statistics, versions: allVersionsResult.rows });
+      return res.json({ 
+        enabled: splitTest.enabled, 
+        statistics, 
+        current_version: splitTest.version,
+        current_name: splitTest.name,
+        versions: allVersionsResult.rows 
+      });
     } catch (err) {
       console.error('GET /split-test-statistics error:', err);
       return res.status(500).json({ error: 'Server error', details: err.message });
