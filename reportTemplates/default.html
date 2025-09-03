@@ -450,8 +450,6 @@
       letter-spacing: 0.5px;
     }
 
-
-
     /* Key Insights - Matching AI Analysis Design */
     .key-insights {
       background: var(--background-secondary);
@@ -641,35 +639,6 @@
       margin: 20px 0;
       border-radius: 12px;
       font-weight: 500;
-    }
-
-    .pattern-analysis {
-      background: white;
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 20px;
-      margin: 15px 0;
-      box-shadow: var(--shadow-light);
-    }
-
-    .pattern-analysis h5 {
-      color: var(--primary-color);
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-
-    .pattern-list {
-      font-size: 13px;
-      color: var(--text-secondary);
-      font-style: italic;
-      margin-bottom: 10px;
-    }
-
-    .pattern-interpretation {
-      font-size: 13px;
-      line-height: 1.5;
-      color: var(--text-primary);
     }
     
     /* Data Tables - Updated with Dashboard Styling */
@@ -1101,82 +1070,38 @@
         <h3 class="explanation-header">🧠 Language Pattern Analysis & Insights</h3>
         
         <div class="explanation-content">
-          <h4>📊 Analysis Summary</h4>
+          <h4>📊 Customer Communication Analysis</h4>
           <p>
             Based on the correlation analysis of {{textAnalysis.ratingScoreCorrelation.count}} conversations, 
             we've identified significant language patterns that influence customer satisfaction. 
             The overall correlation between language patterns and ratings is 
             {{textAnalysis.ratingScoreCorrelation.value}}, indicating a meaningful relationship 
-            between language usage and customer satisfaction.
+            between customer communication and their satisfaction levels.
           </p>
-
-          {{#if textAnalysis.positiveCorrelations}}
-          <div class="pattern-analysis">
-            <h5>✅ Positive Language Insights</h5>
-            <div class="pattern-list">
-              Top positive patterns: 
-              {{#each textAnalysis.positiveCorrelations}}
-                "{{this.ngram}}"{{#unless @last}}, {{/unless}}
-              {{/each}}
-            </div>
-            <div class="pattern-interpretation">
-              These patterns suggest that conversations containing words like 
-              <strong>{{textAnalysis.positiveCorrelations.[0].ngram}}</strong> 
-              (correlation: +{{textAnalysis.positiveCorrelations.[0].correlation}}) and 
-              <strong>{{textAnalysis.positiveCorrelations.[1].ngram}}</strong> 
-              (correlation: +{{textAnalysis.positiveCorrelations.[1].correlation}}) 
-              are associated with higher customer satisfaction. This indicates successful 
-              problem resolution, positive emotional responses, or effective communication patterns.
-            </div>
-          </div>
-          {{/if}}
-
-          {{#if textAnalysis.negativeCorrelations}}
-          <div class="pattern-analysis">
-            <h5>⚠️ Negative Language Insights</h5>
-            <div class="pattern-list">
-              Top negative patterns: 
-              {{#each textAnalysis.negativeCorrelations}}
-                "{{this.ngram}}"{{#unless @last}}, {{/unless}}
-              {{/each}}
-            </div>
-            <div class="pattern-interpretation">
-              Conversations containing terms like 
-              <strong>{{textAnalysis.negativeCorrelations.[0].ngram}}</strong> 
-              (correlation: {{textAnalysis.negativeCorrelations.[0].correlation}}) and 
-              <strong>{{textAnalysis.negativeCorrelations.[1].ngram}}</strong> 
-              (correlation: {{textAnalysis.negativeCorrelations.[1].correlation}}) 
-              show lower satisfaction scores. These may indicate problem escalation, 
-              customer frustration, or communication difficulties that need attention.
-            </div>
-          </div>
-          {{/if}}
 
           <div class="key-takeaway">
-            <h4>🎯 Actionable Recommendations</h4>
+            <h4>🏆 Business Improvement Opportunities</h4>
             <p>
-              <strong>Focus on amplifying positive patterns:</strong> Train your chatbot to use more language 
-              similar to the positive correlations, especially incorporating phrases that have shown strong 
-              positive associations with customer satisfaction.
+              <strong>Customer Service Excellence:</strong> Your company can leverage these language insights 
+              to enhance customer service training programs. Focus on understanding what communication styles 
+              and approaches lead to higher customer satisfaction in your industry.
             </p>
             <p>
-              <strong>Address negative pattern triggers:</strong> Investigate conversations containing negative 
-              correlation patterns to understand root causes and develop strategies to prevent or better handle 
-              these situations.
+              <strong>Process Optimization:</strong> The identified patterns reveal opportunities to streamline 
+              customer service processes, reduce response times, and improve first-contact resolution rates. 
+              This data can guide operational improvements and staff training initiatives.
             </p>
             <p>
-              <strong>Continuous monitoring:</strong> Regular analysis of these patterns will help track 
-              improvements and identify emerging trends in customer communication preferences.
+              <strong>Strategic Decision Making:</strong> These insights provide valuable data for strategic 
+              decisions about customer service investments, technology upgrades, and service delivery 
+              improvements that will have the most positive impact on customer satisfaction.
+            </p>
+            <p>
+              <strong>Competitive Advantage:</strong> Understanding these communication patterns gives your 
+              company a data-driven advantage in delivering superior customer experiences compared to competitors 
+              who rely on intuition rather than analytical insights.
             </p>
           </div>
-
-          <h4>📊 Statistical Significance</h4>
-          <p>
-            The correlation values indicate the strength of the relationship between language patterns 
-            and customer satisfaction. Higher absolute values (closer to +1.0 or -1.0) represent stronger 
-            correlations, while values closer to 0 indicate weaker relationships. The document count shows 
-            how frequently each pattern appears, providing context for the reliability of each correlation.
-          </p>
         </div>
       </div>
       {{/if}}
