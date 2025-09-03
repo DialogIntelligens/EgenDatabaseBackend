@@ -13,8 +13,6 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
-import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
-import { registerSplitTestRoutes } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -1403,8 +1401,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       form_data = null,
       is_flagged = false,
       is_resolved = false,
-      livechat_email = null,
-      split_test_id = null
+      livechat_email = null
     ) {
       const client = await pool.connect();
       try {
@@ -1443,23 +1440,22 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $19 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $18 THEN FALSE ELSE viewed END,
+               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
+               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
                livechat_email = COALESCE($16, livechat_email),
-               split_test_id = COALESCE($17, split_test_id),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, split_test_id, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email, split_test_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email, split_test_id]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1492,8 +1488,7 @@ app.post('/conversations', async (req, res) => {
     tags,
     form_data,
     is_resolved,
-    livechat_email,
-    split_test_id
+    livechat_email
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1542,8 +1537,7 @@ app.post('/conversations', async (req, res) => {
       form_data,
       false, // is_flagged - default to false
       is_resolved || false, // is_resolved - default to false
-      livechat_email,
-      split_test_id
+      livechat_email
     );
     res.status(201).json(result);
   } catch (err) {
@@ -3125,342 +3119,6 @@ app.get('/public/average-response-time/:chatbot_id', async (req, res) => {
     return res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
-
-/* ================================
-   Optimized Statistics Endpoint using Database Views
-================================ */
-app.get('/statistics-optimized', authenticateToken, async (req, res) => {
-  const { 
-    chatbot_id, 
-    start_date, 
-    end_date, 
-    time_filter_enabled = 'false',
-    time_filter_start = '00:00',
-    time_filter_end = '23:59'
-  } = req.query;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    // Get user's business hours settings
-    const businessHoursResult = await pool.query(
-      'SELECT business_hours_start, business_hours_end FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-    
-    const businessHoursStart = businessHoursResult.rows[0]?.business_hours_start || '09:00:00';
-    const businessHoursEnd = businessHoursResult.rows[0]?.business_hours_end || '15:00:00';
-
-    // Use the database function to get summary statistics
-    const summaryResult = await pool.query(`
-      SELECT get_statistics_summary($1, $2, $3, $4, $5, $6, $7, $8) as summary
-    `, [
-      chatbot_id,
-      start_date || null,
-      end_date || null,
-      time_filter_enabled === 'true',
-      time_filter_start,
-      time_filter_end,
-      businessHoursStart.substring(0, 5), // Convert HH:MM:SS to HH:MM
-      businessHoursEnd.substring(0, 5)
-    ]);
-
-    const summary = summaryResult.rows[0].summary;
-
-    // Get daily statistics using the view
-    const chatbotIds = chatbot_id.split(',');
-    let dailyQuery = `
-      SELECT date, SUM(total_messages) as messages, SUM(conversation_count) as conversations
-      FROM daily_message_stats 
-      WHERE chatbot_id = ANY($1)
-    `;
-    let dailyParams = [chatbotIds];
-    let paramIndex = 2;
-
-    if (start_date && end_date) {
-      dailyQuery += ` AND date BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      dailyParams.push(start_date, end_date);
-    }
-
-    dailyQuery += ` GROUP BY date ORDER BY date`;
-    const dailyResult = await pool.query(dailyQuery, dailyParams);
-
-    // Get hourly statistics using the view
-    let hourlyQuery = `
-      SELECT hour, SUM(total_messages) as messages
-      FROM hourly_message_stats 
-      WHERE chatbot_id = ANY($1)
-    `;
-    let hourlyParams = [chatbotIds];
-    paramIndex = 2;
-
-    if (start_date && end_date) {
-      // For hourly stats with date filter, we need to join with conversations
-      hourlyQuery = `
-        SELECT EXTRACT(HOUR FROM c.created_at) as hour, 
-               SUM(
-                 CASE 
-                   WHEN c.conversation_data IS NOT NULL 
-                   THEN (
-                     SELECT COUNT(*) 
-                     FROM jsonb_array_elements(c.conversation_data::jsonb) as msg 
-                     WHERE (msg->>'isUser')::boolean = true OR msg->>'sender' = 'user'
-                   )
-                   ELSE 0 
-                 END
-               ) as messages
-        FROM conversations c
-        WHERE c.chatbot_id = ANY($1) 
-          AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}
-          AND c.created_at IS NOT NULL
-        GROUP BY EXTRACT(HOUR FROM c.created_at)
-      `;
-      hourlyParams.push(start_date, end_date);
-    }
-
-    hourlyQuery += ` ORDER BY hour`;
-    const hourlyResult = await pool.query(hourlyQuery, hourlyParams);
-
-    // Get topic distribution using the view
-    let topicQuery = `
-      SELECT topic, SUM(conversation_count) as count, 
-             ROUND(AVG(percentage), 2) as percentage
-      FROM topic_distribution_stats 
-      WHERE chatbot_id = ANY($1)
-    `;
-    let topicParams = [chatbotIds];
-    paramIndex = 2;
-
-    if (start_date && end_date) {
-      // For topic stats with date filter, we need to recalculate
-      topicQuery = `
-        SELECT c.emne as topic, COUNT(*) as count,
-               ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
-        FROM conversations c
-        WHERE c.chatbot_id = ANY($1) 
-          AND c.emne IS NOT NULL
-          AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}
-        GROUP BY c.emne
-      `;
-      topicParams.push(start_date, end_date);
-    } else {
-      topicQuery += ` GROUP BY topic`;
-    }
-
-    topicQuery += ` ORDER BY count DESC`;
-    const topicResult = await pool.query(topicQuery, topicParams);
-
-    // Fetch additional statistics in parallel
-    const [purchaseStats, greetingStats, leadsStats] = await Promise.all([
-      fetchPurchaseStatistics(chatbotIds, start_date, end_date),
-      fetchGreetingRateStatistics(chatbotIds, start_date, end_date),
-      fetchLeadsStatistics(chatbotIds, start_date, end_date)
-    ]);
-
-    // Format the response
-    const response = {
-      summary: summary,
-      dailyData: formatDailyData(dailyResult.rows),
-      hourlyData: formatHourlyData(hourlyResult.rows),
-      topicData: formatTopicData(topicResult.rows),
-      purchaseStats: purchaseStats,
-      greetingRateStats: greetingStats,
-      leadsStats: leadsStats
-    };
-
-    res.json(response);
-
-  } catch (error) {
-    console.error('Error fetching optimized statistics:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-// Helper functions for additional statistics
-async function fetchPurchaseStatistics(chatbotIds, startDate, endDate) {
-  try {
-    let allPurchases = [];
-    for (const chatbotId of chatbotIds) {
-      const query = `
-        SELECT * FROM purchases 
-        WHERE chatbot_id = $1 
-        ${startDate && endDate ? 'AND created_at BETWEEN $2 AND $3' : ''}
-      `;
-      const params = startDate && endDate ? [chatbotId, startDate, endDate] : [chatbotId];
-      const result = await pool.query(query, params);
-      allPurchases = [...allPurchases, ...result.rows];
-    }
-
-    if (allPurchases.length > 0) {
-      const totalRevenue = allPurchases.reduce((sum, purchase) => sum + (parseFloat(purchase.amount) || 0), 0);
-      return {
-        hasPurchaseTracking: true,
-        totalPurchases: allPurchases.length,
-        totalRevenue: totalRevenue,
-        averagePurchaseValue: (totalRevenue / allPurchases.length).toFixed(2)
-      };
-    }
-    return { hasPurchaseTracking: false };
-  } catch (error) {
-    console.log('No purchase data available:', error.message);
-    return { hasPurchaseTracking: false };
-  }
-}
-
-async function fetchGreetingRateStatistics(chatbotIds, startDate, endDate) {
-  try {
-    let query = `
-      SELECT 
-        COUNT(*) as total_opens,
-        COUNT(CASE WHEN has_conversation = true THEN 1 END) as conversations_started,
-        CASE 
-          WHEN COUNT(*) > 0 
-          THEN ROUND((COUNT(CASE WHEN has_conversation = true THEN 1 END) * 100.0 / COUNT(*)), 1)
-          ELSE 0 
-        END as greeting_rate_percentage
-      FROM chatbot_opens 
-      WHERE chatbot_id = ANY($1)
-    `;
-    let params = [chatbotIds];
-
-    if (startDate && endDate) {
-      query += ` AND created_at BETWEEN $2 AND $3`;
-      params.push(startDate, endDate);
-    }
-
-    const result = await pool.query(query, params);
-    const data = result.rows[0];
-
-    if (data.total_opens > 0) {
-      return {
-        hasGreetingRateData: true,
-        totalChatbotOpens: parseInt(data.total_opens),
-        greetingRate: `${data.greeting_rate_percentage}%`
-      };
-    }
-    return { hasGreetingRateData: false };
-  } catch (error) {
-    console.log('No greeting rate data available:', error.message);
-    return { hasGreetingRateData: false };
-  }
-}
-
-async function fetchLeadsStatistics(chatbotIds, startDate, endDate) {
-  try {
-    let query = `
-      SELECT COUNT(*) as leads_count
-      FROM contact_form_submissions 
-      WHERE chatbot_id = ANY($1)
-    `;
-    let params = [chatbotIds];
-
-    if (startDate && endDate) {
-      query += ` AND created_at BETWEEN $2 AND $3`;
-      params.push(startDate, endDate);
-    }
-
-    const result = await pool.query(query, params);
-    const leadsCount = parseInt(result.rows[0].leads_count);
-
-    return {
-      hasLeadsData: leadsCount > 0,
-      totalLeads: leadsCount
-    };
-  } catch (error) {
-    console.log('No leads data available:', error.message);
-    return { hasLeadsData: false, totalLeads: 0 };
-  }
-}
-
-// Helper functions to format data for frontend
-function formatDailyData(rows) {
-  if (rows.length === 0) return null;
-
-  // Determine if we should show weekly data (more than 50 data points)
-  const isWeekly = rows.length > 50;
-  
-  if (isWeekly) {
-    // Group by week
-    const weeklyData = {};
-    rows.forEach(row => {
-      const date = new Date(row.date);
-      const weekStart = new Date(date);
-      weekStart.setDate(date.getDate() - date.getDay());
-      const weekKey = `${weekStart.getFullYear()}-${('0' + (weekStart.getMonth() + 1)).slice(-2)}-${('0' + weekStart.getDate()).slice(-2)}`;
-      
-      if (!weeklyData[weekKey]) weeklyData[weekKey] = 0;
-      weeklyData[weekKey] += parseInt(row.messages);
-    });
-
-    return {
-      labels: Object.keys(weeklyData),
-      datasets: [{
-        label: 'Weekly Messages',
-        data: Object.values(weeklyData),
-        fill: false,
-        backgroundColor: '#777BFF',
-        borderColor: '#686BF1',
-        borderWidth: 2,
-      }],
-      isWeekly: true
-    };
-  } else {
-    return {
-      labels: rows.map(row => row.date),
-      datasets: [{
-        label: 'Daily Messages',
-        data: rows.map(row => parseInt(row.messages)),
-        fill: false,
-        backgroundColor: '#777BFF',
-        borderColor: '#686BF1',
-        borderWidth: 2,
-      }],
-      isWeekly: false
-    };
-  }
-}
-
-function formatHourlyData(rows) {
-  // Create array with 24 hours, fill with 0
-  const hourlyMessages = Array(24).fill(0);
-  
-  rows.forEach(row => {
-    const hour = parseInt(row.hour);
-    hourlyMessages[hour] = parseInt(row.messages);
-  });
-
-  return {
-    labels: Array.from({ length: 24 }, (_, i) => `${i}`),
-    datasets: [{
-      label: 'Time of Day',
-      data: hourlyMessages,
-      backgroundColor: '#777BFF',
-      borderColor: '#686BF1',
-      borderWidth: 2,
-    }],
-  };
-}
-
-function formatTopicData(rows) {
-  if (rows.length === 0) return null;
-
-  const totalCount = rows.reduce((sum, row) => sum + parseInt(row.count), 0);
-  
-  return {
-    labels: rows.map(row => row.topic),
-    datasets: [{
-      label: 'Topic Messages',
-      data: rows.map(row => Math.round((parseInt(row.count) / totalCount) * 100)),
-      backgroundColor: rows.map(() => '#777BFF'),
-      borderColor: rows.map(() => '#686BF1'),
-      borderWidth: 2,
-    }],
-    hasOthers: rows.length > 10,
-    isPercentage: true
-  };
-}
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -5276,8 +4934,6 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
-registerPopupMessageRoutes(app, pool, authenticateToken);
-registerSplitTestRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
