@@ -578,17 +578,6 @@
       text-align: right;
     }
 
-    .correlation-summary {
-      margin-top: 15px;
-      padding: 10px;
-      background: rgba(104, 107, 241, 0.1);
-      border-radius: 8px;
-      font-size: 12px;
-      color: var(--text-secondary);
-      text-align: center;
-      border: 1px solid var(--border-light);
-    }
-
     /* N-grams Explanation Section */
     .ngrams-explanation {
       background: var(--background-secondary);
@@ -1050,17 +1039,6 @@
             </li>
             {{/each}}
           </ul>
-        </div>
-        {{/if}}
-
-        {{#if textAnalysis.ratingScoreCorrelation}}
-        <div class="correlation-summary">
-          <strong>Overall Correlation:</strong> Customer ratings and satisfaction scores show a correlation of 
-          {{#if textAnalysis.ratingScoreCorrelation.value}}
-          {{textAnalysis.ratingScoreCorrelation.value}} ({{textAnalysis.ratingScoreCorrelation.count}} conversations)
-          {{else}}
-          N/A (insufficient data)
-          {{/if}}
         </div>
         {{/if}}
       </div>
