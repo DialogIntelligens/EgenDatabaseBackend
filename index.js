@@ -13,8 +13,6 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
-import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
-import { registerSplitTestRoutes } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -1403,8 +1401,7 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
       form_data = null,
       is_flagged = false,
       is_resolved = false,
-      livechat_email = null,
-      split_test_id = null
+      livechat_email = null
     ) {
       const client = await pool.connect();
       try {
@@ -1443,23 +1440,22 @@ app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (re
                tags = COALESCE($12, tags),
                form_data = COALESCE($13, form_data),
                is_flagged = COALESCE($14, is_flagged),
-               is_resolved = CASE WHEN $19 THEN FALSE ELSE COALESCE($15, is_resolved) END,
-               viewed = CASE WHEN $18 THEN FALSE ELSE viewed END,
+               is_resolved = CASE WHEN $18 THEN FALSE ELSE COALESCE($15, is_resolved) END,
+               viewed = CASE WHEN $17 THEN FALSE ELSE viewed END,
                livechat_email = COALESCE($16, livechat_email),
-               split_test_id = COALESCE($17, split_test_id),
                created_at = NOW()
            WHERE user_id = $1 AND chatbot_id = $2
            RETURNING *`,
-          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, split_test_id, shouldMarkAsUnread, shouldMarkAsUnresolved]
+          [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, livechat_email, shouldMarkAsUnread, shouldMarkAsUnresolved]
         );
 
         if (updateResult.rows.length === 0) {
           const insertResult = await client.query(
             `INSERT INTO conversations
-             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email, split_test_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+             (user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, is_resolved, viewed, livechat_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              RETURNING *`,
-            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email, split_test_id]
+            [user_id, chatbot_id, conversation_data, emne, score, customer_rating, lacking_info, bug_status, purchase_tracking_enabled, is_livechat, fallback, tags, form_data, is_flagged, shouldMarkAsUnresolved ? false : (is_resolved || false), shouldMarkAsUnread ? false : null, livechat_email]
           );
           await client.query('COMMIT');
           return insertResult.rows[0];
@@ -1492,8 +1488,7 @@ app.post('/conversations', async (req, res) => {
     tags,
     form_data,
     is_resolved,
-    livechat_email,
-    split_test_id
+    livechat_email
   } = req.body;
 
   const authHeader = req.headers['authorization'];
@@ -1542,8 +1537,7 @@ app.post('/conversations', async (req, res) => {
       form_data,
       false, // is_flagged - default to false
       is_resolved || false, // is_resolved - default to false
-      livechat_email,
-      split_test_id
+      livechat_email
     );
     res.status(201).json(result);
   } catch (err) {
@@ -2484,7 +2478,7 @@ function transformStatisticsForPDF(rawData) {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations, language } = req.body;
+    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
@@ -2794,7 +2788,7 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
        // Transform raw statistics data into template-friendly format
        const transformedStatisticsData = transformStatisticsForPDF(statisticsData);
        
-       const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod, language || 'en');
+       const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod);
        console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
        
        // Set appropriate headers for PDF download
@@ -3310,7 +3304,11 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
       // Return default settings if none exist
       return res.json({
         business_hours_start: '09:00:00',
-        business_hours_end: '15:00:00'
+        business_hours_end: '15:00:00',
+        saturday_hours_start: '09:00:00',
+        saturday_hours_end: '15:00:00',
+        sunday_hours_start: '09:00:00',
+        sunday_hours_end: '15:00:00'
       });
     }
     
@@ -3325,25 +3323,103 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
 app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { business_hours_start, business_hours_end } = req.body;
+    const { 
+      business_hours_start, 
+      business_hours_end, 
+      saturday_hours_start, 
+      saturday_hours_end, 
+      sunday_hours_start, 
+      sunday_hours_end 
+    } = req.body;
     
-    // Validate time format (HH:MM or HH:MM:SS)
+    // Validate time format (HH:MM or HH:MM:SS) for provided times
     const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
-    if (!timeRegex.test(business_hours_start) || !timeRegex.test(business_hours_end)) {
-      return res.status(400).json({ error: 'Invalid time format' });
+    
+    if (business_hours_start && !timeRegex.test(business_hours_start)) {
+      return res.status(400).json({ error: 'Invalid business_hours_start time format' });
     }
+    if (business_hours_end && !timeRegex.test(business_hours_end)) {
+      return res.status(400).json({ error: 'Invalid business_hours_end time format' });
+    }
+    if (saturday_hours_start && !timeRegex.test(saturday_hours_start)) {
+      return res.status(400).json({ error: 'Invalid saturday_hours_start time format' });
+    }
+    if (saturday_hours_end && !timeRegex.test(saturday_hours_end)) {
+      return res.status(400).json({ error: 'Invalid saturday_hours_end time format' });
+    }
+    if (sunday_hours_start && !timeRegex.test(sunday_hours_start)) {
+      return res.status(400).json({ error: 'Invalid sunday_hours_start time format' });
+    }
+    if (sunday_hours_end && !timeRegex.test(sunday_hours_end)) {
+      return res.status(400).json({ error: 'Invalid sunday_hours_end time format' });
+    }
+    
+    // Build dynamic query based on provided fields
+    const insertFields = ['user_id'];
+    const insertValues = ['$1'];
+    const conflictUpdates = [];
+    const queryParams = [userId];
+    let paramIndex = 2;
+    
+    if (business_hours_start !== undefined) {
+      insertFields.push('business_hours_start');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`business_hours_start = EXCLUDED.business_hours_start`);
+      queryParams.push(business_hours_start);
+      paramIndex++;
+    }
+    
+    if (business_hours_end !== undefined) {
+      insertFields.push('business_hours_end');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`business_hours_end = EXCLUDED.business_hours_end`);
+      queryParams.push(business_hours_end);
+      paramIndex++;
+    }
+    
+    if (saturday_hours_start !== undefined) {
+      insertFields.push('saturday_hours_start');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`saturday_hours_start = EXCLUDED.saturday_hours_start`);
+      queryParams.push(saturday_hours_start);
+      paramIndex++;
+    }
+    
+    if (saturday_hours_end !== undefined) {
+      insertFields.push('saturday_hours_end');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`saturday_hours_end = EXCLUDED.saturday_hours_end`);
+      queryParams.push(saturday_hours_end);
+      paramIndex++;
+    }
+    
+    if (sunday_hours_start !== undefined) {
+      insertFields.push('sunday_hours_start');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`sunday_hours_start = EXCLUDED.sunday_hours_start`);
+      queryParams.push(sunday_hours_start);
+      paramIndex++;
+    }
+    
+    if (sunday_hours_end !== undefined) {
+      insertFields.push('sunday_hours_end');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`sunday_hours_end = EXCLUDED.sunday_hours_end`);
+      queryParams.push(sunday_hours_end);
+      paramIndex++;
+    }
+    
+    conflictUpdates.push('updated_at = CURRENT_TIMESTAMP');
     
     // Use UPSERT (INSERT ... ON CONFLICT)
     const result = await pool.query(
-      `INSERT INTO userStatisticSettings (user_id, business_hours_start, business_hours_end)
-       VALUES ($1, $2, $3)
+      `INSERT INTO userStatisticSettings (${insertFields.join(', ')})
+       VALUES (${insertValues.join(', ')})
        ON CONFLICT (user_id) 
        DO UPDATE SET 
-          business_hours_start = EXCLUDED.business_hours_start,
-          business_hours_end = EXCLUDED.business_hours_end,
-          updated_at = CURRENT_TIMESTAMP
+          ${conflictUpdates.join(', ')}
        RETURNING *`,
-      [userId, business_hours_start, business_hours_end]
+      queryParams
     );
     
     res.json(result.rows[0]);
@@ -4941,8 +5017,6 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
-registerPopupMessageRoutes(app, pool, authenticateToken);
-registerSplitTestRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
