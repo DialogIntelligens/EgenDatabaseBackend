@@ -233,6 +233,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       const statistics = [];
       
       for (const variant of variantsResult.rows) {
+        console.log('Processing variant:', variant);
         let dateFilter = '';
         let queryParams = [chatbot_id, variant.id];
         let paramIndex = 3;
@@ -268,6 +269,7 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
 
         // Calculate usage rate (impressions -> conversations)
         const usageRate = impressions > 0 ? ((conversations / impressions) * 100).toFixed(2) : '0.00';
+        console.log(`Variant ${variant.name}: impressions=${impressions}, conversations=${conversations}, usageRate=${usageRate}`);
 
         // Calculate CSAT
         const csat = ratingCount > 0 ? ((satisfiedCount / ratingCount) * 100).toFixed(1) : null;
@@ -283,10 +285,12 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
           csat: csat ? `${csat}%` : null,
           rating_count: ratingCount
         };
+        console.log('Variant data:', variantData);
 
         statistics.push(variantData);
       }
 
+      console.log('Final statistics response:', { enabled, statistics });
       return res.json({ enabled, statistics });
     } catch (err) {
       console.error('GET /split-test-statistics error:', err);
