@@ -166,6 +166,86 @@ export const reportTranslations = {
     messageDistributionWeekly: 'Message distribution patterns over weekly intervals showing peak activity periods',
     customerEngagementPatterns: 'Customer engagement patterns throughout the day revealing optimal support hours',
     topicDiscussion: 'Most frequently discussed topics and customer interests driving engagement'
+  },
+
+  sv: {
+    // Main Report Headers
+    reportTitle: 'AI Analysinsikter',
+    reportSubtitle: 'Chatbot Prestanda & Kundintelligens Rapport',
+    analysisPeriod: 'Analysperiod',
+    generated: 'Genererad',
+
+    // Section Headers
+    aiInsights: 'AI-Drivna Affärsinsikter',
+    keyInsights: '🔍 Nyckel Prestanda Insikter',
+    performanceAnalytics: '📈 Prestanda Analytics Dashboard',
+    performanceMetrics: '📊 Prestanda Mätvärden Översikt',
+
+    // Key Insights
+    highEngagement: 'Högt Engagemang',
+    customerSatisfaction: 'Kundnöjdhet',
+    consistentPerformance: 'Konsekvent Prestanda',
+    businessImpact: 'Affärspåverkan',
+
+    // Descriptions
+    totalMessagesDesc: 'totala meddelanden indikerar aktiv användarinteraktion',
+    customerSatisfactionDesc: 'betyg visar utmärkt servicekvalitet',
+    consistentPerformanceDesc: 'CSAT poäng visar pålitlig support',
+    businessImpactDesc: 'intäkter genererade genom chatbot interaktioner',
+
+    // Language Analysis
+    customerLanguageAnalysis: '📊 Kundspråkanalys',
+    positivePatterns: '✅ Mest Positiva Språkmönster',
+    negativePatterns: '⚠️ Mest Negativa Språkmönster',
+    positiveDescription: 'Ord och fraser som korrelerar med högre kundnöjdhetspoäng:',
+    negativeDescription: 'Ord och fraser som korrelerar med lägre kundnöjdhetspoäng:',
+    conversationsText: 'konversationer',
+    languagePatternAnalysis: '🧠 Språkmönster Analys & Insikter',
+    customerCommunicationAnalysis: '📊 Kundkommunikationsanalys',
+
+    // Metrics
+    totalMessages: 'Totala Meddelanden',
+    totalMessagesMetricDesc: 'Användarinteraktioner med chatbot system',
+    avgMessagesPerDay: 'Genomsnittliga Meddelanden/Dag',
+    avgMessagesPerDayDesc: 'Dagligt meddelandevolym genomsnitt',
+    totalConversations: 'Totala Konversationer',
+    totalConversationsDesc: 'Unika kund chat sessioner',
+    totalCustomerRatings: 'Totala Kundbetyg',
+    totalCustomerRatingsDesc: 'Antal kund feedback svar',
+    customerSatisfactionMetric: 'Kundnöjdhet',
+    customerSatisfactionMetricDesc: 'Genomsnittlig användar betyg poäng',
+    csatScore: 'CSAT Poäng',
+    csatScoreDesc: 'Kundnöjdhetsprocent',
+
+    // Purchase Metrics
+    totalPurchases: 'Totala Köp',
+    totalPurchasesDesc: 'Antal slutförda transaktioner',
+    totalRevenue: 'Total Intäkt',
+    totalRevenueDesc: 'Intäkter genererade genom chatbot',
+    avgPurchaseValue: 'Genomsnittligt Köpvärde',
+    avgPurchaseValueDesc: 'Genomsnittligt transaktionsbelopp',
+    conversionRate: 'Konverteringsgrad',
+    conversionRateDesc: 'Meddelande-till-köp konvertering',
+
+    // Other Metrics
+    greetingSuccessRate: 'Hälsnings Framgångsgrad',
+    greetingSuccessRateDesc: 'Framgångsrika konversations initieringar',
+    fallbackRate: 'Fallback Grad',
+    fallbackRateDesc: 'Ohanterade kund förfrågningar',
+    totalLeads: 'Totala Leads',
+    totalLeadsDesc: 'Kund kontakter genererade',
+
+    // Chart Titles
+    dailyMessageVolume: 'Daglig Meddelandevolym Trender',
+    weeklyMessageVolume: 'Veckovis Meddelandevolym Trender',
+    peakActivityHours: 'Peak Aktivitetstimmar Analys',
+    customerInquiryTopics: 'Kund Förfrågan Ämne Fördelning',
+
+    // Chart Descriptions
+    messageDistributionDaily: 'Meddelandefördelning mönster över dagliga intervall som visar peak aktivitetsperioder',
+    messageDistributionWeekly: 'Meddelandefördelning mönster över veckovisa intervall som visar peak aktivitetsperioder',
+    customerEngagementPatterns: 'Kund engagemang mönster genom dagen avslöjar optimala support timmar',
+    topicDiscussion: 'Mest frekvent diskuterade ämnen och kund intressen som driver engagemang'
   }
 };
 
