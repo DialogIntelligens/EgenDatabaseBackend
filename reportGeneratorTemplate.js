@@ -5,6 +5,7 @@ import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
 import puppeteer from 'puppeteer-core';
 import chromium from 'chromium';
+import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,9 +20,10 @@ const mdParser = new MarkdownIt({
  * Generate a PDF report using HTML template
  * @param {Object} data - The statistics data
  * @param {string} timePeriod - The time period for the report
+ * @param {string} language - Language code for translations
  * @returns {Promise<Buffer>} - The PDF buffer
  */
-export async function generateStatisticsReportTemplate(data, timePeriod) {
+export async function generateStatisticsReportTemplate(data, timePeriod, language = 'en') {
   try {
     console.log('Starting template-based PDF generation...');
     console.log('Current working directory:', process.cwd());
@@ -47,6 +49,9 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
       gptAnalysisHtml = mdParser.render(data.gptAnalysis);
     }
     
+    // Get all translations for the language
+    const translations = getReportTranslations(language);
+
     // Prepare template data
     const templateData = {
       ...data,
@@ -82,7 +87,20 @@ export async function generateStatisticsReportTemplate(data, timePeriod) {
       greetingRate: data.greetingRate || data.greetingRateStats?.greetingRate || 'N/A',
       // Fallback rate flags - check for data from different sources
       hasFallbackData: data.hasFallbackData || data.fallbackRateStats?.hasFallbackData || false,
-      fallbackRate: data.fallbackRate || data.fallbackRateStats?.fallbackRate || 'N/A'
+      fallbackRate: data.fallbackRate || data.fallbackRateStats?.fallbackRate || 'N/A',
+
+      // Add all translations - now you can use {{translations.reportTitle}} in template
+      translations: translations,
+
+      // Also add individual translation variables for backwards compatibility
+      reportTitleTranslated: translations.reportTitle,
+      reportSubtitleTranslated: translations.reportSubtitle,
+      analysisPeriodTranslated: translations.analysisPeriod,
+      generatedTranslated: translations.generated,
+      aiInsightsTranslated: translations.aiInsights,
+      keyInsightsTranslated: translations.keyInsights,
+      performanceAnalyticsTranslated: translations.performanceAnalytics,
+      performanceMetricsTranslated: translations.performanceMetrics
     };
     
     // Generate HTML
@@ -166,4 +184,24 @@ function formatTimePeriod(timePeriod) {
   }
   
   return 'Custom Range';
+}
+
+/**
+ * Helper function to get locale for date formatting
+ * @param {string} language - Language code
+ * @returns {string} - Locale string
+ */
+function getLocale(language) {
+  const localeMap = {
+    'da': 'da-DK',
+    'en': 'en-US',
+    'sv': 'sv-SE',
+    'no': 'nb-NO',
+    'de': 'de-DE',
+    'nl': 'nl-NL',
+    'fr': 'fr-FR',
+    'it': 'it-IT',
+    'fi': 'fi-FI'
+  };
+  return localeMap[language] || 'en-US';
 }
