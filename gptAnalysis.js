@@ -6,6 +6,23 @@ const openai = new OpenAI({
 });
 
 /**
+ * Get system prompt for GPT analysis based on language
+ * @param {string} language - Language code (da, en, sv, etc.)
+ * @returns {string} - Language-appropriate system prompt
+ */
+function getSystemPromptForLanguage(language = 'en') {
+  const prompts = {
+    da: "Du er en ekspert chatbot analytiker, der leverer kortfattede, datadrevne indsigter til forretningsrapporter. Din analyse vil blive gengivet i en PDF-rapport ved hjælp af markdown-formatering:\n\n1. Brug korrekte markdown-overskrifter med # symboler (f.eks. # Ledelses Resume) til sektionstitle\n2. Efter hver sektionsoverskrift skal du tilføje et detaljeret afsnit med analyse\n3. Brug **fed formatering** inden for afsnit for at fremhæve nøgletal og vigtige fund\n4. Brug korrekt markdown liste formatering (1. Punkt et, 2. Punkt to) til nummererede lister\n5. Hold din analyse evidensbaseret og fokuseret på handlingsrettede indsigter\n6. Brug maksimalt 3-4 særskilte afsnit i din rapport (Ledelses Resume, Nøgleindsigter, osv.)\n7. VIGTIGT: Skriv HELE analysen på dansk. Brug danske forretningstermer og udtryk.",
+    
+    en: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report using markdown formatting:\n\n1. Use proper markdown headings with # symbols (e.g., # Executive Summary) for section titles\n2. After each section header, add a detailed paragraph with analysis\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. Use proper markdown list formatting (1. Item one, 2. Item two) for numbered lists\n5. Keep your analysis evidence-based and focused on actionable insights\n6. Use a maximum of 3-4 distinct sections in your report (Executive Summary, Key Insights, etc.)\n7. IMPORTANT: Write the ENTIRE analysis in English using professional business terminology.",
+    
+    sv: "Du är en expert chatbot-analytiker som tillhandahåller koncisa, datadrivna insikter för affärsrapporter. Din analys kommer att renderas i en PDF-rapport med markdown-formatering:\n\n1. Använd rätt markdown-rubriker med # symboler (t.ex. # Sammanfattning) för sektionstitel\n2. Efter varje sektionsrubrik, lägg till ett detaljerat stycke med analys\n3. Använd **fet formatering** inom stycken för att framhäva nyckelmått och viktiga fynd\n4. Använd korrekt markdown listformatering (1. Punkt ett, 2. Punkt två) för numrerade listor\n5. Håll din analys evidensbaserad och fokuserad på handlingsbara insikter\n6. Använd maximalt 3-4 distinkta avsnitt i din rapport (Sammanfattning, Nyckelinsikter, osv.)\n7. VIKTIGT: Skriv HELA analysen på svenska. Använd svenska affärstermer och uttryck."
+  };
+  
+  return prompts[language] || prompts['en'];
+}
+
+/**
  * Simple delay function for throttling
  * @param {number} ms - Milliseconds to delay
  * @returns {Promise} - Resolves after delay
@@ -55,9 +72,10 @@ function trimMessage(text, maxLength) {
  * @param {Array} conversationContents - Array of conversation content for deeper analysis
  * @param {number} maxConversations - Maximum number of conversations to include (10-100)
  * @param {Function} progressCallback - Optional callback for reporting progress
+ * @param {string} language - Language code for the analysis (da, en, sv, etc.)
  * @returns {Promise<string>} - The GPT analysis text
  */
-export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10, progressCallback = null) {
+export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10, progressCallback = null, language = 'en') {
   try {
     // Report initial progress
     if (progressCallback) {
@@ -317,7 +335,7 @@ Do not refer to the conversations by their # number, but by giving direct quotes
           messages: [
             {
               role: "system",
-              content: "You are an expert chatbot analyst who provides concise, data-driven insights for business reports. Your analysis will be rendered in a PDF report using markdown formatting:\n\n1. Use proper markdown headings with # symbols (e.g., # Executive Summary) for section titles\n2. After each section header, add a detailed paragraph with analysis\n3. Use **bold formatting** within paragraphs to highlight key metrics and important findings\n4. Use proper markdown list formatting (1. Item one, 2. Item two) for numbered lists\n5. Keep your analysis evidence-based and focused on actionable insights\n6. Use a maximum of 3-4 distinct sections in your report (Executive Summary, Key Insights, etc.)"
+              content: getSystemPromptForLanguage(language)
             },
             {
               role: "user",

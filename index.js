@@ -2765,7 +2765,8 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
             timePeriod, 
             conversationContents, 
             maxConversations,
-            gptProgressTracker
+            gptProgressTracker,
+            language || 'en'  // Add language parameter
           );
           
           if (gptAnalysis) {
