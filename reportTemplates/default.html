@@ -1070,10 +1070,10 @@
          
          {{#if dailyChart}}
          <div class="chart-container">
-           <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
+           <h3>{{#if isWeekly}}{{translations.weeklyMessageVolume}}{{else}}{{translations.dailyMessageVolume}}{{/if}}</h3>
            <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
            <div class="chart-description">
-             Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
+             {{#if isWeekly}}{{translations.messageDistributionWeekly}}{{else}}{{translations.messageDistributionDaily}}{{/if}}
            </div>
          </div>
          <div class="chart-spacer"></div>
@@ -1081,10 +1081,10 @@
          
          {{#if hourlyChart}}
          <div class="chart-container">
-           <h3>Peak Activity Hours Analysis</h3>
+           <h3>{{translations.peakActivityHours}}</h3>
            <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
            <div class="chart-description">
-             Customer engagement patterns throughout the day revealing optimal support hours
+             {{translations.customerEngagementPatterns}}
            </div>
          </div>
          <div class="chart-spacer"></div>
@@ -1092,10 +1092,10 @@
          
          {{#if topicChart}}
          <div class="chart-container">
-           <h3>Customer Inquiry Topic Distribution</h3>
+           <h3>{{translations.customerInquiryTopics}}</h3>
            <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
            <div class="chart-description">
-             Most frequently discussed topics and customer interests driving engagement
+             {{translations.topicDiscussion}}
            </div>
          </div>
          {{/if}}
@@ -1111,104 +1111,104 @@
         <div class="metric-grid">
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
-            <h4>Total Messages</h4>
+            <h4>{{translations.totalMessages}}</h4>
             <div class="value">{{totalMessages}}</div>
-            <div class="description">User interactions with chatbot system</div>
+            <div class="description">{{translations.totalMessagesMetricDesc}}</div>
           </div>
 
           {{#if averageMessagesPerDay}}
           <div class="metric-card">
             <div class="status-indicator"></div>
-            <h4>Average Messages/Day</h4>
+            <h4>{{translations.avgMessagesPerDay}}</h4>
             <div class="value">{{averageMessagesPerDay}}</div>
-            <div class="description">Daily message volume average</div>
+            <div class="description">{{translations.avgMessagesPerDayDesc}}</div>
           </div>
           {{/if}}
           
           <div class="metric-card">
             <div class="status-indicator"></div>
-            <h4>Total Conversations</h4>
+            <h4>{{translations.totalConversations}}</h4>
             <div class="value">{{totalConversations}}</div>
-            <div class="description">Unique customer chat sessions</div>
+            <div class="description">{{translations.totalConversationsDesc}}</div>
           </div>
 
           {{#if totalCustomerRatings}}
           <div class="metric-card">
             <div class="status-indicator"></div>
-            <h4>Total Customer Ratings</h4>
+            <h4>{{translations.totalCustomerRatings}}</h4>
             <div class="value">{{totalCustomerRatings}}</div>
-            <div class="description">Number of customer feedback responses</div>
+            <div class="description">{{translations.totalCustomerRatingsDesc}}</div>
           </div>
           {{/if}}
           
           <div class="metric-card success">
             <div class="status-indicator"></div>
-            <h4>Customer Satisfaction</h4>
+            <h4>{{translations.customerSatisfactionMetric}}</h4>
             <div class="value">{{averageCustomerRating}}</div>
-            <div class="description">Average user rating score</div>
+            <div class="description">{{translations.customerSatisfactionMetricDesc}}</div>
           </div>
           
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
-            <h4>CSAT Score</h4>
+            <h4>{{translations.csatScore}}</h4>
             <div class="value">{{csatScore}}</div>
-            <div class="description">Customer satisfaction percentage</div>
+            <div class="description">{{translations.csatScoreDesc}}</div>
           </div>
           
           {{#if hasPurchaseTracking}}
           <div class="metric-card success">
             <div class="status-indicator"></div>
-            <h4>Total Purchases</h4>
+            <h4>{{translations.totalPurchases}}</h4>
             <div class="value">{{totalPurchases}}</div>
-            <div class="description">Number of completed transactions</div>
+            <div class="description">{{translations.totalPurchasesDesc}}</div>
           </div>
 
           <div class="metric-card success">
             <div class="status-indicator"></div>
-            <h4>Total Revenue</h4>
+            <h4>{{translations.totalRevenue}}</h4>
             <div class="value">{{totalRevenue}}</div>
-            <div class="description">Revenue generated through chatbot</div>
+            <div class="description">{{translations.totalRevenueDesc}}</div>
           </div>
 
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
-            <h4>Average Purchase Value</h4>
+            <h4>{{translations.avgPurchaseValue}}</h4>
             <div class="value">{{averagePurchaseValue}}</div>
-            <div class="description">Average transaction amount</div>
+            <div class="description">{{translations.avgPurchaseValueDesc}}</div>
           </div>
           
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
-            <h4>Conversion Rate</h4>
+            <h4>{{translations.conversionRate}}</h4>
             <div class="value">{{conversionRate}}</div>
-            <div class="description">Message-to-purchase conversion</div>
+            <div class="description">{{translations.conversionRateDesc}}</div>
           </div>
           {{/if}}
           
           {{#if hasGreetingRateData}}
           <div class="metric-card">
             <div class="status-indicator"></div>
-            <h4>Greeting Success Rate</h4>
+            <h4>{{translations.greetingSuccessRate}}</h4>
             <div class="value">{{greetingRate}}</div>
-            <div class="description">Successful conversation initiations</div>
+            <div class="description">{{translations.greetingSuccessRateDesc}}</div>
           </div>
           {{/if}}
           
           {{#if hasFallbackData}}
           <div class="metric-card warning">
             <div class="status-indicator warning"></div>
-            <h4>Fallback Rate</h4>
+            <h4>{{translations.fallbackRate}}</h4>
             <div class="value">{{fallbackRate}}</div>
-            <div class="description">Unhandled customer queries</div>
+            <div class="description">{{translations.fallbackRateDesc}}</div>
           </div>
           {{/if}}
 
           {{#if hasLeadsData}}
           <div class="metric-card success">
             <div class="status-indicator"></div>
-            <h4>Total Leads</h4>
+            <h4>{{translations.totalLeads}}</h4>
             <div class="value">{{totalLeads}}</div>
-            <div class="description">Customer contacts generated</div>
+            <div class="description">{{translations.totalLeadsDesc}}</div>
           </div>
           {{/if}}
         </div>
