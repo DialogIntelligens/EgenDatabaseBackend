@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title> AI Analysis Insights - Dialog Intelligens </title>
+  <title>{{translations.reportTitle}} - Dialog Intelligens</title>
   <!-- Google Fonts - Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -951,16 +951,16 @@
       <!-- Enhanced Blue Header Section -->
       <div class="front-page-header">
         <div class="header-content">
-          <h1 class="report-title">AI Analysis Insights</h1>
-          <div class="report-subtitle">Chatbot Performance & Customer Intelligence Report</div>
+          <h1 class="report-title">{{translations.reportTitle}}</h1>
+          <div class="report-subtitle">{{translations.reportSubtitle}}</div>
           
           <!-- Meta Information in Header -->
           <div class="header-meta">
             <div class="meta-info">
-              <strong>Analysis Period:</strong> {{timePeriod}}
+              <strong>{{translations.analysisPeriod}}:</strong> {{timePeriod}}
             </div>
             <div class="meta-info">
-              <strong>Generated:</strong> {{generatedDate}}
+              <strong>{{translations.generated}}:</strong> {{generatedDate}}
             </div>
           </div>
         </div>
@@ -973,7 +973,7 @@
        <div class="section page-break-inside-avoid page-break-before">
          <h2 class="section-header">
            <span class="section-icon">🤖</span>
-           AI-Powered Business Insights
+           {{translations.aiInsights}}
          </h2>
          <div class="analysis-content">
            {{{gptAnalysis}}}
@@ -983,20 +983,20 @@
 
        <!-- Key Insights Section -->
     <div class="key-insights page-break-inside-avoid">
-      <h3>🔍 Key Performance Insights</h3>
+      <h3>{{translations.keyInsights}}</h3>
       <div class="insights-list">
         <div class="insight-item">
-          <strong>High Engagement:</strong> {{totalMessages}} total messages indicate active user interaction
+          <strong>{{translations.highEngagement}}:</strong> {{totalMessages}} {{translations.totalMessagesDesc}}
         </div>
         <div class="insight-item">
-          <strong>Customer Satisfaction:</strong> {{averageCustomerRating}}/5 rating shows excellent service quality
+          <strong>{{translations.customerSatisfaction}}:</strong> {{averageCustomerRating}}/5 {{translations.customerSatisfactionDesc}}
         </div>
         <div class="insight-item">
-          <strong>Consistent Performance:</strong> {{csatScore}} CSAT score demonstrates reliable support
+          <strong>{{translations.consistentPerformance}}:</strong> {{csatScore}} {{translations.consistentPerformanceDesc}}
         </div>
         {{#if hasPurchaseTracking}}
         <div class="insight-item">
-          <strong>Business Impact:</strong> {{totalRevenue}} revenue generated through chatbot interactions
+          <strong>{{translations.businessImpact}}:</strong> {{totalRevenue}} {{translations.businessImpactDesc}}
         </div>
         {{/if}}
       </div>
@@ -1004,20 +1004,20 @@
       <!-- Text Analysis Results -->
       {{#if textAnalysis}}
       <div class="text-analysis-section">
-        <h4 class="analysis-subtitle">📊 Customer Language Analysis</h4>
+        <h4 class="analysis-subtitle">{{translations.customerLanguageAnalysis}}</h4>
         
         {{#if textAnalysis.positiveCorrelations}}
         <div class="correlation-container">
-          <h5 class="correlation-title positive">✅ Most Positive Language Patterns</h5>
+          <h5 class="correlation-title positive">{{translations.positivePatterns}}</h5>
           <div class="correlation-description">
-            Words and phrases that correlate with higher customer satisfaction scores:
+            {{translations.positiveDescription}}
           </div>
           <ul class="correlation-list positive">
             {{#each textAnalysis.positiveCorrelations}}
             <li class="correlation-item">
               <span class="ngram-text">{{this.ngram}}</span>
               <span class="correlation-value positive">+{{this.correlation}}</span>
-              <span class="doc-count">({{this.documentCount}} conversations)</span>
+              <span class="doc-count">({{this.documentCount}} {{translations.conversationsText}})</span>
             </li>
             {{/each}}
           </ul>
@@ -1026,16 +1026,16 @@
 
         {{#if textAnalysis.negativeCorrelations}}
         <div class="correlation-container">
-          <h5 class="correlation-title negative">⚠️ Most Negative Language Patterns</h5>
+          <h5 class="correlation-title negative">{{translations.negativePatterns}}</h5>
           <div class="correlation-description">
-            Words and phrases that correlate with lower customer satisfaction scores:
+            {{translations.negativeDescription}}
           </div>
           <ul class="correlation-list negative">
             {{#each textAnalysis.negativeCorrelations}}
             <li class="correlation-item">
               <span class="ngram-text">{{this.ngram}}</span>
               <span class="correlation-value negative">{{this.correlation}}</span>
-              <span class="doc-count">({{this.documentCount}} conversations)</span>
+              <span class="doc-count">({{this.documentCount}} {{translations.conversationsText}})</span>
             </li>
             {{/each}}
           </ul>
@@ -1045,10 +1045,10 @@
 
       <!-- N-grams Analysis Explanation - Separate Page -->
       <div class="ngrams-explanation">
-        <h3 class="explanation-header">🧠 Language Pattern Analysis & Insights</h3>
+        <h3 class="explanation-header">{{translations.languagePatternAnalysis}}</h3>
         
         <div class="explanation-content">
-          <h4>📊 Customer Communication Analysis</h4>
+          <h4>{{translations.customerCommunicationAnalysis}}</h4>
           <p>
             Based on the correlation analysis of {{textAnalysis.ratingScoreCorrelation.count}} conversations, 
             we've identified significant language patterns that influence customer satisfaction. 
@@ -1065,7 +1065,7 @@
         <div class="section page-break-inside-avoid">
           <h2 class="section-header">
             <span class="section-icon">📈</span>
-            Performance Analytics Dashboard
+            {{translations.performanceAnalytics}}
           </h2>
          
          {{#if dailyChart}}
@@ -1106,7 +1106,7 @@
       <div class="section page-break-inside-avoid">
         <h2 class="section-header">
           <span class="section-icon">📊</span>
-          Performance Metrics Overview
+          {{translations.performanceMetrics}}
         </h2>
         <div class="metric-grid">
           <div class="metric-card highlight">
