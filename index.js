@@ -13,6 +13,8 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
+import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
+import { registerSplitTestRoutes } from './splitTestRoutes.js';
 
 const { Pool } = pg;
 
@@ -5039,6 +5041,8 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
+registerPopupMessageRoutes(app, pool, authenticateToken);
+registerSplitTestRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
