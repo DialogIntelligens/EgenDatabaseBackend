@@ -3318,11 +3318,73 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
         saturday_hours_start: '09:00:00',
         saturday_hours_end: '15:00:00',
         sunday_hours_start: '09:00:00',
-        sunday_hours_end: '15:00:00'
+        sunday_hours_end: '15:00:00',
+        statistics_visibility: {
+          totalMessages: true,
+          avgMessagesPerDay: true,
+          totalConversations: true,
+          totalUserRatings: true,
+          averageRating: true,
+          csatScore: true,
+          totalPurchases: true,
+          totalRevenue: true,
+          averagePurchaseValue: true,
+          conversionRate: true,
+          greetingRate: true,
+          fallbackRate: true,
+          ligegyldigRate: false,
+          totalLeads: true,
+          outsideBusinessHours: true,
+          // Live chat stats
+          totalLivechatConversations: true,
+          avgLivechatPerDay: true,
+          livechatPercentage: true,
+          avgResponseTime: true,
+          totalResponses: true
+        }
       });
     }
     
-    res.json(result.rows[0]);
+    // Parse statistics_visibility if it exists, otherwise use defaults
+    let statisticsVisibility = {
+      totalMessages: true,
+      avgMessagesPerDay: true,
+      totalConversations: true,
+      totalUserRatings: true,
+      averageRating: true,
+      csatScore: true,
+      totalPurchases: true,
+      totalRevenue: true,
+      averagePurchaseValue: true,
+      conversionRate: true,
+      greetingRate: true,
+      fallbackRate: true,
+      ligegyldigRate: false,
+      totalLeads: true,
+      outsideBusinessHours: true,
+      // Live chat stats
+      totalLivechatConversations: true,
+      avgLivechatPerDay: true,
+      livechatPercentage: true,
+      avgResponseTime: true,
+      totalResponses: true
+    };
+    
+    if (result.rows[0].statistics_visibility) {
+      try {
+        const savedVisibility = typeof result.rows[0].statistics_visibility === 'string' 
+          ? JSON.parse(result.rows[0].statistics_visibility)
+          : result.rows[0].statistics_visibility;
+        statisticsVisibility = { ...statisticsVisibility, ...savedVisibility };
+      } catch (error) {
+        console.error('Error parsing statistics_visibility:', error);
+      }
+    }
+    
+    res.json({
+      ...result.rows[0],
+      statistics_visibility: statisticsVisibility
+    });
   } catch (error) {
     console.error('Error fetching user statistic settings:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -3339,7 +3401,8 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
       saturday_hours_start, 
       saturday_hours_end, 
       sunday_hours_start, 
-      sunday_hours_end 
+      sunday_hours_end,
+      statistics_visibility
     } = req.body;
     
     // Validate time format (HH:MM or HH:MM:SS) for provided times
@@ -3362,6 +3425,11 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
     }
     if (sunday_hours_end && !timeRegex.test(sunday_hours_end)) {
       return res.status(400).json({ error: 'Invalid sunday_hours_end time format' });
+    }
+    
+    // Validate statistics_visibility if provided
+    if (statistics_visibility !== undefined && typeof statistics_visibility !== 'object') {
+      return res.status(400).json({ error: 'statistics_visibility must be an object' });
     }
     
     // Build dynamic query based on provided fields
@@ -3419,6 +3487,14 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
       paramIndex++;
     }
     
+    if (statistics_visibility !== undefined) {
+      insertFields.push('statistics_visibility');
+      insertValues.push(`$${paramIndex}`);
+      conflictUpdates.push(`statistics_visibility = EXCLUDED.statistics_visibility`);
+      queryParams.push(JSON.stringify(statistics_visibility));
+      paramIndex++;
+    }
+    
     conflictUpdates.push('updated_at = CURRENT_TIMESTAMP');
     
     // Use UPSERT (INSERT ... ON CONFLICT)
@@ -3432,7 +3508,19 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
       queryParams
     );
     
-    res.json(result.rows[0]);
+    // Parse statistics_visibility for the response
+    let responseData = result.rows[0];
+    if (responseData.statistics_visibility) {
+      try {
+        responseData.statistics_visibility = typeof responseData.statistics_visibility === 'string' 
+          ? JSON.parse(responseData.statistics_visibility)
+          : responseData.statistics_visibility;
+      } catch (error) {
+        console.error('Error parsing statistics_visibility in response:', error);
+      }
+    }
+    
+    res.json(responseData);
   } catch (error) {
     console.error('Error updating user statistic settings:', error);
     res.status(500).json({ error: 'Internal server error' });
