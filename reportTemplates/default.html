@@ -533,8 +533,8 @@
       list-style: none;
       margin: 0;
       padding: 0;
-      max-height: 200px;
-      overflow-y: auto;
+      max-height: none;
+      overflow: visible;
     }
 
     .correlation-item {
@@ -704,12 +704,12 @@
       margin-bottom: 35px;
     }
 
-    /* Key insights should start on new page */
+    /* Key insights should stay together but not force new page */
     .key-insights {
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: always;
-      break-before: page;
+      page-break-before: auto;
+      break-before: auto;
       margin-bottom: 35px;
     }
 
@@ -799,12 +799,12 @@
         margin-top: 20px !important;
       }
 
-      /* Key insights spacing - Force new page */
+      /* Key insights spacing - Remove forced new page */
       .key-insights {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
-        page-break-before: always !important;
-        break-before: page !important;
+        page-break-before: auto !important;
+        break-before: auto !important;
         margin-bottom: 30px !important;
         margin-top: 20px !important;
       }
@@ -934,6 +934,25 @@
       .chart-spacer {
         height: 20px !important;
         page-break-inside: avoid !important;
+      }
+
+      /* Fix correlation lists for PDF */
+      .correlation-list {
+        max-height: none !important;
+        overflow: visible !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+
+      .correlation-container {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 20px !important;
+      }
+
+      .correlation-item {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
       }
     }
 
