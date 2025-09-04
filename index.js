@@ -1864,7 +1864,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
 
     let queryText = `
-      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged, c.form_data, c.user_id, c.livechat_email, c.ligegyldig,
+      SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged, c.form_data, c.user_id, c.livechat_email,
              COALESCE(SUM(p.amount), 0) as purchase_amount,
              CASE 
                WHEN EXISTS (
@@ -2488,7 +2488,7 @@ function transformStatisticsForPDF(rawData) {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-     const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations, language } = req.body;
+    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
@@ -2798,7 +2798,7 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
        // Transform raw statistics data into template-friendly format
        const transformedStatisticsData = transformStatisticsForPDF(statisticsData);
        
-        const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod, language || 'en');
+       const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod);
        console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
        
        // Set appropriate headers for PDF download
