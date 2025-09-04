@@ -1043,21 +1043,6 @@
         {{/if}}
       </div>
 
-      <!-- N-grams Analysis Explanation - Separate Page -->
-      <div class="ngrams-explanation">
-        <h3 class="explanation-header">{{translations.languagePatternAnalysis}}</h3>
-        
-        <div class="explanation-content">
-          <h4>{{translations.customerCommunicationAnalysis}}</h4>
-          <p>
-            Based on the correlation analysis of {{textAnalysis.ratingScoreCorrelation.count}} conversations, 
-            we've identified significant language patterns that influence customer satisfaction. 
-            The overall correlation between language patterns and ratings is 
-            {{textAnalysis.ratingScoreCorrelation.value}}, indicating a meaningful relationship 
-            between customer communication and their satisfaction levels.
-          </p>
-        </div>
-      </div>
       {{/if}}
     </div>
  
@@ -1090,15 +1075,6 @@
          <div class="chart-spacer"></div>
          {{/if}}
          
-         {{#if topicChart}}
-         <div class="chart-container">
-           <h3>{{translations.customerInquiryTopics}}</h3>
-           <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
-           <div class="chart-description">
-             {{translations.topicDiscussion}}
-           </div>
-         </div>
-         {{/if}}
        </div>
      </div>
       
