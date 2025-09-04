@@ -1114,21 +1114,6 @@ app.post('/login', async (req, res) => {
       chatbotIds = user.accessible_chatbot_ids || [];
     }
 
-    // Fetch user's ligegyldig_visibility setting
-    let ligegyldigVisibility = false; // Default to false
-    try {
-      const settingsResult = await pool.query(
-        'SELECT ligegyldig_visibility FROM userStatisticSettings WHERE user_id = $1',
-        [user.id]
-      );
-      if (settingsResult.rows.length > 0 && settingsResult.rows[0].ligegyldig_visibility !== null) {
-        ligegyldigVisibility = settingsResult.rows[0].ligegyldig_visibility;
-      }
-    } catch (settingsError) {
-      console.error('Error fetching ligegyldig_visibility setting:', settingsError);
-      // Keep default value
-    }
-
     return res.json({
       token,
       chatbot_ids: chatbotIds,
@@ -1141,8 +1126,7 @@ app.post('/login', async (req, res) => {
       company_info: user.company_info || '',
       livechat: user.livechat || false,
       agent_name: user.agent_name || 'Support Agent',
-      profile_picture: user.profile_picture || '',
-      ligegyldig_visibility: ligegyldigVisibility
+      profile_picture: user.profile_picture || ''
     });
   } catch (err) {
     console.error('Error logging in:', err);
@@ -3341,7 +3325,7 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
         saturday_hours_end: '15:00:00',
         sunday_hours_start: '09:00:00',
         sunday_hours_end: '15:00:00',
-        ligegyldig_visibility: false,
+        ligegyldig_visible: false,
         statistics_visibility: {
           totalMessages: true,
           avgMessagesPerDay: true,
@@ -3355,7 +3339,6 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
           conversionRate: true,
           greetingRate: true,
           fallbackRate: true,
-          ligegyldigRate: false,
           totalLeads: true,
           outsideBusinessHours: true,
           // Live chat stats
@@ -3382,7 +3365,6 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
       conversionRate: true,
       greetingRate: true,
       fallbackRate: true,
-      ligegyldigRate: false,
       totalLeads: true,
       outsideBusinessHours: true,
       // Live chat stats
@@ -3406,7 +3388,8 @@ app.get('/user-statistic-settings', authenticateToken, async (req, res) => {
     
     res.json({
       ...result.rows[0],
-      statistics_visibility: statisticsVisibility
+      statistics_visibility: statisticsVisibility,
+      ligegyldig_visible: result.rows[0].ligegyldig_visible ?? false
     });
   } catch (error) {
     console.error('Error fetching user statistic settings:', error);
@@ -3426,7 +3409,7 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
       sunday_hours_start, 
       sunday_hours_end,
       statistics_visibility,
-      ligegyldig_visibility
+      ligegyldig_visible
     } = req.body;
     
     // Validate time format (HH:MM or HH:MM:SS) for provided times
@@ -3454,11 +3437,6 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
     // Validate statistics_visibility if provided
     if (statistics_visibility !== undefined && typeof statistics_visibility !== 'object') {
       return res.status(400).json({ error: 'statistics_visibility must be an object' });
-    }
-    
-    // Validate ligegyldig_visibility if provided
-    if (ligegyldig_visibility !== undefined && typeof ligegyldig_visibility !== 'boolean') {
-      return res.status(400).json({ error: 'ligegyldig_visibility must be a boolean' });
     }
     
     // Build dynamic query based on provided fields
@@ -3524,11 +3502,11 @@ app.put('/user-statistic-settings', authenticateToken, async (req, res) => {
       paramIndex++;
     }
     
-    if (ligegyldig_visibility !== undefined) {
-      insertFields.push('ligegyldig_visibility');
+    if (ligegyldig_visible !== undefined) {
+      insertFields.push('ligegyldig_visible');
       insertValues.push(`$${paramIndex}`);
-      conflictUpdates.push(`ligegyldig_visibility = EXCLUDED.ligegyldig_visibility`);
-      queryParams.push(ligegyldig_visibility);
+      conflictUpdates.push(`ligegyldig_visible = EXCLUDED.ligegyldig_visible`);
+      queryParams.push(ligegyldig_visible);
       paramIndex++;
     }
     
