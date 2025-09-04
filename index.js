@@ -2494,7 +2494,7 @@ function transformStatisticsForPDF(rawData) {
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
   try {
-    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations, language } = req.body;
+    const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations, language, selectedEmne } = req.body;
     
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
@@ -2564,6 +2564,12 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       `;
       let queryParams = [chatbotIds];
       let paramIndex = 2;
+      
+      // Add emne filter if selected
+      if (selectedEmne) {
+        queryText += ` AND emne = $${paramIndex++}`;
+        queryParams.push(selectedEmne);
+      }
       
       // Add date filters if provided
       if (start_date && end_date) {
@@ -2694,6 +2700,12 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
             let queryParams = [chatbotIds];
             let paramIndex = 2;
             
+            // Add emne filter if selected
+            if (selectedEmne) {
+              queryText += ` AND emne = $${paramIndex++}`;
+              queryParams.push(selectedEmne);
+            }
+            
             // Add date filters if provided
             if (start_date && end_date) {
               queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
@@ -2776,7 +2788,8 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
             conversationContents, 
             maxConversations,
             gptProgressTracker,
-            language || 'en'  // Add language parameter
+            language || 'en',  // Add language parameter
+            selectedEmne  // Add selected emne filter
           );
           
           if (gptAnalysis) {
