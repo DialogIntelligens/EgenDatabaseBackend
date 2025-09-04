@@ -954,6 +954,31 @@
         page-break-inside: avoid !important;
         break-inside: avoid !important;
       }
+
+      /* Fix text analysis section spacing to prevent blank pages */
+      .text-analysis-section {
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+        margin-bottom: 20px !important;
+      }
+
+      /* Ensure sections don't force unnecessary page breaks */
+      .section {
+        page-break-before: auto !important;
+        break-before: auto !important;
+        page-break-after: auto !important;
+        break-after: auto !important;
+        margin-bottom: 25px !important;
+        margin-top: 15px !important;
+      }
+
+      /* Remove any forced page breaks from key insights */
+      .key-insights {
+        page-break-before: auto !important;
+        break-before: auto !important;
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
     }
 
     /* Chart spacing utilities */
@@ -1064,9 +1089,9 @@
 
       {{/if}}
     </div>
- 
-              <!-- Performance Analytics Section -->
-        <div class="section page-break-inside-avoid">
+
+    <!-- Performance Analytics Section -->
+    <div class="section page-break-inside-avoid">
           <h2 class="section-header">
             <span class="section-icon">📈</span>
             {{translations.performanceAnalytics}}
