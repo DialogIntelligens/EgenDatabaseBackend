@@ -75,7 +75,7 @@ function trimMessage(text, maxLength) {
  * @param {string} language - Language code for the analysis (da, en, sv, etc.)
  * @returns {Promise<string>} - The GPT analysis text
  */
-export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10, progressCallback = null, language = 'en') {
+export async function generateGPTAnalysis(statisticsData, timePeriod, conversationContents = [], maxConversations = 10, progressCallback = null, language = 'en', selectedEmne = null) {
   try {
     // Report initial progress
     if (progressCallback) {
@@ -119,7 +119,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     } = statisticsData;
 
     // Construct prompt with all available data
-    let prompt = `Please analyze the following chatbot statistics data for ${timeFrame} and provide a concise executive summary with key insights and recommendations in 3-4 paragraphs.
+    let prompt = `Please analyze the following chatbot statistics data for ${timeFrame}${selectedEmne ? ` specifically for the topic "${selectedEmne}"` : ''} and provide a concise executive summary with key insights and recommendations in 3-4 paragraphs.
 
     Your job is primarely to provide insight on how the buisness itself can be proven, not how the chatbot can be improved unless there is something obvious realted to the chatbot.
     Generaly you should lean more towards giving insights rather than giving concrete advice or recommendations, as you do not have suffiecient information about the buisness to give good advice.
@@ -129,6 +129,7 @@ export async function generateGPTAnalysis(statisticsData, timePeriod, conversati
     I want whatever you tell me to be very concrete and actionable.
     Use examples from the conversation data to support your insights.
     In general make sure to give the reader the impression that the chatbot is doing a good job and is valuable for the company.
+    ${selectedEmne ? `\n\nNOTE: This analysis is focused specifically on conversations related to the topic "${selectedEmne}". All data and insights should be interpreted within this context.\n` : ''}
 
     ${companyInfo ? `COMPANY CONTEXT:\n${companyInfo}\n\n` : ''}
     FORMATTING INSTRUCTIONS:
