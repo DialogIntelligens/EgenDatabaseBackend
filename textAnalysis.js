@@ -108,6 +108,235 @@ function generateMultipleNgrams(text, maxN = 3) {
   return allNgrams;
 }
 
+// Helper function to detect questions in user messages
+function isQuestion(text) {
+  if (!text || typeof text !== 'string') return false;
+  
+  const trimmed = text.trim().toLowerCase();
+  
+  // Question words at the beginning
+  const questionWords = [
+    'hvad', 'hvordan', 'hvornår', 'hvor', 'hvem', 'hvorfor', 'hvilken', 'hvilke', // Danish
+    'what', 'how', 'when', 'where', 'who', 'why', 'which', 'can', 'could', 'would', 'should', // English
+    'vad', 'hur', 'när', 'var', 'vem', 'varför', 'vilken', 'vilka', // Swedish
+    'was', 'wie', 'wann', 'wo', 'wer', 'warum', 'welche', 'welcher' // German
+  ];
+  
+  // Check if starts with question word
+  const startsWithQuestionWord = questionWords.some(word => 
+    trimmed.startsWith(word + ' ') || trimmed === word
+  );
+  
+  // Check if ends with question mark
+  const endsWithQuestionMark = trimmed.endsWith('?');
+  
+  // Check for question patterns
+  const questionPatterns = [
+    /\b(kan|kunne|vil|ville|skal|skulle|må|burde|er det|har du|har i|findes der|er der)\b/i, // Danish
+    /\b(can|could|will|would|shall|should|may|might|is there|are there|do you|does|did)\b/i, // English
+    /\b(kan|kunde|vill|skulle|ska|borde|får|finns det|är det|har du|har ni)\b/i, // Swedish
+    /\b(kann|könnte|wird|würde|soll|sollte|darf|gibt es|ist da|hast du|haben sie)\b/i // German
+  ];
+  
+  const hasQuestionPattern = questionPatterns.some(pattern => pattern.test(trimmed));
+  
+  return startsWithQuestionWord || endsWithQuestionMark || hasQuestionPattern;
+}
+
+// Helper function to clean and normalize questions
+function normalizeQuestion(text) {
+  if (!text) return '';
+  
+  let normalized = text.trim();
+  
+  // Remove common prefixes that don't add value to FAQ
+  const prefixesToRemove = [
+    /^(hej|hi|hello|hallo)\s+/i,
+    /^(jeg vil gerne|i would like to|ich möchte)\s+/i,
+    /^(kan du|can you|kannst du)\s+/i
+  ];
+  
+  prefixesToRemove.forEach(pattern => {
+    normalized = normalized.replace(pattern, '');
+  });
+  
+  // Capitalize first letter
+  normalized = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  
+  // Ensure it ends with question mark if it's clearly a question
+  if (isQuestion(normalized) && !normalized.endsWith('?')) {
+    normalized += '?';
+  }
+  
+  return normalized.trim();
+}
+
+// Helper function to group similar questions
+function groupSimilarQuestions(questions) {
+  const groups = [];
+  const used = new Set();
+  
+  questions.forEach((question, index) => {
+    if (used.has(index)) return;
+    
+    const group = {
+      representative: question.text,
+      count: question.count,
+      variations: [question.text],
+      totalOccurrences: question.count
+    };
+    
+    // Find similar questions
+    questions.forEach((otherQuestion, otherIndex) => {
+      if (used.has(otherIndex) || index === otherIndex) return;
+      
+      // Simple similarity check - you can make this more sophisticated
+      const similarity = calculateStringSimilarity(question.text, otherQuestion.text);
+      
+      if (similarity > 0.7) { // 70% similarity threshold
+        group.variations.push(otherQuestion.text);
+        group.totalOccurrences += otherQuestion.count;
+        used.add(otherIndex);
+        
+        // Use the shorter, cleaner question as representative
+        if (otherQuestion.text.length < group.representative.length) {
+          group.representative = otherQuestion.text;
+        }
+      }
+    });
+    
+    used.add(index);
+    groups.push(group);
+  });
+  
+  return groups.sort((a, b) => b.totalOccurrences - a.totalOccurrences);
+}
+
+// Simple string similarity function
+function calculateStringSimilarity(str1, str2) {
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  
+  if (longer.length === 0) return 1.0;
+  
+  const distance = levenshteinDistance(longer, shorter);
+  return (longer.length - distance) / longer.length;
+}
+
+// Levenshtein distance calculation
+function levenshteinDistance(str1, str2) {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
+// Extract FAQs from conversations
+async function extractFAQs(conversations, progressCallback = null) {
+  const questionCounts = new Map();
+  
+  // Progress tracking
+  let processedCount = 0;
+  const totalConversations = conversations.length;
+  
+  // Process conversations in batches to extract questions
+  const batchSize = 100;
+  for (let i = 0; i < conversations.length; i += batchSize) {
+    const batch = conversations.slice(i, i + batchSize);
+    
+    await processWithThrottling(batch, async (conv) => {
+      try {
+        let conversationData;
+        try {
+          conversationData = (typeof conv.conversation_data === 'string')
+            ? JSON.parse(conv.conversation_data)
+            : conv.conversation_data;
+        } catch (e) {
+          return null;
+        }
+        
+        if (!Array.isArray(conversationData)) return null;
+        
+        // Extract user messages that are questions
+        const userQuestions = conversationData
+          .filter(message => message && message.isUser === true && message.text)
+          .map(message => String(message.text || "").trim())
+          .filter(text => text.length > 10 && isQuestion(text)) // Filter short texts and non-questions
+          .map(text => normalizeQuestion(text))
+          .filter(text => text.length > 5); // Final length check after normalization
+        
+        // Count each unique question
+        userQuestions.forEach(question => {
+          questionCounts.set(question, (questionCounts.get(question) || 0) + 1);
+        });
+        
+        return userQuestions.length;
+      } catch (error) {
+        console.error("Error processing conversation for FAQ:", error);
+        return null;
+      }
+    }, 20, 50);
+    
+    processedCount += batch.length;
+    
+    // Report progress
+    if (progressCallback) {
+      const percent = Math.min(50, Math.floor((processedCount / totalConversations) * 40));
+      progressCallback(`Extracting questions (${processedCount}/${totalConversations})`, 10 + percent);
+    }
+  }
+  
+  // Convert to array and filter by minimum occurrence
+  const minOccurrences = Math.max(2, Math.ceil(conversations.length * 0.01)); // At least 1% of conversations or 2
+  const questions = Array.from(questionCounts.entries())
+    .filter(([question, count]) => count >= minOccurrences)
+    .map(([text, count]) => ({ text, count }))
+    .sort((a, b) => b.count - a.count);
+  
+  console.log(`Found ${questions.length} unique questions with ${minOccurrences}+ occurrences`);
+  
+  // Progress update
+  if (progressCallback) {
+    progressCallback("Grouping similar questions", 60);
+  }
+  
+  // Group similar questions
+  const groupedQuestions = groupSimilarQuestions(questions);
+  
+  // Return top 5 FAQs
+  const topFAQs = groupedQuestions.slice(0, 5).map(group => ({
+    question: group.representative,
+    frequency: group.totalOccurrences,
+    variations: group.variations.length,
+    percentage: ((group.totalOccurrences / conversations.length) * 100).toFixed(1)
+  }));
+  
+  console.log(`Generated ${topFAQs.length} top FAQs`);
+  
+  return topFAQs;
+}
+
 /**
  * Sleep function to pause execution
  * @param {number} ms - Milliseconds to sleep
@@ -391,247 +620,41 @@ export async function analyzeConversations(conversations, progressCallback = nul
   
   console.log(`Calculated average score for ${avgScorePerTopic.filter(t => t.count > 0).length} topics with scores (out of ${avgScorePerTopic.length} total topics).`);
 
-  // --- Preprocessing for TF-IDF ---
-    // Process documents in smaller batches to avoid memory issues
-    let processedDocs = [];
-    const convoBatchSize = 100;
-    
-    for (let i = 0; i < conversations.length; i += convoBatchSize) {
-      const batch = conversations.slice(i, i + convoBatchSize);
-      const batchDocs = await processWithThrottling(batch, async (conv) => {
-    let conversationData;
-    try {
-      conversationData = (typeof conv.conversation_data === 'string')
-        ? JSON.parse(conv.conversation_data)
-        : conv.conversation_data;
-    } catch (e) {
-      return null;
-    }
-
-        // Extract user messages for analysis
-    const userText = extractUserMessages(conversationData);
-    const score = parseFloat(conv.score);
-
-        // Check for valid data
-        if (!userText || userText.trim().length === 0) return null;
-        if (typeof score !== 'number' || isNaN(score)) return null;
-        
-        return { 
-          id: conv.id, 
-          userText: userText.trim(), 
-          score,
-          text: userText.trim(), // Add text field for consistency
-          rating: conv.customer_rating ? parseFloat(conv.customer_rating) : null,
-          emne: conv.emne || null
-        };
-      }, 20, 50);
-      
-      // Add valid docs from this batch
-      processedDocs = [...processedDocs, ...batchDocs.filter(doc => doc !== null)];
-      
-      // Report progress
-      if (progressCallback) {
-        const percent = Math.min(20, 10 + Math.floor((i + convoBatchSize) / conversations.length * 10));
-        progressCallback(`Processing conversations (${processedDocs.length} valid so far)`, percent);
-      }
-    }
-
-  console.log(`Processed ${processedDocs.length} conversations with valid user text and scores.`);
-
-  if (processedDocs.length < 2) {
-    console.warn("Insufficient valid documents for TF-IDF analysis.");
-    return {
-      error: "Insufficient data for text analysis",
-      ratingScoreCorrelation: ratingScoreCorr,
-      avgRatingPerTopic,
-      avgScorePerTopic,
-      positiveCorrelations: [],
-      negativeCorrelations: []
-    };
-  }
-
-  // Check score variance
-  const allScores = processedDocs.map(doc => doc.score);
-  const uniqueScores = new Set(allScores);
-  console.log(`Score variance check: ${uniqueScores.size} unique score values out of ${allScores.length} documents`);
-  if (uniqueScores.size <= 1) {
-    console.warn("No variance in scores - all documents have the same score. Cannot calculate correlations.");
-    return {
-      error: "Insufficient variance in scores for correlation analysis",
-      ratingScoreCorrelation: ratingScoreCorr,
-      avgRatingPerTopic,
-      avgScorePerTopic,
-      positiveCorrelations: [],
-      negativeCorrelations: []
-    };
-  }
-
-    // Report progress - preprocessing complete
+    // Progress update - preprocessing complete
     if (progressCallback) {
       progressCallback("Preprocessing conversations", 20);
     }
 
-    // Create TF-IDF model with memory-efficient batching
-    const { tfidf, docMapping } = await createTfIdfModel(processedDocs, progressCallback);
-  console.log(`TF-IDF model created with ${tfidf.documents.length} documents processed.`);
-
-    // Progress update - TF-IDF model complete
-    if (progressCallback) {
-      progressCallback("Language model complete", 30);
-    }
-
-    // --- Calculate Pearson Correlation for each N-gram --- 
-    let ngramCorrelations = [];
-    
-    // Extract terms more efficiently
-    const terms = new Map(); // Use Map for better performance with large datasets
-    
-    // Process in batches to avoid memory issues
-    const docBatchSize = 50; 
-    for (let i = 0; i < tfidf.documents.length; i += docBatchSize) {
-      const endIdx = Math.min(i + docBatchSize, tfidf.documents.length);
-      
-      for (let docIndex = i; docIndex < endIdx; docIndex++) {
-        const doc = tfidf.documents[docIndex];
-        Object.keys(doc).forEach(term => {
-          if (term !== '__key') {
-            terms.set(term, (terms.get(term) || 0) + 1);
-      }
-    });
-      }
-      
-      // Small delay between batches
-      if (i + docBatchSize < tfidf.documents.length) {
-        await sleep(50);
-      }
-    }
-
-    // Filter terms to those that appear in at least N% of documents
-    const minDocumentPercentage = 0.03; // 3%
-    const minDocumentCount = Math.max(2, Math.ceil(tfidf.documents.length * minDocumentPercentage));
-    
-    // Convert terms Map to array and filter
-    const allTerms = Array.from(terms.entries())
-      .filter(([term, count]) => count >= minDocumentCount)
-      .map(([term]) => term);
-
-    // For large datasets, limit the number of terms to process
-    const maxTermsToProcess = processedDocs.length > 200 ? 2000 : 5000;
-    
-    // Sort terms by frequency and limit
-    let termsToProcess = Array.from(terms.entries())
-      .sort((a, b) => b[1] - a[1]) // Sort by frequency
-      .slice(0, maxTermsToProcess)
-      .map(([term]) => term);
-
-    console.log(`Processing ${termsToProcess.length} out of ${allTerms.length} total terms`);
-
-    // Progress update - beginning correlation calculation
-    if (progressCallback) {
-      progressCallback("Starting correlation analysis", 35);
-    }
-
-    // Process terms in smaller batches
-    const termBatchSize = 100;
-    for (let i = 0; i < termsToProcess.length; i += termBatchSize) {
-      const termBatch = termsToProcess.slice(i, i + termBatchSize);
-      
-      // Process this batch of terms
-      const batchResults = await processWithThrottling(termBatch, async (term) => {
-        try {
-          const termTfidfValues = [];
-      const correspondingScores = [];
-      
-          // Use docMapping to match documents with their scores
-      processedDocs.forEach(doc => {
-            if (docMapping.has(doc.id)) {
-              const docIndex = docMapping.get(doc.id);
-              const tfidfValue = tfidf.tfidf(term, docIndex);
-              
-              // Only include if we have a valid TF-IDF value
-              if (!isNaN(tfidfValue)) {
-                termTfidfValues.push(tfidfValue);
-          correspondingScores.push(doc.score);
-        }
-            }
-      });
-      
-          // Need at least 3 data points for meaningful correlation
-          if (termTfidfValues.length > 2) {
-            // Calculate Pearson correlation
-            const correlation = calculatePearson(termTfidfValues, correspondingScores);
-            
-            if (!isNaN(correlation) && Math.abs(correlation) > 0.1) { // Ignore very weak correlations
-              return { 
-              ngram: term, 
-                correlation: correlation,
-                documentCount: terms.get(term) || 0 // How many documents contain this term
-              };
-            }
-          }
-          return null;
-        } catch (error) {
-          console.error(`Error processing term "${term}":`, error);
-          return null;
-      }
-      }, 10, 20); // Process 10 terms at a time with 20ms delay
-      
-      // Add valid correlations
-      ngramCorrelations = [...ngramCorrelations, ...batchResults.filter(r => r !== null)];
-    
-      // Report progress
+    // Extract FAQs instead of n-gram correlations
+    let topFAQs = [];
+    try {
       if (progressCallback) {
-        const progressPercent = 35 + Math.floor((i + termBatchSize) / termsToProcess.length * 35);
-        progressCallback(`Processing terms (${i + termBatchSize}/${termsToProcess.length})`, 
-          Math.min(70, progressPercent));
+        progressCallback("Extracting frequently asked questions", 30);
       }
+      
+      topFAQs = await extractFAQs(conversations, progressCallback);
+      
+      if (progressCallback) {
+        progressCallback("FAQ extraction complete", 80);
+      }
+    } catch (error) {
+      console.error("Error extracting FAQs:", error);
+      topFAQs = [];
     }
-    
-    // Progress update - correlation calculation complete
-    if (progressCallback) {
-      progressCallback("Correlation analysis complete", 70);
-  }
 
-  // --- Sort and select top correlations ---
-  ngramCorrelations.sort((a, b) => b.correlation - a.correlation); // Sort desc
+    console.log("Analysis complete.");
 
-  // Limit to maximum 5 n-grams per category while keeping the strongest correlations
-  const maxCorrelationsPerCategory = 5;
-  
-  const positiveCorrelations = ngramCorrelations
-    .filter(c => c.correlation > 0)
-    .slice(0, maxCorrelationsPerCategory)
-    .map(item => ({
-      ...item,
-      ngram: item.ngram.replace(/^\d+gram:/, ''), // Remove "2gram:", "3gram:" etc.
-      correlation: parseFloat(item.correlation.toFixed(3)) // Format to 3 decimal places
-    }));
-    
-  const negativeCorrelations = ngramCorrelations
-    .filter(c => c.correlation < 0)
-    .sort((a, b) => a.correlation - b.correlation) // Sort ascending for negatives
-    .slice(0, maxCorrelationsPerCategory)
-    .map(item => ({
-      ...item,
-      ngram: item.ngram.replace(/^\d+gram:/, ''), // Remove "2gram:", "3gram:" etc.
-      correlation: parseFloat(item.correlation.toFixed(3)) // Format to 3 decimal places
-    }));
-
-  console.log("Analysis complete.");
-
-  return {
-    ratingScoreCorrelation: ratingScoreCorr,
-    avgRatingPerTopic,
-    avgScorePerTopic,
-    positiveCorrelations: positiveCorrelations,
-    negativeCorrelations: negativeCorrelations,
-    analyzedDocumentsCount: processedDocs.length,
-    totalNgramsFound: allTerms.length,
-    ngramInfo: {
-      maxSize: 3, // Maximum n-gram size
-      description: "Includes unigrams, bigrams, and trigrams (n-grams with n=1, n=2, and n=3)"
-    }
-  };
+    return {
+      ratingScoreCorrelation: ratingScoreCorr,
+      avgRatingPerTopic,
+      avgScorePerTopic,
+      frequentlyAskedQuestions: topFAQs, // Changed from positiveCorrelations/negativeCorrelations
+      analyzedDocumentsCount: conversations.length,
+      faqInfo: {
+        description: "Top 5 most frequently asked questions by customers",
+        extractionMethod: "Question detection and similarity grouping"
+      }
+    };
   } catch (error) {
     console.error("Fatal error in text analysis:", error);
     return {
@@ -639,11 +662,10 @@ export async function analyzeConversations(conversations, progressCallback = nul
       ratingScoreCorrelation: { value: null, pValue: null, count: 0 },
       avgRatingPerTopic: [],
       avgScorePerTopic: [],
-      positiveCorrelations: [],
-      negativeCorrelations: [],
-      ngramInfo: {
-        maxSize: 3, // Maximum n-gram size
-        description: "Includes unigrams, bigrams, and trigrams (n-grams with n=1, n=2, and n=3)"
+      frequentlyAskedQuestions: [],
+      faqInfo: {
+        description: "Top 5 most frequently asked questions by customers",
+        extractionMethod: "Question detection and similarity grouping"
       }
     };
   }
