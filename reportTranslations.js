@@ -193,16 +193,6 @@ export const reportTranslations = {
     consistentPerformanceDesc: 'CSAT poäng visar pålitlig support',
     businessImpactDesc: 'intäkter genererade genom chatbot interaktioner',
 
-    // Language Analysis
-    customerLanguageAnalysis: '📊 Kundspråkanalys',
-    positivePatterns: '✅ Mest Positiva Språkmönster',
-    negativePatterns: '⚠️ Mest Negativa Språkmönster',
-    positiveDescription: 'Ord och fraser som korrelerar med högre kundnöjdhetspoäng:',
-    negativeDescription: 'Ord och fraser som korrelerar med lägre kundnöjdhetspoäng:',
-    conversationsText: 'konversationer',
-    languagePatternAnalysis: '🧠 Språkmönster Analys & Insikter',
-    customerCommunicationAnalysis: '📊 Kundkommunikationsanalys',
-
     // Metrics
     totalMessages: 'Totala Meddelanden',
     totalMessagesMetricDesc: 'Användarinteraktioner med chatbot system',
@@ -210,14 +200,6 @@ export const reportTranslations = {
     avgMessagesPerDayDesc: 'Dagligt meddelandevolym genomsnitt',
     totalConversations: 'Totala Konversationer',
     totalConversationsDesc: 'Unika kund chat sessioner',
-    // FAQ Analysis (replace correlation translations)
-    customerQuestionAnalysis: '❓ Kundfrågaanalys',
-    topFAQs: '📋 Top 5 Vanligaste Frågorna (FAQ)',
-    faqDescription: 'De vanligaste frågorna som kunder ställer till chatbotten:',
-    times: 'gånger',
-    ofConversations: 'av konversationer',
-    variations: 'variationer',
-
     totalCustomerRatings: 'Totala Kundbetyg',
     totalCustomerRatingsDesc: 'Antal kund feedback svar',
     customerSatisfactionMetric: 'Kundnöjdhet',
