@@ -578,6 +578,74 @@
       text-align: right;
     }
 
+    /* FAQ Styling - Replace correlation styling */
+    .faq-container {
+      margin-bottom: 20px;
+      background: rgba(104, 107, 241, 0.05);
+      border-radius: 12px;
+      padding: 15px;
+      border: 1px solid var(--border-light);
+    }
+
+    .faq-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--primary-color);
+    }
+
+    .faq-description {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      font-style: italic;
+    }
+
+    .faq-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .faq-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      background: white;
+      border-radius: 8px;
+      border-left: 3px solid var(--primary-color);
+      box-shadow: var(--shadow-light);
+    }
+
+    .faq-question {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-size: 13px;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+
+    .faq-stats {
+      display: flex;
+      gap: 12px;
+      font-size: 10px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .faq-frequency {
+      font-weight: 600;
+      color: var(--primary-color);
+    }
+
+    .faq-percentage {
+      color: var(--text-secondary);
+    }
+
+    .faq-variations {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
     /* N-grams Explanation Section */
     .ngrams-explanation {
       background: var(--background-secondary);
@@ -587,8 +655,8 @@
       margin-top: 40px;
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: always;
-      break-before: page;
+      page-break-before: auto;
+      break-before: auto;
       box-shadow: var(--shadow-light);
       border: 1px solid var(--border-color);
     }
@@ -989,7 +1057,7 @@
     <div class="content">
        <!-- AI Analysis Section -->
        {{#if gptAnalysis}}
-       <div class="section page-break-inside-avoid page-break-before">
+       <div class="section page-break-inside-avoid">
          <h2 class="section-header">
            <span class="section-icon">🤖</span>
            {{translations.aiInsights}}
@@ -1023,38 +1091,24 @@
       <!-- Text Analysis Results -->
       {{#if textAnalysis}}
       <div class="text-analysis-section">
-        <h4 class="analysis-subtitle">{{translations.customerLanguageAnalysis}}</h4>
+        <h4 class="analysis-subtitle">{{translations.customerQuestionAnalysis}}</h4>
         
-        {{#if textAnalysis.positiveCorrelations}}
-        <div class="correlation-container">
-          <h5 class="correlation-title positive">{{translations.positivePatterns}}</h5>
-          <div class="correlation-description">
-            {{translations.positiveDescription}}
+        {{#if textAnalysis.frequentlyAskedQuestions}}
+        <div class="faq-container">
+          <h5 class="faq-title">{{translations.topFAQs}}</h5>
+          <div class="faq-description">
+            {{translations.faqDescription}}
           </div>
-          <ul class="correlation-list positive">
-            {{#each textAnalysis.positiveCorrelations}}
-            <li class="correlation-item">
-              <span class="ngram-text">{{this.ngram}}</span>
-              <span class="correlation-value positive">+{{this.correlation}}</span>
-              <span class="doc-count">({{this.documentCount}} {{translations.conversationsText}})</span>
-            </li>
-            {{/each}}
-          </ul>
-        </div>
-        {{/if}}
-
-        {{#if textAnalysis.negativeCorrelations}}
-        <div class="correlation-container">
-          <h5 class="correlation-title negative">{{translations.negativePatterns}}</h5>
-          <div class="correlation-description">
-            {{translations.negativeDescription}}
-          </div>
-          <ul class="correlation-list negative">
-            {{#each textAnalysis.negativeCorrelations}}
-            <li class="correlation-item">
-              <span class="ngram-text">{{this.ngram}}</span>
-              <span class="correlation-value negative">{{this.correlation}}</span>
-              <span class="doc-count">({{this.documentCount}} {{translations.conversationsText}})</span>
+          <ul class="faq-list">
+            {{#each textAnalysis.frequentlyAskedQuestions}}
+            <li class="faq-item">
+              <div class="faq-question">{{this.question}}</div>
+              <div class="faq-stats">
+                <span class="faq-frequency">{{this.frequency}} {{translations.timesAsked}}</span>
+                {{#if this.variations}}
+                <span class="faq-variations">{{this.variations}} {{translations.variationsExplained}}</span>
+                {{/if}}
+              </div>
             </li>
             {{/each}}
           </ul>
