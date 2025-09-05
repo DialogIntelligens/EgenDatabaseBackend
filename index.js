@@ -1070,7 +1070,7 @@ app.post('/register', async (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    const result = await pool.query('SELECT *, agent_name, profile_picture FROM users WHERE username = $1', [username]);
+    const result = await pool.query('SELECT *, agent_name, profile_picture, split_test_enabled FROM users WHERE username = $1', [username]);
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
@@ -1126,7 +1126,8 @@ app.post('/login', async (req, res) => {
       company_info: user.company_info || '',
       livechat: user.livechat || false,
       agent_name: user.agent_name || 'Support Agent',
-      profile_picture: user.profile_picture || ''
+      profile_picture: user.profile_picture || '',
+      split_test_enabled: user.split_test_enabled || false
     });
   } catch (err) {
     console.error('Error logging in:', err);
