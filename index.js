@@ -2449,6 +2449,9 @@ function transformStatisticsForPDF(rawData) {
     // GPT analysis (will be added later in the process)
     gptAnalysis: rawData.gptAnalysis || null,
     
+    // Text analysis (FAQ data) - explicitly preserve this
+    textAnalysis: rawData.textAnalysis || null,
+    
     // Additional metadata
     generatedAt: new Date().toISOString(),
     
@@ -2478,6 +2481,11 @@ function transformStatisticsForPDF(rawData) {
   }
   
   console.log("Transformed data keys:", Object.keys(transformed));
+  console.log("TextAnalysis present:", !!transformed.textAnalysis);
+  if (transformed.textAnalysis) {
+    console.log("TextAnalysis keys:", Object.keys(transformed.textAnalysis));
+    console.log("FAQ count:", transformed.textAnalysis.frequentlyAskedQuestions?.length || 0);
+  }
   console.log("Key statistics:", {
     totalMessages: transformed.totalMessages,
     totalConversations: transformed.totalConversations,
@@ -2674,10 +2682,14 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     // Include text analysis in the statistics data if available and requested
     if (includeTextAnalysis && textAnalysisResults && !textAnalysisResults.error) {
       console.log("Adding text analysis results to statistics data");
+      console.log("Text analysis FAQ count:", textAnalysisResults.frequentlyAskedQuestions?.length || 0);
       statisticsData.textAnalysis = textAnalysisResults;
       statisticsData.includeTextAnalysis = true;
     } else {
       console.log("Text analysis not requested or not available");
+      if (includeTextAnalysis && textAnalysisResults?.error) {
+        console.log("Text analysis error:", textAnalysisResults.error);
+      }
     }
     
     // Generate GPT analysis if requested
@@ -2816,6 +2828,12 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
      try {
        // Transform raw statistics data into template-friendly format
        const transformedStatisticsData = transformStatisticsForPDF(statisticsData);
+       
+       // Debug: Check if textAnalysis is preserved
+       console.log("Before template - textAnalysis present:", !!transformedStatisticsData.textAnalysis);
+       if (transformedStatisticsData.textAnalysis) {
+         console.log("FAQ count:", transformedStatisticsData.textAnalysis.frequentlyAskedQuestions?.length || 0);
+       }
        
       const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod, language || 'en');
        console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
