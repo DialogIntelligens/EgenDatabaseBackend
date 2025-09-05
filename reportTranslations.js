@@ -33,13 +33,13 @@ export const reportTranslations = {
     consistentPerformanceDesc: 'CSAT score demonstrerer pålidelig support',
     businessImpactDesc: 'omsætning genereret gennem chatbot interaktioner',
 
-    // Language Analysis
-    customerLanguageAnalysis: '📊 Kunde Sproganalyse',
-    positivePatterns: '✅ Mest Positive Sprogmønstre',
-    negativePatterns: '⚠️ Mest Negative Sprogmønstre',
-    positiveDescription: 'Ord og sætninger der korrelerer med højere kundetilfredshedsscore:',
-    negativeDescription: 'Ord og sætninger der korrelerer med lavere kundetilfredshedsscore:',
-    conversationsText: 'samtaler',
+    // FAQ Analysis (replace correlation translations)
+    customerQuestionAnalysis: '❓ Kunde Spørgsmål Analyse',
+    topFAQs: '📋 Top 5 Hyppigst Stillede Spørgsmål (FAQ)',
+    faqDescription: 'De mest almindelige spørgsmål som kunder stiller til chatbotten:',
+    times: 'gange',
+    ofConversations: 'af samtaler',
+    variations: 'variationer',
     languagePatternAnalysis: '🧠 Sprogmønster Analyse & Indsigter',
     customerCommunicationAnalysis: '📊 Kunde Kommunikationsanalyse',
 
@@ -113,13 +113,13 @@ export const reportTranslations = {
     consistentPerformanceDesc: 'CSAT score demonstrates reliable support',
     businessImpactDesc: 'revenue generated through chatbot interactions',
 
-    // Language Analysis
-    customerLanguageAnalysis: '📊 Customer Language Analysis',
-    positivePatterns: '✅ Most Positive Language Patterns',
-    negativePatterns: '⚠️ Most Negative Language Patterns',
-    positiveDescription: 'Words and phrases that correlate with higher customer satisfaction scores:',
-    negativeDescription: 'Words and phrases that correlate with lower customer satisfaction scores:',
-    conversationsText: 'conversations',
+    // FAQ Analysis (replace correlation translations)
+    customerQuestionAnalysis: '❓ Customer Question Analysis',
+    topFAQs: '📋 Top 5 Frequently Asked Questions (FAQ)',
+    faqDescription: 'The most common questions customers ask the chatbot:',
+    times: 'times',
+    ofConversations: 'of conversations',
+    variations: 'variations',
     languagePatternAnalysis: '🧠 Language Pattern Analysis & Insights',
     customerCommunicationAnalysis: '📊 Customer Communication Analysis',
 
@@ -210,6 +210,14 @@ export const reportTranslations = {
     avgMessagesPerDayDesc: 'Dagligt meddelandevolym genomsnitt',
     totalConversations: 'Totala Konversationer',
     totalConversationsDesc: 'Unika kund chat sessioner',
+    // FAQ Analysis (replace correlation translations)
+    customerQuestionAnalysis: '❓ Kundfrågaanalys',
+    topFAQs: '📋 Top 5 Vanligaste Frågorna (FAQ)',
+    faqDescription: 'De vanligaste frågorna som kunder ställer till chatbotten:',
+    times: 'gånger',
+    ofConversations: 'av konversationer',
+    variations: 'variationer',
+
     totalCustomerRatings: 'Totala Kundbetyg',
     totalCustomerRatingsDesc: 'Antal kund feedback svar',
     customerSatisfactionMetric: 'Kundnöjdhet',

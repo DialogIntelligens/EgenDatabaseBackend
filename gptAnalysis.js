@@ -181,9 +181,9 @@ Do not mention the amount of people that have rated the chatbot unless very rele
     if (textAnalysis) {
       prompt += `\nTEXT ANALYSIS:\n`;
       
-      // Add n-gram info if available
-      if (textAnalysis.ngramInfo) {
-        prompt += `N-gram analysis includes: ${textAnalysis.ngramInfo.description}\n`;
+      // Add FAQ info if available
+      if (textAnalysis.faqInfo) {
+        prompt += `FAQ analysis includes: ${textAnalysis.faqInfo.description}\n`;
       }
       
       // Add topic data if available - include all available topics
@@ -194,20 +194,19 @@ Do not mention the amount of people that have rated the chatbot unless very rele
         });
       }
       
-      // Add positive correlations - include all available
-      if (textAnalysis.positiveCorrelations && textAnalysis.positiveCorrelations.length > 0) {
-        prompt += "\nPositively Correlated N-grams (terms associated with higher scores, max 15 strongest):\n";
-        textAnalysis.positiveCorrelations.forEach((item, idx) => {
-          prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
+      // Add FAQ data instead of correlations
+      if (textAnalysis.frequentlyAskedQuestions && textAnalysis.frequentlyAskedQuestions.length > 0) {
+        prompt += "\nMost Frequently Asked Questions:\n";
+        textAnalysis.frequentlyAskedQuestions.forEach((faq, idx) => {
+          prompt += `${idx + 1}. "${faq.question}" (asked ${faq.frequency} times, ${faq.percentage}% of conversations)\n`;
         });
-      }
-      
-      // Add negative correlations - include all available
-      if (textAnalysis.negativeCorrelations && textAnalysis.negativeCorrelations.length > 0) {
-        prompt += "\nNegatively Correlated N-grams (terms associated with lower scores, max 15 strongest):\n";
-        textAnalysis.negativeCorrelations.forEach((item, idx) => {
-          prompt += `- "${item.ngram}" (correlation: ${item.correlation.toFixed(3)})\n`;
-        });
+        
+        prompt += `\nThese FAQs represent the most common customer inquiries. Use this information to provide insights about:
+1. What customers are most concerned about
+2. Areas where the business could improve self-service information
+3. Common pain points or interests that drive customer engagement
+4. Opportunities for proactive communication or FAQ sections on the website
+`;
       }
 
       prompt += `
@@ -215,11 +214,12 @@ Do not mention the amount of people that have rated the chatbot unless very rele
       Ideas for insights that might be relevant to the user:
       1. A short executive summary of chatbot performance
       2. Key insights about user engagement and satisfaction
-      3. Data-driven insights for improvement
-      4. Any notable patterns or trends that should be addressed
-      Do not write anything that is not directly supported by the data or only has low corelation.
+      3. Data-driven insights for improvement based on common customer questions
+      4. Any notable patterns or trends in customer inquiries that should be addressed
+      5. Business opportunities based on frequently asked questions
+      Do not write anything that is not directly supported by the data.
       
-      Be aware that the text analysis has only been based on user messages, not the chatbot messages.
+      Be aware that the FAQ analysis has been based on user questions, showing what customers are most concerned about.
       `;
     }
     
