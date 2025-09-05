@@ -655,8 +655,8 @@
       margin-top: 40px;
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: always;
-      break-before: page;
+      page-break-before: auto;
+      break-before: auto;
       box-shadow: var(--shadow-light);
       border: 1px solid var(--border-color);
     }
@@ -1057,7 +1057,7 @@
     <div class="content">
        <!-- AI Analysis Section -->
        {{#if gptAnalysis}}
-       <div class="section page-break-inside-avoid page-break-before">
+       <div class="section page-break-inside-avoid">
          <h2 class="section-header">
            <span class="section-icon">🤖</span>
            {{translations.aiInsights}}
