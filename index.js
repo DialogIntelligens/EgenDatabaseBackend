@@ -2656,11 +2656,12 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
           console.log(`Valid training: ${textAnalysisResults.validTrainingSize}, Valid testing: ${textAnalysisResults.validTestingSize}`);
           
           // Verify we have data for the report
-          const hasPositiveMonograms = textAnalysisResults.positiveCorrelations?.monograms?.length > 0;
-          const hasNegativeMonograms = textAnalysisResults.negativeCorrelations?.monograms?.length > 0;
-          
-          console.log(`Positive monograms: ${hasPositiveMonograms ? 'Yes' : 'No'}`);
-          console.log(`Negative monograms: ${hasNegativeMonograms ? 'Yes' : 'No'}`);
+          const hasFAQs = textAnalysisResults.frequentlyAskedQuestions?.length > 0;
+
+          console.log(`FAQs found: ${hasFAQs ? textAnalysisResults.frequentlyAskedQuestions.length : 0}`);
+          if (hasFAQs) {
+            console.log("Sample FAQs:", textAnalysisResults.frequentlyAskedQuestions.slice(0, 2).map(faq => faq.question));
+          }
         } else {
           console.log("Text analysis error:", textAnalysisResults?.error || "Unknown error");
         }
