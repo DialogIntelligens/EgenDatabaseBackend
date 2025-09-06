@@ -2672,7 +2672,7 @@ async function analyzeConversationsInChunks(conversations, chunkSize = 1000) {
   // Post-process combined results
   console.log("Post-processing combined text analysis results...");
   
-  // Deduplicate and sort FAQs by frequency
+  // Deduplicate and sort FAQs by frequency, then limit to top 5
   if (combinedResults.frequentlyAskedQuestions.length > 0) {
     const faqMap = new Map();
     combinedResults.frequentlyAskedQuestions.forEach(faq => {
@@ -2680,14 +2680,28 @@ async function analyzeConversationsInChunks(conversations, chunkSize = 1000) {
       if (faqMap.has(key)) {
         const existing = faqMap.get(key);
         existing.frequency += faq.frequency;
+        // Recalculate percentage based on combined frequency
+        existing.percentage = existing.frequency; // Will be recalculated below
       } else {
         faqMap.set(key, { ...faq });
       }
     });
     
-    combinedResults.frequentlyAskedQuestions = Array.from(faqMap.values())
+    // Sort by frequency and take top 5
+    const sortedFAQs = Array.from(faqMap.values())
       .sort((a, b) => b.frequency - a.frequency)
-      .slice(0, 20); // Keep top 20 FAQs
+      .slice(0, 5); // Limit to top 5 FAQs
+    
+    // Recalculate percentages for the top 5 based on total conversations processed
+    const totalConversations = combinedResults.trainingSize + combinedResults.testingSize;
+    if (totalConversations > 0) {
+      sortedFAQs.forEach(faq => {
+        faq.percentage = ((faq.frequency / totalConversations) * 100).toFixed(1);
+      });
+    }
+    
+    combinedResults.frequentlyAskedQuestions = sortedFAQs;
+    console.log(`Combined and limited FAQs to top 5 from ${faqMap.size} unique questions`);
   }
   
   // Merge topic ratings by averaging
