@@ -2586,6 +2586,151 @@ async function processConversationsInChunks(chatbotIds, selectedEmne, start_date
   return { rows: allResults };
 }
 
+/**
+ * Analyze conversations in chunks to prevent memory overload and timeouts
+ * @param {Array} conversations - Array of all conversations to analyze
+ * @param {number} chunkSize - Size of each chunk for analysis (default: 1000)
+ * @returns {Object} Combined analysis results
+ */
+async function analyzeConversationsInChunks(conversations, chunkSize = 1000) {
+  console.log(`Starting chunked text analysis for ${conversations.length} conversations with chunk size: ${chunkSize}`);
+  
+  // If we have fewer conversations than chunk size, just analyze normally
+  if (conversations.length <= chunkSize) {
+    console.log(`Conversation count (${conversations.length}) is within chunk size, analyzing normally`);
+    return await analyzeConversations(conversations);
+  }
+  
+  let combinedResults = {
+    frequentlyAskedQuestions: [],
+    avgRatingPerTopic: [],
+    avgScorePerTopic: [],
+    correlations: {},
+    trainingSize: 0,
+    testingSize: 0,
+    validTrainingSize: 0,
+    validTestingSize: 0
+  };
+  
+  // Process conversations in chunks
+  for (let i = 0; i < conversations.length; i += chunkSize) {
+    const chunk = conversations.slice(i, i + chunkSize);
+    const chunkNumber = Math.floor(i / chunkSize) + 1;
+    const totalChunks = Math.ceil(conversations.length / chunkSize);
+    
+    console.log(`Processing text analysis chunk ${chunkNumber}/${totalChunks} (${chunk.length} conversations)`);
+    
+    try {
+      // Analyze this chunk
+      const chunkResults = await analyzeConversations(chunk);
+      
+      if (chunkResults && !chunkResults.error) {
+        // Merge results from this chunk
+        if (chunkResults.frequentlyAskedQuestions) {
+          combinedResults.frequentlyAskedQuestions.push(...chunkResults.frequentlyAskedQuestions);
+        }
+        
+        if (chunkResults.avgRatingPerTopic) {
+          combinedResults.avgRatingPerTopic.push(...chunkResults.avgRatingPerTopic);
+        }
+        
+        if (chunkResults.avgScorePerTopic) {
+          combinedResults.avgScorePerTopic.push(...chunkResults.avgScorePerTopic);
+        }
+        
+        // Accumulate training/testing sizes
+        combinedResults.trainingSize += chunkResults.trainingSize || 0;
+        combinedResults.testingSize += chunkResults.testingSize || 0;
+        combinedResults.validTrainingSize += chunkResults.validTrainingSize || 0;
+        combinedResults.validTestingSize += chunkResults.validTestingSize || 0;
+        
+        // Merge correlations (take the last one for now, could be improved)
+        if (chunkResults.correlations) {
+          combinedResults.correlations = { ...combinedResults.correlations, ...chunkResults.correlations };
+        }
+        
+        console.log(`Chunk ${chunkNumber}/${totalChunks} completed successfully`);
+      } else {
+        console.error(`Chunk ${chunkNumber}/${totalChunks} failed:`, chunkResults?.error || "Unknown error");
+      }
+    } catch (error) {
+      console.error(`Error processing chunk ${chunkNumber}/${totalChunks}:`, error.message);
+      // Continue with next chunk even if this one fails
+    }
+    
+    // Add delay between chunks to prevent CPU overload
+    if (i + chunkSize < conversations.length) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between chunks
+      
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+    }
+  }
+  
+  // Post-process combined results
+  console.log("Post-processing combined text analysis results...");
+  
+  // Deduplicate and sort FAQs by frequency
+  if (combinedResults.frequentlyAskedQuestions.length > 0) {
+    const faqMap = new Map();
+    combinedResults.frequentlyAskedQuestions.forEach(faq => {
+      const key = faq.question.toLowerCase().trim();
+      if (faqMap.has(key)) {
+        const existing = faqMap.get(key);
+        existing.frequency += faq.frequency;
+      } else {
+        faqMap.set(key, { ...faq });
+      }
+    });
+    
+    combinedResults.frequentlyAskedQuestions = Array.from(faqMap.values())
+      .sort((a, b) => b.frequency - a.frequency)
+      .slice(0, 20); // Keep top 20 FAQs
+  }
+  
+  // Merge topic ratings by averaging
+  if (combinedResults.avgRatingPerTopic.length > 0) {
+    const topicRatingMap = new Map();
+    combinedResults.avgRatingPerTopic.forEach(topic => {
+      if (topicRatingMap.has(topic.topic)) {
+        const existing = topicRatingMap.get(topic.topic);
+        // Weighted average based on count
+        const totalCount = existing.count + topic.count;
+        const weightedAvg = (existing.averageRating * existing.count + topic.averageRating * topic.count) / totalCount;
+        existing.averageRating = weightedAvg;
+        existing.count = totalCount;
+      } else {
+        topicRatingMap.set(topic.topic, { ...topic });
+      }
+    });
+    combinedResults.avgRatingPerTopic = Array.from(topicRatingMap.values());
+  }
+  
+  // Merge topic scores by averaging
+  if (combinedResults.avgScorePerTopic.length > 0) {
+    const topicScoreMap = new Map();
+    combinedResults.avgScorePerTopic.forEach(topic => {
+      if (topicScoreMap.has(topic.topic)) {
+        const existing = topicScoreMap.get(topic.topic);
+        // Weighted average based on count
+        const totalCount = existing.count + topic.count;
+        const weightedAvg = (existing.averageScore * existing.count + topic.averageScore * topic.count) / totalCount;
+        existing.averageScore = weightedAvg;
+        existing.count = totalCount;
+      } else {
+        topicScoreMap.set(topic.topic, { ...topic });
+      }
+    });
+    combinedResults.avgScorePerTopic = Array.from(topicScoreMap.values());
+  }
+  
+  console.log(`Chunked text analysis completed. Combined results: ${combinedResults.frequentlyAskedQuestions.length} FAQs, ${combinedResults.avgRatingPerTopic.length} rating topics, ${combinedResults.avgScorePerTopic.length} score topics`);
+  
+  return combinedResults;
+}
+
 /* ================================
    Report Generation Endpoint
 ================================ */
@@ -2720,10 +2865,12 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       }
       
       if (result.rows.length >= 10) {
-        // We have enough data for analysis
-        console.log("Performing text analysis on conversation data...");
+        // We have enough data for analysis - use chunked processing for text analysis
+        console.log("Performing chunked text analysis on conversation data...");
         console.log("Using CPU throttling to prevent server overload. This may take a bit longer but ensures stability.");
-        textAnalysisResults = await analyzeConversations(result.rows);
+        
+        // Process text analysis in chunks to prevent memory/CPU overload
+        textAnalysisResults = await analyzeConversationsInChunks(result.rows);
         
         if (textAnalysisResults && !textAnalysisResults.error) {
           console.log("Text analysis completed successfully");
