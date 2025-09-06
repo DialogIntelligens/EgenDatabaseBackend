@@ -2553,18 +2553,22 @@ async function processConversationsInChunks(chatbotIds, selectedEmne, start_date
       console.log(`Processed ${totalProcessed} conversations in chunks...`);
     }
     
-    // Check memory usage and adjust processing if needed
+    // Check memory usage and adjust processing if needed (adjusted for 4GB RAM)
     const memUsage = process.memoryUsage();
     const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
     
-    if (memUsedMB > 500) { // If memory usage exceeds 500MB
-      console.log(`High memory usage detected (${memUsedMB}MB), adding delay between chunks`);
-      await new Promise(resolve => setTimeout(resolve, 200));
+    if (memUsedMB > 3000) { // If memory usage exceeds 3GB
+      const delayMultiplier = Math.min(4, 1 + (memUsedMB - 3000) / 250); // Cap at 4x delay
+      const delay = Math.min(50 * delayMultiplier, 500); // Cap at 500ms max
+      console.log(`High memory usage detected (${memUsedMB}MB), adding ${Math.round(delay)}ms delay between chunks`);
+      await new Promise(resolve => setTimeout(resolve, delay));
       
       // Force garbage collection if available
       if (global.gc) {
         global.gc();
       }
+    } else if (memUsedMB > 2000) { // Minor slowdown at 2GB
+      await new Promise(resolve => setTimeout(resolve, 100));
     } else {
       // Small delay to prevent CPU spikes
       await new Promise(resolve => setTimeout(resolve, 50));

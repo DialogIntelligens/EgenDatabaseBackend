@@ -386,10 +386,13 @@ async function processWithThrottling(items, processFn, batchSize = 25, delayMs =
     const memTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
     let adaptiveDelayMs = delayMs;
     
-    // Increase delays if memory usage is high
-    if (memUsedMB > memTotalMB * 0.7) {
-      adaptiveDelayMs = delayMs * 2;
-      console.log(`High memory usage detected (${memUsedMB}MB/${memTotalMB}MB), increasing delays`);
+    // Increase delays if memory usage is high (adjusted for 4GB RAM)
+    if (memUsedMB > 2500) { // Start slowing down at 2.5GB
+      const multiplier = Math.min(3, 1 + (memUsedMB - 2500) / 500); // Cap at 3x delay
+      adaptiveDelayMs = Math.min(delayMs * multiplier, 1000); // Cap at 1 second max
+      console.log(`High memory usage detected (${memUsedMB}MB), increasing delays to ${Math.round(adaptiveDelayMs)}ms`);
+    } else if (memUsedMB > 2000) { // Minor slowdown at 2GB
+      adaptiveDelayMs = Math.min(delayMs * 1.5, 500); // Cap at 500ms
     }
     
     // Process current batch - using serial processing for more gradual CPU usage
