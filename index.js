@@ -2491,6 +2491,98 @@ function transformStatisticsForPDF(rawData) {
 }
 
 /* ================================
+   Helper Functions for Report Generation
+================================ */
+
+/**
+ * Process conversations in chunks to reduce memory usage and CPU load
+ * @param {Array} chatbotIds - Array of chatbot IDs
+ * @param {string} selectedEmne - Optional topic filter
+ * @param {string} start_date - Optional start date filter
+ * @param {string} end_date - Optional end date filter
+ * @param {number} chunkSize - Size of each chunk (default: 500)
+ * @returns {Object} Result object with rows array containing all conversations
+ */
+async function processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, chunkSize = 500) {
+  let offset = 0;
+  let allResults = [];
+  let totalProcessed = 0;
+  
+  console.log(`Starting chunked conversation processing with chunk size: ${chunkSize}`);
+  
+  while (true) {
+    // Build query for this chunk
+    let queryText = `
+      SELECT id, created_at, conversation_data, score, emne, customer_rating
+      FROM conversations
+      WHERE chatbot_id = ANY($1) AND score IS NOT NULL
+    `;
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+    
+    // Add emne filter if selected
+    if (selectedEmne) {
+      queryText += ` AND emne = $${paramIndex++}`;
+      queryParams.push(selectedEmne);
+    }
+    
+    // Add date filters if provided
+    if (start_date && end_date) {
+      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+    
+    // Add ordering and pagination
+    queryText += ` ORDER BY created_at DESC LIMIT ${chunkSize} OFFSET ${offset}`;
+    
+    // Execute query for this chunk
+    const chunkResult = await pool.query(queryText, queryParams);
+    
+    // If no more results, break the loop
+    if (chunkResult.rows.length === 0) {
+      break;
+    }
+    
+    // Add results to our collection
+    allResults.push(...chunkResult.rows);
+    totalProcessed += chunkResult.rows.length;
+    offset += chunkSize;
+    
+    // Log progress for large datasets
+    if (totalProcessed % 1000 === 0 || chunkResult.rows.length < chunkSize) {
+      console.log(`Processed ${totalProcessed} conversations in chunks...`);
+    }
+    
+    // Check memory usage and adjust processing if needed
+    const memUsage = process.memoryUsage();
+    const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    
+    if (memUsedMB > 500) { // If memory usage exceeds 500MB
+      console.log(`High memory usage detected (${memUsedMB}MB), adding delay between chunks`);
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+    } else {
+      // Small delay to prevent CPU spikes
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    // If we got fewer results than chunk size, we're done
+    if (chunkResult.rows.length < chunkSize) {
+      break;
+    }
+  }
+  
+  console.log(`Chunked processing completed. Total conversations loaded: ${totalProcessed}`);
+  
+  // Return in the same format as the original query
+  return { rows: allResults };
+}
+
+/* ================================
    Report Generation Endpoint
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
@@ -2555,31 +2647,10 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     // Get text analysis if we have enough data
     let textAnalysisResults = null;
     try {
-      console.log("Fetching conversation data for text analysis...");
+      console.log("Fetching conversation data for text analysis using streaming/chunked processing...");
       
-      // Build query to fetch conversations with scores
-      let queryText = `
-        SELECT id, created_at, conversation_data, score, emne, customer_rating
-        FROM conversations
-        WHERE chatbot_id = ANY($1) AND score IS NOT NULL
-      `;
-      let queryParams = [chatbotIds];
-      let paramIndex = 2;
-      
-      // Add emne filter if selected
-      if (selectedEmne) {
-        queryText += ` AND emne = $${paramIndex++}`;
-        queryParams.push(selectedEmne);
-      }
-      
-      // Add date filters if provided
-      if (start_date && end_date) {
-        queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-        queryParams.push(start_date, end_date);
-      }
-      
-      // Get conversations
-      const result = await pool.query(queryText, queryParams);
+      // Implement streaming/chunked processing for conversation data
+      const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date);
       console.log(`Found ${result.rows.length} conversations with scores for analysis`);
       
       // Validate and log a sample conversation for debugging
@@ -2690,40 +2761,19 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
         // Fetch conversation content if maxConversations > 0
         let conversationContents = [];
         if (maxConversations > 0) {
-          console.log(`Fetching up to ${maxConversations} conversations for GPT analysis...`);
+          console.log(`Fetching up to ${maxConversations} conversations for GPT analysis using chunked processing...`);
           
           try {
-            // Build query to fetch conversations
-            let queryText = `
-              SELECT id, created_at, conversation_data, emne, score, customer_rating
-              FROM conversations
-              WHERE chatbot_id = ANY($1)
-            `;
-            let queryParams = [chatbotIds];
-            let paramIndex = 2;
+            // Use chunked processing for GPT analysis conversations too
+            const chunkSize = Math.min(maxConversations, 200); // Process in smaller chunks for GPT
+            const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, chunkSize);
             
-            // Add emne filter if selected
-            if (selectedEmne) {
-              queryText += ` AND emne = $${paramIndex++}`;
-              queryParams.push(selectedEmne);
-            }
-            
-            // Add date filters if provided
-            if (start_date && end_date) {
-              queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-              queryParams.push(start_date, end_date);
-            }
-            
-            // Order by most recent and limit results
-            queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex++}`;
-            queryParams.push(maxConversations);
-            
-            // Get conversations
-            const result = await pool.query(queryText, queryParams);
-            console.log(`Fetched ${result.rows.length} conversations for GPT analysis`);
+            // Limit to maxConversations after chunked loading
+            const limitedResults = result.rows.slice(0, maxConversations);
+            console.log(`Fetched ${limitedResults.length} conversations for GPT analysis (limited from ${result.rows.length} total)`);
             
             // Process conversations
-            conversationContents = result.rows.map(conv => {
+            conversationContents = limitedResults.map(conv => {
               const topic = conv.emne || 'Uncategorized';
               const score = conv.score || 'No score';
               const rating = conv.customer_rating || 'No rating';
