@@ -373,12 +373,24 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @param {number} delayMs - Milliseconds to delay between batches
  * @returns {Array} Results of processing
  */
-async function processWithThrottling(items, processFn, batchSize = 50, delayMs = 100) {
+async function processWithThrottling(items, processFn, batchSize = 25, delayMs = 200) {
   const results = [];
   
   // Process in batches to avoid CPU overload
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
+    
+    // Check memory usage and adjust delays dynamically
+    const memUsage = process.memoryUsage();
+    const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const memTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    let adaptiveDelayMs = delayMs;
+    
+    // Increase delays if memory usage is high
+    if (memUsedMB > memTotalMB * 0.7) {
+      adaptiveDelayMs = delayMs * 2;
+      console.log(`High memory usage detected (${memUsedMB}MB/${memTotalMB}MB), increasing delays`);
+    }
     
     // Process current batch - using serial processing for more gradual CPU usage
     for (const item of batch) {
@@ -392,24 +404,24 @@ async function processWithThrottling(items, processFn, batchSize = 50, delayMs =
         // Continue with next item
       }
       
-      // Small delay even within a batch to prevent CPU spikes
-      if (batch.length > 10) {
-        await sleep(10); // 10ms micro-delay between items in large batches
+      // Increased micro-delays to prevent CPU spikes
+      if (batch.length > 5) {
+        await sleep(20); // Increased from 10ms to 20ms
       }
     }
     
-    // Log progress for long operations
-    if (items.length > 200 && i % 200 === 0) {
-      console.log(`Processed ${i + batch.length}/${items.length} items...`);
+    // More frequent progress logging
+    if (items.length > 100 && i % 100 === 0) {
+      console.log(`Processed ${i + batch.length}/${items.length} items... (${Math.round((i + batch.length) / items.length * 100)}%)`);
     }
     
-    // Sleep to allow CPU to handle other tasks
+    // Sleep to allow CPU to handle other tasks with adaptive delays
     if (i + batchSize < items.length) {
-      await sleep(delayMs);
+      await sleep(adaptiveDelayMs);
     }
     
-    // Force garbage collection if many items (node --expose-gc required)
-    if (global.gc && items.length > 500 && i % 500 === 0) {
+    // More frequent garbage collection
+    if (global.gc && items.length > 200 && i % 200 === 0) {
       global.gc();
     }
   }
@@ -427,17 +439,23 @@ async function createTfIdfModel(docs, progressCallback = null) {
   const TfIdf = natural.TfIdf;
   const tfidf = new TfIdf();
   
-  // Process in smaller batches to reduce memory usage
-  const batchSize = 50;
+  // Process in smaller batches to reduce memory usage and CPU load
+  const batchSize = 20; // Reduced from 50 to 20
   
   let processedCount = 0;
   const totalDocs = docs.length;
   const docMapping = new Map(); // Store mapping from doc ID to TF-IDF index
   
+  console.log(`Creating TF-IDF model for ${totalDocs} documents with batch size ${batchSize}`);
+  
   for (let i = 0; i < totalDocs; i += batchSize) {
     const batch = docs.slice(i, Math.min(i + batchSize, totalDocs));
     
-    // Process each document in the batch
+    // Check memory usage before processing batch
+    const memUsage = process.memoryUsage();
+    const memUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    
+    // Process each document in the batch with micro-delays
     for (let j = 0; j < batch.length; j++) {
       const doc = batch[j];
       const docIndex = tfidf.documents.length;
@@ -450,6 +468,11 @@ async function createTfIdfModel(docs, progressCallback = null) {
         // Add document with n-grams instead of raw text
         tfidf.addDocument(ngrams, { __key: doc.id });
         docMapping.set(doc.id, docIndex);
+        
+        // Small delay between documents to prevent CPU spikes
+        if (j > 0 && j % 5 === 0) {
+          await sleep(10);
+        }
       } catch (error) {
         console.error(`Error adding document ${doc.id} to TF-IDF:`, error);
       }
@@ -457,18 +480,29 @@ async function createTfIdfModel(docs, progressCallback = null) {
     
     processedCount += batch.length;
     
-    // Report progress
+    // Report progress more frequently
     if (progressCallback) {
       const progressPercent = 20 + Math.floor((processedCount / totalDocs) * 10);
       progressCallback("Building language model", Math.min(progressPercent, 30));
     }
     
-    // Add a delay between batches to prevent CPU overload
+    // More detailed progress logging
+    if (totalDocs > 50 && i % (batchSize * 5) === 0) {
+      console.log(`TF-IDF: Processed ${processedCount}/${totalDocs} documents (${Math.round(processedCount / totalDocs * 100)}%) - Memory: ${memUsedMB}MB`);
+    }
+    
+    // Increased delay between batches to prevent CPU overload
     if (i + batchSize < totalDocs) {
-      await sleep(100);
+      await sleep(200); // Increased from 100ms to 200ms
+    }
+    
+    // Force garbage collection more frequently
+    if (global.gc && processedCount % 100 === 0) {
+      global.gc();
     }
   }
   
+  console.log(`TF-IDF model creation completed for ${totalDocs} documents`);
   return { tfidf, docMapping };
 }
 
