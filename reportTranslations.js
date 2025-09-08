@@ -37,9 +37,8 @@ export const reportTranslations = {
     customerQuestionAnalysis: '❓ Kunde Spørgsmål Analyse',
     topFAQs: '📋 Top 5 Hyppigst Stillede Spørgsmål (FAQ)',
     faqDescription: 'De mest almindelige spørgsmål som kunder stiller til chatbotten:',
-    times: 'gange',
-    ofConversations: 'af samtaler',
-    variations: 'variationer',
+    timesAsked: 'gange spurgt af kunder',
+    variationsExplained: 'forskellige måder at spørge på',
     languagePatternAnalysis: '🧠 Sprogmønster Analyse & Indsigter',
     customerCommunicationAnalysis: '📊 Kunde Kommunikationsanalyse',
     askedText: 'Stillet',
@@ -52,10 +51,11 @@ export const reportTranslations = {
     totalMessages: 'Samlede Beskeder',
     totalMessagesMetricDesc: 'Brugerinteraktioner med chatbot system',
     avgMessagesPerDay: 'Gennemsnitlige Beskeder/Dag',
-    avgMessagesPerDayDesc: 'Dagligt beskedvolumen gennemsnit',
+    avgMessagesPerDayDesc: 'Dagligt besked volumen gennemsnit',
     totalConversations: 'Samlede Samtaler',
     totalConversationsDesc: 'Unikke kunde chat sessioner',
-    totalCustomerRatings: 'Samlede Kundebedømmelser',
+
+    totalCustomerRatings: 'Samlede Kunde Vurderinger',
     totalCustomerRatingsDesc: 'Antal kunde feedback svar',
     customerSatisfactionMetric: 'Kundetilfredshed',
     customerSatisfactionMetricDesc: 'Gennemsnitlig bruger rating score',
@@ -68,7 +68,7 @@ export const reportTranslations = {
     totalRevenue: 'Samlet Omsætning',
     totalRevenueDesc: 'Omsætning genereret gennem chatbot',
     avgPurchaseValue: 'Gennemsnitlig Købsværdi',
-    avgPurchaseValueDesc: 'Gennemsnitlig transaktionsbeløb',
+    avgPurchaseValueDesc: 'Gennemsnitligt transaktionsbeløb',
     conversionRate: 'Konverteringsrate',
     conversionRateDesc: 'Besked-til-køb konvertering',
 
@@ -81,14 +81,14 @@ export const reportTranslations = {
     totalLeadsDesc: 'Kunde kontakter genereret',
 
     // Chart Titles
-    dailyMessageVolume: 'Daglig Beskedvolumen Trends',
-    weeklyMessageVolume: 'Ugentlig Beskedvolumen Trends',
+    dailyMessageVolume: 'Daglig Besked Volumen Trends',
+    weeklyMessageVolume: 'Ugentlig Besked Volumen Trends',
     peakActivityHours: 'Peak Aktivitetstimer Analyse',
     customerInquiryTopics: 'Kunde Forespørgsel Emne Fordeling',
 
     // Chart Descriptions
-    messageDistributionDaily: 'Beskedfordelings mønstre over daglige intervaller viser peak aktivitetsperioder',
-    messageDistributionWeekly: 'Beskedfordelings mønstre over ugentlige intervaller viser peak aktivitetsperioder',
+    messageDistributionDaily: 'Besked fordelingsmønstre over daglige intervaller der viser peak aktivitetsperioder',
+    messageDistributionWeekly: 'Besked fordelingsmønstre over ugentlige intervaller der viser peak aktivitetsperioder',
     customerEngagementPatterns: 'Kunde engagement mønstre gennem dagen afslører optimale support timer',
     topicDiscussion: 'Mest diskuterede emner og kunde interesser der driver engagement'
   },
@@ -122,9 +122,8 @@ export const reportTranslations = {
     customerQuestionAnalysis: '❓ Customer Question Analysis',
     topFAQs: '📋 Top 5 Frequently Asked Questions (FAQ)',
     faqDescription: 'The most common questions customers ask the chatbot:',
-    times: 'times',
-    ofConversations: 'of conversations',
-    variations: 'variations',
+    timesAsked: 'times asked by customers',
+    variationsExplained: 'different ways of asking',
     languagePatternAnalysis: '🧠 Language Pattern Analysis & Insights',
     customerCommunicationAnalysis: '📊 Customer Communication Analysis',
     askedText: 'Asked',
@@ -140,6 +139,7 @@ export const reportTranslations = {
     avgMessagesPerDayDesc: 'Daily message volume average',
     totalConversations: 'Total Conversations',
     totalConversationsDesc: 'Unique customer chat sessions',
+
     totalCustomerRatings: 'Total Customer Ratings',
     totalCustomerRatingsDesc: 'Number of customer feedback responses',
     customerSatisfactionMetric: 'Customer Satisfaction',
@@ -161,7 +161,7 @@ export const reportTranslations = {
     greetingSuccessRate: 'Greeting Success Rate',
     greetingSuccessRateDesc: 'Successful conversation initiations',
     fallbackRate: 'Fallback Rate',
-    fallbackRateDesc: 'Unhandled customer queries',
+    fallbackRateDesc: 'Unhandled customer inquiries',
     totalLeads: 'Total Leads',
     totalLeadsDesc: 'Customer contacts generated',
 
@@ -174,7 +174,7 @@ export const reportTranslations = {
     // Chart Descriptions
     messageDistributionDaily: 'Message distribution patterns over daily intervals showing peak activity periods',
     messageDistributionWeekly: 'Message distribution patterns over weekly intervals showing peak activity periods',
-    customerEngagementPatterns: 'Customer engagement patterns throughout the day revealing optimal support hours',
+    customerEngagementPatterns: 'Customer engagement patterns throughout the day reveal optimal support hours',
     topicDiscussion: 'Most frequently discussed topics and customer interests driving engagement'
   },
 
@@ -220,6 +220,7 @@ export const reportTranslations = {
     avgMessagesPerDayDesc: 'Dagligt meddelandevolym genomsnitt',
     totalConversations: 'Totala Konversationer',
     totalConversationsDesc: 'Unika kund chat sessioner',
+
     totalCustomerRatings: 'Totala Kundbetyg',
     totalCustomerRatingsDesc: 'Antal kund feedback svar',
     customerSatisfactionMetric: 'Kundnöjdhet',
@@ -266,16 +267,21 @@ export const reportTranslations = {
  * @returns {string} - Translated text with fallback to English
  */
 export function getReportTranslation(key, language = 'en') {
-  return reportTranslations[language]?.[key] || reportTranslations['en']?.[key] || key;
+  const translations = reportTranslations[language] || reportTranslations.en;
+  return translations[key] || reportTranslations.en[key] || key;
 }
 
 /**
  * Get all translations for a specific language
- * @param {string} language - Language code
- * @returns {Object} - All translations for that language
+ * @param {string} language - Language code (da, en, sv, etc.)
+ * @returns {Object} - All translations for the language with English fallback
  */
 export function getReportTranslations(language = 'en') {
-  return reportTranslations[language] || reportTranslations['en'];
+  const baseTranslations = reportTranslations.en;
+  const languageTranslations = reportTranslations[language] || {};
+  
+  // Merge with English as fallback
+  return { ...baseTranslations, ...languageTranslations };
 }
 
 /**
