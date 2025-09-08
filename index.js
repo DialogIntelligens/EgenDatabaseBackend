@@ -5252,6 +5252,174 @@ app.get('/api/shopify/orders/:order_id', async (req, res) => {
 
 
 
+/* ================================
+   DUPLICATE CHATBOT SETTINGS
+================================ */
+
+// Endpoint to duplicate all settings from source chatbot to target chatbot
+app.post('/duplicate-chatbot-settings', authenticateToken, async (req, res) => {
+  const { sourceChatbotId, targetChatbotId, userId } = req.body;
+
+  if (!sourceChatbotId || !targetChatbotId || !userId) {
+    return res.status(400).json({
+      error: 'sourceChatbotId, targetChatbotId, and userId are required'
+    });
+  }
+
+  // Check permissions - user must be admin or owner of the user account
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(parseInt(userId))))) {
+    return res.status(403).json({
+      error: 'Forbidden: You do not have permission to duplicate chatbot settings for this user'
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    console.log(`Duplicating settings from chatbot ${sourceChatbotId} to ${targetChatbotId} for user ${userId}`);
+
+    // 1. Duplicate template assignments
+    const templateAssignmentsQuery = `
+      INSERT INTO flow_template_assignments (chatbot_id, flow_key, template_id, updated_at)
+      SELECT $2, flow_key, template_id, CURRENT_TIMESTAMP
+      FROM flow_template_assignments
+      WHERE chatbot_id = $1
+      ON CONFLICT (chatbot_id, flow_key) DO UPDATE SET
+        template_id = EXCLUDED.template_id,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    await client.query(templateAssignmentsQuery, [sourceChatbotId, targetChatbotId]);
+
+    // 2. Duplicate TopK settings
+    const topkQuery = `
+      INSERT INTO flow_topk_settings (chatbot_id, flow_key, top_k, updated_at)
+      SELECT $2, flow_key, top_k, CURRENT_TIMESTAMP
+      FROM flow_topk_settings
+      WHERE chatbot_id = $1
+      ON CONFLICT (chatbot_id, flow_key) DO UPDATE SET
+        top_k = EXCLUDED.top_k,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    await client.query(topkQuery, [sourceChatbotId, targetChatbotId]);
+
+    // 3. Duplicate flow API keys
+    const apiKeysQuery = `
+      INSERT INTO flow_pinecone_api_keys (chatbot_id, flow_key, pinecone_api_key, updated_at)
+      SELECT $2, flow_key, pinecone_api_key, CURRENT_TIMESTAMP
+      FROM flow_pinecone_api_keys
+      WHERE chatbot_id = $1
+      ON CONFLICT (chatbot_id, flow_key) DO UPDATE SET
+        pinecone_api_key = EXCLUDED.pinecone_api_key,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    await client.query(apiKeysQuery, [sourceChatbotId, targetChatbotId]);
+
+    // 4. Duplicate prompt overrides
+    const overridesQuery = `
+      INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at)
+      SELECT $2, flow_key, section_key, action, content, CURRENT_TIMESTAMP
+      FROM prompt_overrides
+      WHERE chatbot_id = $1
+      ON CONFLICT (chatbot_id, flow_key, section_key) DO UPDATE SET
+        action = EXCLUDED.action,
+        content = EXCLUDED.content,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    await client.query(overridesQuery, [sourceChatbotId, targetChatbotId]);
+
+    // 5. Duplicate language settings
+    const languageQuery = `
+      INSERT INTO chatbot_language_settings (chatbot_id, language, updated_at)
+      SELECT $2, language, CURRENT_TIMESTAMP
+      FROM chatbot_language_settings
+      WHERE chatbot_id = $1
+      ON CONFLICT (chatbot_id) DO UPDATE SET
+        language = EXCLUDED.language,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    await client.query(languageQuery, [sourceChatbotId, targetChatbotId]);
+
+    // 6. Duplicate Shopify credentials
+    const shopifyQuery = `
+      INSERT INTO shopify_credentials (
+        chatbot_id, shopify_api_key, shopify_secret_key, shopify_store,
+        shopify_access_token, shopify_enabled, created_at, updated_at
+      )
+      SELECT
+        $2, shopify_api_key, shopify_secret_key, shopify_store,
+        shopify_access_token, shopify_enabled, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM shopify_credentials
+      WHERE chatbot_id = $1
+      ON CONFLICT (chatbot_id) DO UPDATE SET
+        shopify_api_key = EXCLUDED.shopify_api_key,
+        shopify_secret_key = EXCLUDED.shopify_secret_key,
+        shopify_store = EXCLUDED.shopify_store,
+        shopify_access_token = EXCLUDED.shopify_access_token,
+        shopify_enabled = EXCLUDED.shopify_enabled,
+        updated_at = CURRENT_TIMESTAMP
+    `;
+    await client.query(shopifyQuery, [sourceChatbotId, targetChatbotId]);
+
+    // 7. Duplicate Pinecone indexes from user's pinecone_indexes JSON field
+    // First get the current pinecone_indexes for the user
+    const userQuery = 'SELECT pinecone_indexes FROM users WHERE id = $1';
+    const userResult = await client.query(userQuery, [userId]);
+
+    if (userResult.rows.length > 0 && userResult.rows[0].pinecone_indexes) {
+      let pineconeIndexes = userResult.rows[0].pinecone_indexes;
+
+      // Parse if it's a string
+      if (typeof pineconeIndexes === 'string') {
+        try {
+          pineconeIndexes = JSON.parse(pineconeIndexes);
+        } catch (e) {
+          console.error('Error parsing pinecone_indexes:', e);
+          pineconeIndexes = [];
+        }
+      }
+
+      // If pineconeIndexes is an array, keep it as is (no chatbot-specific duplication needed)
+      // The indexes are stored at the user level, not chatbot level
+      if (Array.isArray(pineconeIndexes)) {
+        console.log(`Pinecone indexes already exist for user ${userId}, no duplication needed`);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    console.log(`Successfully duplicated settings from chatbot ${sourceChatbotId} to ${targetChatbotId}`);
+
+    res.json({
+      success: true,
+      message: 'Chatbot settings duplicated successfully',
+      duplicated: {
+        sourceChatbotId,
+        targetChatbotId,
+        settings: [
+          'template_assignments',
+          'topk_settings',
+          'flow_api_keys',
+          'prompt_overrides',
+          'language_settings',
+          'shopify_credentials'
+        ]
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error duplicating chatbot settings:', error);
+    res.status(500).json({
+      error: 'Failed to duplicate chatbot settings',
+      details: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
