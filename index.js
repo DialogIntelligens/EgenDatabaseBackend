@@ -1934,26 +1934,51 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
         queryParams.push(fejlstatus);
       }
 
-    }
+    } // Close the if (fejlstatus && fejlstatus !== '') block
+
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND c.customer_rating = $${paramIndex++}`;
       queryParams.push(customer_rating);
     }
     if (emne && emne !== '') {
-      queryText += ` AND c.emne = $${paramIndex++}`;
-      queryParams.push(emne);
+    queryText += ` AND c.emne = $${paramIndex++}`;
+    queryParams.push(emne);
+  }
+  if (conversation_filter && conversation_filter.trim() !== '') {
+    queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+    queryParams.push(`${conversation_filter}`);
+  }
+  if (is_resolved && is_resolved !== '') {
+    if (is_resolved === 'resolved') {
+      queryText += ` AND c.is_resolved = TRUE`;
+    } else if (is_resolved === 'unresolved') {
+      queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
     }
-    if (conversation_filter && conversation_filter.trim() !== '') {
-      queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
-      queryParams.push(`${conversation_filter}`);
+  }
+  
+  // Apply purchase filter BEFORE GROUP BY
+  if (has_purchase && has_purchase !== '') {
+    if (has_purchase === 'true') {
+      queryText += ` AND EXISTS (
+        SELECT 1 FROM purchases p
+        WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
+      )`;
     }
-    if (is_resolved && is_resolved !== '') {
-      if (is_resolved === 'resolved') {
-        queryText += ` AND c.is_resolved = TRUE`;
-      } else if (is_resolved === 'unresolved') {
-        queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
-      }
-    }
+  }
+
+  queryText += ` GROUP BY c.id `;
+  
+  // Use different sorting logic for livechat page
+  if (is_livechat_page === 'true') {
+    // For livechat page: sort by first live message timestamp (when livechat started)
+    queryText += ` ORDER BY sort_timestamp DESC `;
+  } else {
+    // For normal conversations page: sort by created_at (newest first)
+    queryText += ` ORDER BY c.created_at DESC `;
+  }
+  
+  queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
+  queryParams.push(page_size, page_number * page_size);
 
     queryText += ` GROUP BY c.id `;
     
