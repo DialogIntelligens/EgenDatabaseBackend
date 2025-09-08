@@ -1933,14 +1933,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
       }
-    }
-    if (has_purchase && has_purchase !== '') {
-      if (has_purchase === 'true') {
-        queryText += ` AND EXISTS (
-          SELECT 1 FROM purchases p
-          WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
-        )`;
-      }
+
     }
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND c.customer_rating = $${paramIndex++}`;
@@ -1970,7 +1963,17 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` ORDER BY sort_timestamp DESC `;
     } else {
       // For normal conversations page: sort by created_at (newest first)
-      queryText += ` ORDER BY c.created_at DESC `;
+      // Apply purchase filter BEFORE GROUP BY
+if (has_purchase && has_purchase !== '') {
+  if (has_purchase === 'true') {
+    queryText += ` AND EXISTS (
+      SELECT 1 FROM purchases p
+      WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
+    )`;
+  }
+}
+
+queryText += ` GROUP BY c.id `;
     }
     
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
@@ -2746,119 +2749,36 @@ async function analyzeConversationsInChunks(conversations, chunkSize = 1000) {
   return combinedResults;
 }
 
-// Global progress tracking for report generation
-const reportProgress = new Map();
-const activeReportStreams = new Map();
-
-// Helper function to send progress updates
-function sendProgressUpdate(reportId, step, progress, message, details = {}) {
-  const progressData = {
-    reportId,
-    step,
-    progress: Math.min(progress, 95), // Reserve 95-100% for final completion
-    message,
-    timestamp: new Date().toISOString(),
-    ...details
-  };
-
-  // Store progress for polling fallback
-  reportProgress.set(reportId, progressData);
-
-  // Send to active SSE streams
-  const stream = activeReportStreams.get(reportId);
-  if (stream) {
-    try {
-      stream.write(`data: ${JSON.stringify(progressData)}\n\n`);
-    } catch (error) {
-      console.error('Error sending progress update:', error);
-      // Remove broken stream
-      activeReportStreams.delete(reportId);
-    }
-  }
-
-  console.log(`Progress Update [${reportId}]: ${progress}% - ${message}`);
-}
-
-/* ================================
-   Report Progress SSE Endpoint
-================================ */
-app.get('/report-progress/:reportId', authenticateToken, (req, res) => {
-  const { reportId } = req.params;
-
-  // Set headers for Server-Sent Events
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Cache-Control',
-  });
-
-  // Send initial connection confirmation
-  res.write(`data: ${JSON.stringify({
-    reportId,
-    step: 'connected',
-    progress: 0,
-    message: 'Connected to progress stream',
-    timestamp: new Date().toISOString()
-  })}\n\n`);
-
-  // Store the stream for this report
-  activeReportStreams.set(reportId, res);
-
-  // Handle client disconnect
-  req.on('close', () => {
-    console.log(`Client disconnected from progress stream: ${reportId}`);
-    activeReportStreams.delete(reportId);
-  });
-
-  req.on('error', () => {
-    console.log(`Error in progress stream: ${reportId}`);
-    activeReportStreams.delete(reportId);
-  });
-});
-
 /* ================================
    Report Generation Endpoint
 ================================ */
 app.post('/generate-report', authenticateToken, async (req, res) => {
-  // Generate unique report ID for progress tracking (declared outside try for error handling)
-  const reportId = `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
   try {
     const { statisticsData, timePeriod, chatbot_id, includeTextAnalysis, includeGPTAnalysis, maxConversations, language, selectedEmne } = req.body;
-
+    
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
     }
-
-    // Initialize progress tracking
-    sendProgressUpdate(reportId, 'initializing', 0, 'Starting report generation...');
-
+    
     // Get user data including chatbot IDs and company info
-    sendProgressUpdate(reportId, 'user_validation', 5, 'Validating user credentials...');
     const userResult = await pool.query('SELECT chatbot_ids, company_info FROM users WHERE id = $1', [req.user.userId]);
     if (userResult.rows.length === 0) {
-      sendProgressUpdate(reportId, 'error', 0, 'User not found');
       return res.status(400).json({ error: 'User not found' });
     }
     
     // Get company info to pass to GPT analysis
     const companyInfo = userResult.rows[0].company_info;
-
+    
     // Add company info to statistics data
     if (companyInfo) {
       statisticsData.companyInfo = companyInfo;
     }
-
-    sendProgressUpdate(reportId, 'chatbot_setup', 10, 'Configuring chatbot settings...');
-
+    
     // Get chatbot_id from the request or use user's chatbot IDs
     let chatbotIds;
     if (!chatbot_id || chatbot_id === 'ALL') {
       // Get chatbot IDs from previously fetched user data
       if (!userResult.rows[0].chatbot_ids) {
-        sendProgressUpdate(reportId, 'error', 0, 'No chatbot IDs found for user');
         return res.status(400).json({ error: 'No chatbot IDs found for user' });
       }
       chatbotIds = userResult.rows[0].chatbot_ids;
@@ -2890,18 +2810,14 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       start_date = new Date(timePeriod.startDate).toISOString();
       end_date = new Date(timePeriod.endDate).toISOString();
     }
-
-    sendProgressUpdate(reportId, 'data_preparation', 15, 'Preparing data for analysis...');
-
+    
     // Get text analysis if we have enough data
     let textAnalysisResults = null;
-    if (includeTextAnalysis) {
-      sendProgressUpdate(reportId, 'text_analysis_start', 20, 'Starting text analysis...');
-      try {
-        console.log("Fetching conversation data for text analysis using streaming/chunked processing...");
-
-        // Implement streaming/chunked processing for conversation data
-        const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date);
+    try {
+      console.log("Fetching conversation data for text analysis using streaming/chunked processing...");
+      
+      // Implement streaming/chunked processing for conversation data
+      const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date);
       console.log(`Found ${result.rows.length} conversations with scores for analysis`);
       
       // Validate and log a sample conversation for debugging
@@ -3005,16 +2921,9 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     } else {
       console.log("Text analysis not requested or not available");
     }
-
-    if (includeTextAnalysis) {
-      sendProgressUpdate(reportId, 'text_analysis_complete', 35, 'Text analysis completed');
-    } else {
-      sendProgressUpdate(reportId, 'text_analysis_skipped', 35, 'Text analysis skipped');
-    }
-
+    
     // Generate GPT analysis if requested
     if (includeGPTAnalysis) {
-      sendProgressUpdate(reportId, 'gpt_analysis_start', 40, 'Starting AI analysis...');
       try {
         console.log("Generating GPT analysis...");
         
@@ -3123,99 +3032,28 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
         // Continue with report generation even if GPT analysis fails
       }
     }
-
-    if (includeGPTAnalysis) {
-      sendProgressUpdate(reportId, 'gpt_analysis_complete', 65, 'AI analysis completed');
-    } else {
-      sendProgressUpdate(reportId, 'gpt_analysis_skipped', 65, 'AI analysis skipped');
-    }
-
-    // Generate the PDF report using template-based generator with fallback
-    sendProgressUpdate(reportId, 'pdf_generation', 75, 'Generating PDF report...');
-    console.log("Generating PDF report with template...");
-    try {
+     // Generate the PDF report using template-based generator with fallback
+     console.log("Generating PDF report with template...");
+     try {
        // Transform raw statistics data into template-friendly format
        const transformedStatisticsData = transformStatisticsForPDF(statisticsData);
        
       const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod, language || 'en');
-      console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
-
-      sendProgressUpdate(reportId, 'pdf_complete', 95, 'PDF report generated successfully');
-
-      // Send completion update with PDF data
-      const stream = activeReportStreams.get(reportId);
-      if (stream) {
-        stream.write(`data: ${JSON.stringify({
-          reportId,
-          step: 'complete',
-          progress: 100,
-          message: 'Report generation completed',
-          pdfData: pdfBuffer.toString('base64'),
-          filename: `statistics-report-${new Date().toISOString().split('T')[0]}.pdf`,
-          timestamp: new Date().toISOString()
-        })}\n\n`);
-        stream.end();
-        activeReportStreams.delete(reportId);
-      }
-
-      // Clean up progress tracking
-      reportProgress.delete(reportId);
-
-      // Return success response
-      res.json({
-        success: true,
-        reportId,
-        message: 'Report generated successfully',
-        downloadUrl: `/download-report/${reportId}`
-      });
-
+       console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
+       
+       // Set appropriate headers for PDF download
+      res.setHeader('Content-Type', 'application/pdf');
+       res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+       res.setHeader('Content-Length', pdfBuffer.length);
+       
+       // Send the PDF buffer directly as binary data
+       res.end(pdfBuffer, 'binary');
     } catch (error) {
       console.error('Error generating PDF report:', error);
-      sendProgressUpdate(reportId, 'error', 0, 'Failed to generate PDF report');
-
-      // Send error to active stream
-      const stream = activeReportStreams.get(reportId);
-      if (stream) {
-        stream.write(`data: ${JSON.stringify({
-          reportId,
-          step: 'error',
-          progress: 0,
-          message: 'Failed to generate PDF report: ' + error.message,
-          timestamp: new Date().toISOString()
-        })}\n\n`);
-        stream.end();
-        activeReportStreams.delete(reportId);
-      }
-
-      // Clean up progress tracking
-      reportProgress.delete(reportId);
-
       res.status(500).json({ error: 'Failed to generate report', details: error.message });
     }
-  }
   } catch (error) {
     console.error('Error generating report:', error);
-
-    // Send error progress update if reportId exists
-    if (reportId) {
-      sendProgressUpdate(reportId, 'error', 0, 'Unexpected error occurred');
-
-      const stream = activeReportStreams.get(reportId);
-      if (stream) {
-        stream.write(`data: ${JSON.stringify({
-          reportId,
-          step: 'error',
-          progress: 0,
-          message: 'Unexpected error occurred: ' + error.message,
-          timestamp: new Date().toISOString()
-        })}\n\n`);
-        stream.end();
-        activeReportStreams.delete(reportId);
-      }
-
-      reportProgress.delete(reportId);
-    }
-
     res.status(500).json({ error: 'Failed to generate report', details: error.message });
   }
 });
