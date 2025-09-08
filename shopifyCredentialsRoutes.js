@@ -53,7 +53,7 @@ export function registerShopifyCredentialsRoutes(app) {
                 shopifyStore,
                 shopifyApiVersion = '2024-10',
                 shopifyAccessToken,
-                shopifyEnabled = true,
+                shopifyEnabled = false,
                 orderTrackingUseProxy = true,
                 orderTrackingProxyUrl = 'https://egendatabasebackend.onrender.com/api/shopify/orders',
                 orderTrackingRequestMethod = 'POST',
@@ -222,7 +222,7 @@ export function registerShopifyCredentialsRoutes(app) {
             }
 
             res.json({
-                shopifyEnabled: row.shopify_enabled !== false, // Default to true if not set
+                shopifyEnabled: row.shopify_enabled === true, // Default to false if not set
                 orderTrackingUseProxy: row.order_tracking_use_proxy !== false, // Default to true if not set
                 orderTrackingProxyUrl: row.order_tracking_proxy_url || 'https://egendatabasebackend.onrender.com/api/shopify/orders',
                 orderTrackingRequestMethod: row.order_tracking_request_method || 'POST',
