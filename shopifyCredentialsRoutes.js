@@ -20,10 +20,10 @@ export function registerShopifyCredentialsRoutes(app) {
 
             const query = `
                 SELECT id, shopify_api_key, shopify_secret_key, shopify_store,
-                       shopify_api_version, shopify_access_token,
-                       shopify_enabled, order_tracking_use_proxy,
-                       order_tracking_proxy_url, order_tracking_request_method,
-                       tracking_required_fields, created_at, updated_at
+                       shopify_api_version, shopify_access_token, shopify_enabled,
+                       order_tracking_use_proxy, order_tracking_proxy_url,
+                       order_tracking_request_method, tracking_required_fields,
+                       created_at, updated_at
                 FROM shopify_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -182,7 +182,8 @@ export function registerShopifyCredentialsRoutes(app) {
             const query = `
                 SELECT shopify_enabled, order_tracking_use_proxy,
                        order_tracking_proxy_url, order_tracking_request_method,
-                       tracking_required_fields
+                       tracking_required_fields, shopify_store, shopify_access_token,
+                       shopify_api_key, shopify_secret_key, shopify_api_version
                 FROM shopify_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -198,19 +199,39 @@ export function registerShopifyCredentialsRoutes(app) {
                     orderTrackingUseProxy: true,
                     orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
                     orderTrackingRequestMethod: 'POST',
-                    trackingRequiredFields: ['email', 'phone', 'order_number']
+                    trackingRequiredFields: ['email', 'phone', 'order_number'],
+                    shopifyStore: '',
+                    shopifyAccessToken: '',
+                    shopifyApiKey: '',
+                    shopifySecretKey: '',
+                    shopifyApiVersion: '2024-10'
                 });
             }
 
             const row = result.rows[0];
+            let trackingRequiredFields = ['email', 'phone', 'order_number']; // Default
+            
+            if (row.tracking_required_fields) {
+                try {
+                    trackingRequiredFields = Array.isArray(row.tracking_required_fields) 
+                        ? row.tracking_required_fields 
+                        : JSON.parse(row.tracking_required_fields);
+                } catch (e) {
+                    console.error('Error parsing tracking_required_fields:', e);
+                }
+            }
+
             res.json({
                 shopifyEnabled: row.shopify_enabled !== false, // Default to true if not set
                 orderTrackingUseProxy: row.order_tracking_use_proxy !== false, // Default to true if not set
                 orderTrackingProxyUrl: row.order_tracking_proxy_url || 'https://egendatabasebackend.onrender.com/api/shopify/orders',
                 orderTrackingRequestMethod: row.order_tracking_request_method || 'POST',
-                trackingRequiredFields: Array.isArray(row.tracking_required_fields)
-                    ? row.tracking_required_fields
-                    : ['email', 'phone', 'order_number']
+                trackingRequiredFields: trackingRequiredFields,
+                shopifyStore: row.shopify_store || '',
+                shopifyAccessToken: row.shopify_access_token || '',
+                shopifyApiKey: row.shopify_api_key || '',
+                shopifySecretKey: row.shopify_secret_key || '',
+                shopifyApiVersion: row.shopify_api_version || '2024-10'
             });
         } catch (error) {
             console.error('Error fetching Shopify settings:', error);
@@ -222,7 +243,10 @@ export function registerShopifyCredentialsRoutes(app) {
     app.get('/api/shopify-credentials', async (req, res) => {
         try {
             const query = `
-                SELECT id, chatbot_id, shopify_store, shopify_api_version, created_at, updated_at
+                SELECT id, chatbot_id, shopify_store, shopify_api_version, shopify_enabled,
+                       order_tracking_use_proxy, order_tracking_proxy_url,
+                       order_tracking_request_method, tracking_required_fields,
+                       created_at, updated_at
                 FROM shopify_credentials
                 ORDER BY created_at DESC
             `;
