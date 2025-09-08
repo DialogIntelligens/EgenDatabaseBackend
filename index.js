@@ -1933,52 +1933,34 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
         queryText += ` AND c.bug_status = $${paramIndex++}`;
         queryParams.push(fejlstatus);
       }
-
-    } // Close the if (fejlstatus && fejlstatus !== '') block
-
+    }
+    if (has_purchase && has_purchase !== '') {
+      if (has_purchase === 'true') {
+        queryText += ` AND EXISTS (
+          SELECT 1 FROM purchases p
+          WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
+        )`;
+      }
+    }
     if (customer_rating && customer_rating !== '') {
       queryText += ` AND c.customer_rating = $${paramIndex++}`;
       queryParams.push(customer_rating);
     }
     if (emne && emne !== '') {
-    queryText += ` AND c.emne = $${paramIndex++}`;
-    queryParams.push(emne);
-  }
-  if (conversation_filter && conversation_filter.trim() !== '') {
-    queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
-    queryParams.push(`${conversation_filter}`);
-  }
-  if (is_resolved && is_resolved !== '') {
-    if (is_resolved === 'resolved') {
-      queryText += ` AND c.is_resolved = TRUE`;
-    } else if (is_resolved === 'unresolved') {
-      queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
+      queryText += ` AND c.emne = $${paramIndex++}`;
+      queryParams.push(emne);
     }
-  }
-  
-  // Apply purchase filter BEFORE GROUP BY
-  if (has_purchase && has_purchase !== '') {
-    if (has_purchase === 'true') {
-      queryText += ` AND EXISTS (
-        SELECT 1 FROM purchases p
-        WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
-      )`;
+    if (conversation_filter && conversation_filter.trim() !== '') {
+      queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+      queryParams.push(`${conversation_filter}`);
     }
-  }
-
-  queryText += ` GROUP BY c.id `;
-  
-  // Use different sorting logic for livechat page
-  if (is_livechat_page === 'true') {
-    // For livechat page: sort by first live message timestamp (when livechat started)
-    queryText += ` ORDER BY sort_timestamp DESC `;
-  } else {
-    // For normal conversations page: sort by created_at (newest first)
-    queryText += ` ORDER BY c.created_at DESC `;
-  }
-  
-  queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
-  queryParams.push(page_size, page_number * page_size);
+    if (is_resolved && is_resolved !== '') {
+      if (is_resolved === 'resolved') {
+        queryText += ` AND c.is_resolved = TRUE`;
+      } else if (is_resolved === 'unresolved') {
+        queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
+      }
+    }
 
     queryText += ` GROUP BY c.id `;
     
@@ -1988,17 +1970,7 @@ app.get('/conversations-metadata', authenticateToken, async (req, res) => {
       queryText += ` ORDER BY sort_timestamp DESC `;
     } else {
       // For normal conversations page: sort by created_at (newest first)
-      // Apply purchase filter BEFORE GROUP BY
-if (has_purchase && has_purchase !== '') {
-  if (has_purchase === 'true') {
-    queryText += ` AND EXISTS (
-      SELECT 1 FROM purchases p
-      WHERE p.user_id = c.user_id AND p.chatbot_id = c.chatbot_id AND p.amount > 0
-    )`;
-  }
-}
-
-queryText += ` GROUP BY c.id `;
+      queryText += ` ORDER BY c.created_at DESC `;
     }
     
     queryText += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++} `;
@@ -2784,9 +2756,6 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     if (!statisticsData) {
       return res.status(400).json({ error: 'Statistics data is required' });
     }
-
-    // Initialize progress tracking
-    sendProgressUpdate(reportId, 'initializing', 0, 'Starting report generation...');
     
     // Get user data including chatbot IDs and company info
     const userResult = await pool.query('SELECT chatbot_ids, company_info FROM users WHERE id = $1', [req.user.userId]);
@@ -2801,8 +2770,6 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
     if (companyInfo) {
       statisticsData.companyInfo = companyInfo;
     }
-
-    sendProgressUpdate(reportId, 'chatbot_setup', 10, 'Configuring chatbot settings...');
     
     // Get chatbot_id from the request or use user's chatbot IDs
     let chatbotIds;
@@ -2840,13 +2807,9 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       start_date = new Date(timePeriod.startDate).toISOString();
       end_date = new Date(timePeriod.endDate).toISOString();
     }
-
-    sendProgressUpdate(reportId, 'data_preparation', 15, 'Preparing data for analysis...');
     
     // Get text analysis if we have enough data
     let textAnalysisResults = null;
-    if (includeTextAnalysis) {
-      sendProgressUpdate(reportId, 'text_analysis_start', 20, 'Starting text analysis...');
     try {
       console.log("Fetching conversation data for text analysis using streaming/chunked processing...");
       
@@ -2954,12 +2917,6 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       statisticsData.includeTextAnalysis = true;
     } else {
       console.log("Text analysis not requested or not available");
-    }
-
-    if (includeTextAnalysis) {
-      sendProgressUpdate(reportId, 'text_analysis_complete', 35, 'Text analysis completed');
-    } else {
-      sendProgressUpdate(reportId, 'text_analysis_skipped', 35, 'Text analysis skipped');
     }
     
     // Generate GPT analysis if requested
@@ -3072,15 +3029,7 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
         // Continue with report generation even if GPT analysis fails
       }
     }
-
-    if (includeGPTAnalysis) {
-      sendProgressUpdate(reportId, 'gpt_analysis_complete', 65, 'AI analysis completed');
-    } else {
-      sendProgressUpdate(reportId, 'gpt_analysis_skipped', 65, 'AI analysis skipped');
-    }
-
      // Generate the PDF report using template-based generator with fallback
-    sendProgressUpdate(reportId, 'pdf_generation', 75, 'Generating PDF report...');
      console.log("Generating PDF report with template...");
      try {
        // Transform raw statistics data into template-friendly format
@@ -3089,24 +3038,16 @@ app.post('/generate-report', authenticateToken, async (req, res) => {
       const pdfBuffer = await generateStatisticsReportTemplate(transformedStatisticsData, timePeriod, language || 'en');
        console.log("Template-based PDF report generated successfully, size:", pdfBuffer.length, "bytes");
        
-      sendProgressUpdate(reportId, 'pdf_complete', 95, 'PDF report generated successfully');
-
-      // Clean up progress tracking
-      reportProgress.delete(reportId);
-      activeReportStreams.delete(reportId);
-
-      // Set appropriate headers for PDF download
+       // Set appropriate headers for PDF download
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
-      res.setHeader('Content-Length', pdfBuffer.length);
+       res.setHeader('Content-Disposition', 'attachment; filename=statistics-report.pdf');
+       res.setHeader('Content-Length', pdfBuffer.length);
        
-      // Send the PDF buffer directly as binary data
-      res.end(pdfBuffer, 'binary');
-
+       // Send the PDF buffer directly as binary data
+       res.end(pdfBuffer, 'binary');
     } catch (error) {
       console.error('Error generating PDF report:', error);
       res.status(500).json({ error: 'Failed to generate report', details: error.message });
-    }
     }
   } catch (error) {
     console.error('Error generating report:', error);
