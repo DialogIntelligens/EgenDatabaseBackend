@@ -15,6 +15,7 @@ import { createFreshdeskTicket } from './freshdeskHandler.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
+import { shopifyCredentialsRouter } from './shopifyCredentialsRoutes.js';
 
 const { Pool } = pg;
 
@@ -5374,6 +5375,9 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
 registerPopupMessageRoutes(app, pool, authenticateToken);
 registerSplitTestRoutes(app, pool, authenticateToken);
+
+// Register Shopify credentials routes
+app.use('/api/shopify', shopifyCredentialsRouter);
 
 /* ================================
    Error Logging Endpoints
