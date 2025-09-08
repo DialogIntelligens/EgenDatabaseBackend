@@ -20,10 +20,7 @@ export function registerShopifyCredentialsRoutes(app) {
 
             const query = `
                 SELECT id, shopify_api_key, shopify_secret_key, shopify_store,
-                       shopify_api_version, shopify_access_token, shopify_enabled,
-                       order_tracking_use_proxy, order_tracking_proxy_url,
-                       order_tracking_request_method, tracking_required_fields,
-                       created_at, updated_at
+                       shopify_access_token, shopify_enabled, created_at, updated_at
                 FROM shopify_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -51,13 +48,8 @@ export function registerShopifyCredentialsRoutes(app) {
                 shopifyApiKey,
                 shopifySecretKey,
                 shopifyStore,
-                shopifyApiVersion = '2024-10',
                 shopifyAccessToken,
-                shopifyEnabled = false,
-                orderTrackingUseProxy = true,
-                orderTrackingProxyUrl = 'https://egendatabasebackend.onrender.com/api/shopify/orders',
-                orderTrackingRequestMethod = 'POST',
-                trackingRequiredFields = ['email', 'phone', 'order_number']
+                shopifyEnabled = false
             } = req.body;
 
             if (!chatbotId) {
@@ -76,28 +68,18 @@ export function registerShopifyCredentialsRoutes(app) {
                     SET shopify_api_key = $1,
                         shopify_secret_key = $2,
                         shopify_store = $3,
-                        shopify_api_version = $4,
-                        shopify_access_token = $5,
-                        shopify_enabled = $6,
-                        order_tracking_use_proxy = $7,
-                        order_tracking_proxy_url = $8,
-                        order_tracking_request_method = $9,
-                        tracking_required_fields = $10,
+                        shopify_access_token = $4,
+                        shopify_enabled = $5,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE chatbot_id = $11
+                    WHERE chatbot_id = $6
                     RETURNING *
                 `;
                 result = await pool.query(updateQuery, [
                     shopifyApiKey,
                     shopifySecretKey,
                     shopifyStore,
-                    shopifyApiVersion,
                     shopifyAccessToken,
                     shopifyEnabled,
-                    orderTrackingUseProxy,
-                    orderTrackingProxyUrl,
-                    orderTrackingRequestMethod,
-                    JSON.stringify(trackingRequiredFields),
                     chatbotId
                 ]);
             } else {
@@ -108,14 +90,9 @@ export function registerShopifyCredentialsRoutes(app) {
                         shopify_api_key,
                         shopify_secret_key,
                         shopify_store,
-                        shopify_api_version,
                         shopify_access_token,
-                        shopify_enabled,
-                        order_tracking_use_proxy,
-                        order_tracking_proxy_url,
-                        order_tracking_request_method,
-                        tracking_required_fields
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        shopify_enabled
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING *
                 `;
                 result = await pool.query(insertQuery, [
@@ -123,19 +100,24 @@ export function registerShopifyCredentialsRoutes(app) {
                     shopifyApiKey,
                     shopifySecretKey,
                     shopifyStore,
-                    shopifyApiVersion,
                     shopifyAccessToken,
-                    shopifyEnabled,
-                    orderTrackingUseProxy,
-                    orderTrackingProxyUrl,
-                    orderTrackingRequestMethod,
-                    JSON.stringify(trackingRequiredFields)
+                    shopifyEnabled
                 ]);
             }
 
+            // Add hardcoded values to response
+            const responseData = {
+                ...result.rows[0],
+                shopify_api_version: '2024-10',
+                order_tracking_use_proxy: true,
+                order_tracking_proxy_url: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
+                order_tracking_request_method: 'POST',
+                tracking_required_fields: JSON.stringify(['email', 'phone', 'order_number'])
+            };
+
             res.json({
                 success: true,
-                data: result.rows[0],
+                data: responseData,
                 message: existingResult.rows.length > 0 ? 'Credentials updated successfully' : 'Credentials created successfully'
             });
         } catch (error) {
@@ -180,10 +162,8 @@ export function registerShopifyCredentialsRoutes(app) {
             }
 
             const query = `
-                SELECT shopify_enabled, order_tracking_use_proxy,
-                       order_tracking_proxy_url, order_tracking_request_method,
-                       tracking_required_fields, shopify_store, shopify_access_token,
-                       shopify_api_key, shopify_secret_key, shopify_api_version
+                SELECT shopify_enabled, shopify_store, shopify_access_token,
+                       shopify_api_key, shopify_secret_key
                 FROM shopify_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -196,15 +176,15 @@ export function registerShopifyCredentialsRoutes(app) {
                 // Return default values if no credentials found
                 return res.json({
                     shopifyEnabled: false,
-                    orderTrackingUseProxy: true,
-                    orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
-                    orderTrackingRequestMethod: 'POST',
-                    trackingRequiredFields: ['email', 'phone', 'order_number'],
                     shopifyStore: '',
                     shopifyAccessToken: '',
                     shopifyApiKey: '',
                     shopifySecretKey: '',
-                    shopifyApiVersion: '2024-10'
+                    shopifyApiVersion: '2024-10',
+                    orderTrackingUseProxy: true,
+                    orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
+                    orderTrackingRequestMethod: 'POST',
+                    trackingRequiredFields: ['email', 'phone', 'order_number']
                 });
             }
 
@@ -223,15 +203,15 @@ export function registerShopifyCredentialsRoutes(app) {
 
             res.json({
                 shopifyEnabled: row.shopify_enabled === true, // Default to false if not set
-                orderTrackingUseProxy: row.order_tracking_use_proxy !== false, // Default to true if not set
-                orderTrackingProxyUrl: row.order_tracking_proxy_url || 'https://egendatabasebackend.onrender.com/api/shopify/orders',
-                orderTrackingRequestMethod: row.order_tracking_request_method || 'POST',
-                trackingRequiredFields: trackingRequiredFields,
                 shopifyStore: row.shopify_store || '',
                 shopifyAccessToken: row.shopify_access_token || '',
                 shopifyApiKey: row.shopify_api_key || '',
                 shopifySecretKey: row.shopify_secret_key || '',
-                shopifyApiVersion: row.shopify_api_version || '2024-10'
+                shopifyApiVersion: '2024-10',
+                orderTrackingUseProxy: true,
+                orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
+                orderTrackingRequestMethod: 'POST',
+                trackingRequiredFields: ['email', 'phone', 'order_number']
             });
         } catch (error) {
             console.error('Error fetching Shopify settings:', error);
@@ -243,10 +223,7 @@ export function registerShopifyCredentialsRoutes(app) {
     app.get('/api/shopify-credentials', async (req, res) => {
         try {
             const query = `
-                SELECT id, chatbot_id, shopify_store, shopify_api_version, shopify_enabled,
-                       order_tracking_use_proxy, order_tracking_proxy_url,
-                       order_tracking_request_method, tracking_required_fields,
-                       created_at, updated_at
+                SELECT id, chatbot_id, shopify_store, shopify_enabled, created_at, updated_at
                 FROM shopify_credentials
                 ORDER BY created_at DESC
             `;
