@@ -20,7 +20,10 @@ export function registerShopifyCredentialsRoutes(app) {
 
             const query = `
                 SELECT id, shopify_api_key, shopify_secret_key, shopify_store,
-                       shopify_api_version, shopify_access_token, created_at, updated_at
+                       shopify_api_version, shopify_access_token,
+                       shopify_enabled, order_tracking_use_proxy,
+                       order_tracking_proxy_url, order_tracking_request_method,
+                       tracking_required_fields, created_at, updated_at
                 FROM shopify_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -49,7 +52,12 @@ export function registerShopifyCredentialsRoutes(app) {
                 shopifySecretKey,
                 shopifyStore,
                 shopifyApiVersion = '2024-10',
-                shopifyAccessToken
+                shopifyAccessToken,
+                shopifyEnabled = true,
+                orderTrackingUseProxy = true,
+                orderTrackingProxyUrl = 'https://egendatabasebackend.onrender.com/api/shopify/orders',
+                orderTrackingRequestMethod = 'POST',
+                trackingRequiredFields = ['email', 'phone', 'order_number']
             } = req.body;
 
             if (!chatbotId) {
@@ -70,8 +78,13 @@ export function registerShopifyCredentialsRoutes(app) {
                         shopify_store = $3,
                         shopify_api_version = $4,
                         shopify_access_token = $5,
+                        shopify_enabled = $6,
+                        order_tracking_use_proxy = $7,
+                        order_tracking_proxy_url = $8,
+                        order_tracking_request_method = $9,
+                        tracking_required_fields = $10,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE chatbot_id = $6
+                    WHERE chatbot_id = $11
                     RETURNING *
                 `;
                 result = await pool.query(updateQuery, [
@@ -80,6 +93,11 @@ export function registerShopifyCredentialsRoutes(app) {
                     shopifyStore,
                     shopifyApiVersion,
                     shopifyAccessToken,
+                    shopifyEnabled,
+                    orderTrackingUseProxy,
+                    orderTrackingProxyUrl,
+                    orderTrackingRequestMethod,
+                    JSON.stringify(trackingRequiredFields),
                     chatbotId
                 ]);
             } else {
@@ -91,8 +109,13 @@ export function registerShopifyCredentialsRoutes(app) {
                         shopify_secret_key,
                         shopify_store,
                         shopify_api_version,
-                        shopify_access_token
-                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                        shopify_access_token,
+                        shopify_enabled,
+                        order_tracking_use_proxy,
+                        order_tracking_proxy_url,
+                        order_tracking_request_method,
+                        tracking_required_fields
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     RETURNING *
                 `;
                 result = await pool.query(insertQuery, [
@@ -101,7 +124,12 @@ export function registerShopifyCredentialsRoutes(app) {
                     shopifySecretKey,
                     shopifyStore,
                     shopifyApiVersion,
-                    shopifyAccessToken
+                    shopifyAccessToken,
+                    shopifyEnabled,
+                    orderTrackingUseProxy,
+                    orderTrackingProxyUrl,
+                    orderTrackingRequestMethod,
+                    JSON.stringify(trackingRequiredFields)
                 ]);
             }
 
@@ -138,6 +166,54 @@ export function registerShopifyCredentialsRoutes(app) {
             });
         } catch (error) {
             console.error('Error deleting Shopify credentials:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    // Get Shopify settings for chatbot script (public endpoint for integrations)
+    app.get('/api/shopify-settings/:chatbotId', async (req, res) => {
+        try {
+            const { chatbotId } = req.params;
+
+            if (!chatbotId) {
+                return res.status(400).json({ error: 'Chatbot ID is required' });
+            }
+
+            const query = `
+                SELECT shopify_enabled, order_tracking_use_proxy,
+                       order_tracking_proxy_url, order_tracking_request_method,
+                       tracking_required_fields
+                FROM shopify_credentials
+                WHERE chatbot_id = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+            `;
+
+            const result = await pool.query(query, [chatbotId]);
+
+            if (result.rows.length === 0) {
+                // Return default values if no credentials found
+                return res.json({
+                    shopifyEnabled: false,
+                    orderTrackingUseProxy: true,
+                    orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
+                    orderTrackingRequestMethod: 'POST',
+                    trackingRequiredFields: ['email', 'phone', 'order_number']
+                });
+            }
+
+            const row = result.rows[0];
+            res.json({
+                shopifyEnabled: row.shopify_enabled !== false, // Default to true if not set
+                orderTrackingUseProxy: row.order_tracking_use_proxy !== false, // Default to true if not set
+                orderTrackingProxyUrl: row.order_tracking_proxy_url || 'https://egendatabasebackend.onrender.com/api/shopify/orders',
+                orderTrackingRequestMethod: row.order_tracking_request_method || 'POST',
+                trackingRequiredFields: Array.isArray(row.tracking_required_fields)
+                    ? row.tracking_required_fields
+                    : ['email', 'phone', 'order_number']
+            });
+        } catch (error) {
+            console.error('Error fetching Shopify settings:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     });
