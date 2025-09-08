@@ -45,6 +45,8 @@ export const reportTranslations = {
     askedText: 'Stillet',
     timesText: 'gange',
     uniqueVariationsText: 'unikke variationer',
+    askedByCustomers: 'Stillet af kunder:',
+    numberOfVariations: 'Antal unikke variationer:',
 
     // Metrics
     totalMessages: 'Samlede Beskeder',
@@ -128,6 +130,8 @@ export const reportTranslations = {
     askedText: 'Asked',
     timesText: 'times',
     uniqueVariationsText: 'unique variations',
+    askedByCustomers: 'Asked by customers:',
+    numberOfVariations: 'Number of unique variations:',
 
     // Metrics
     totalMessages: 'Total Messages',
@@ -206,6 +210,8 @@ export const reportTranslations = {
     askedText: 'Frågat',
     timesText: 'gånger',
     uniqueVariationsText: 'unika variationer',
+    askedByCustomers: 'Frågat av kunder:',
+    numberOfVariations: 'Antal unika variationer:',
 
     // Metrics
     totalMessages: 'Totala Meddelanden',
