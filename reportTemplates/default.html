@@ -1073,17 +1073,17 @@
       <h3>{{translations.keyInsights}}</h3>
       <div class="insights-list">
         <div class="insight-item">
-          <strong>{{translations.highEngagement}}:</strong> {{totalMessages}}
+          <strong>{{translations.highEngagement}}:</strong> {{totalMessages}} {{translations.totalMessagesDesc}}
         </div>
         <div class="insight-item">
-          <strong>{{translations.customerSatisfaction}}:</strong> {{averageCustomerRating}}/5
+          <strong>{{translations.customerSatisfaction}}:</strong> {{averageCustomerRating}}/5 {{translations.customerSatisfactionDesc}}
         </div>
         <div class="insight-item">
-          <strong>{{translations.consistentPerformance}}:</strong> {{csatScore}}
+          <strong>{{translations.consistentPerformance}}:</strong> {{csatScore}} {{translations.consistentPerformanceDesc}}
         </div>
         {{#if hasPurchaseTracking}}
         <div class="insight-item">
-          <strong>{{translations.businessImpact}}:</strong> {{totalRevenue}}
+          <strong>{{translations.businessImpact}}:</strong> {{totalRevenue}} {{translations.businessImpactDesc}}
         </div>
         {{/if}}
       </div>

@@ -28,10 +28,10 @@ export const reportTranslations = {
     businessImpact: 'Forretningspåvirkning',
 
     // Descriptions
-    totalMessagesDesc: 'samlede beskeder indikerer aktiv brugerinteraktion',
-    customerSatisfactionDesc: 'rating viser fremragende servicekvalitet',
-    consistentPerformanceDesc: 'CSAT score demonstrerer pålidelig support',
-    businessImpactDesc: 'omsætning genereret gennem chatbot interaktioner',
+    totalMessagesDesc: 'samlede beskeder',
+    customerSatisfactionDesc: 'rating',
+    consistentPerformanceDesc: 'CSAT score',
+    businessImpactDesc: 'omsætning',
 
     // FAQ Analysis (replace correlation translations)
     customerQuestionAnalysis: '❓ Kunde Spørgsmål Analyse',
@@ -113,10 +113,10 @@ export const reportTranslations = {
     businessImpact: 'Business Impact',
 
     // Descriptions
-    totalMessagesDesc: 'total messages indicate active user interaction',
-    customerSatisfactionDesc: 'rating shows excellent service quality',
-    consistentPerformanceDesc: 'CSAT score demonstrates reliable support',
-    businessImpactDesc: 'revenue generated through chatbot interactions',
+    totalMessagesDesc: 'total messages',
+    customerSatisfactionDesc: 'rating',
+    consistentPerformanceDesc: 'CSAT score',
+    businessImpactDesc: 'revenue',
 
     // FAQ Analysis (replace correlation translations)
     customerQuestionAnalysis: '❓ Customer Question Analysis',
@@ -198,10 +198,10 @@ export const reportTranslations = {
     businessImpact: 'Affärspåverkan',
 
     // Descriptions
-    totalMessagesDesc: 'totala meddelanden indikerar aktiv användarinteraktion',
-    customerSatisfactionDesc: 'betyg visar utmärkt servicekvalitet',
-    consistentPerformanceDesc: 'CSAT poäng visar pålitlig support',
-    businessImpactDesc: 'intäkter genererade genom chatbot interaktioner',
+    totalMessagesDesc: 'totala meddelanden',
+    customerSatisfactionDesc: 'betyg',
+    consistentPerformanceDesc: 'CSAT poäng',
+    businessImpactDesc: 'intäkter',
 
     // FAQ Analysis
     customerQuestionAnalysis: '❓ Kundfrågaanalys',
