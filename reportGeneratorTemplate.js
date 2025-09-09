@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
 import puppeteer from 'puppeteer-core';
-import chromium from 'chromium';
 import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,8 +109,10 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
     console.log('Launching puppeteer browser...');
     const browser = await puppeteer.launch({
       headless: true,
+      // For local development, let puppeteer find Chrome automatically
+      // For production, you'd need to install a proper chromium package
       executablePath: process.env.NODE_ENV === 'production' 
-        ? chromium.path 
+        ? '/usr/bin/google-chrome-stable' // or wherever Chrome is installed in production
         : undefined,
       args: [
         '--no-sandbox',

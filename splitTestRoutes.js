@@ -259,13 +259,13 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
         return res.json({ enabled: false, variant_id: null });
       }
 
-      // Simple hash to 0..99
+      // Improved hash function for better distribution
       let hash = 0;
       const str = String(visitor_key);
       for (let i = 0; i < str.length; i++) {
-        hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+        hash = ((hash << 5) - hash + str.charCodeAt(i)) >>> 0; // DJB2-like hash
       }
-      const roll = hash % 100;
+      const roll = Math.abs(hash) % 100;
 
       let cumulative = 0;
       let chosen = null;
@@ -312,6 +312,83 @@ export function registerSplitTestRoutes(app, pool, authenticateToken) {
       return res.json({ success: true });
     } catch (err) {
       console.error('POST /split-impression error:', err);
+      return res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  // Get split test distribution analysis
+  router.get('/split-test-distribution/:chatbot_id', authenticateToken, async (req, res) => {
+    try {
+      const { chatbot_id } = req.params;
+
+      // Get currently enabled test
+      const testResult = await pool.query('SELECT id FROM split_tests WHERE chatbot_id=$1 AND enabled=TRUE ORDER BY version DESC LIMIT 1', [chatbot_id]);
+      if (testResult.rows.length === 0) {
+        return res.json({ error: 'No enabled split test found' });
+      }
+
+      const splitTestId = testResult.rows[0].id;
+
+      // Get all assignments and their hash distribution
+      const assignmentsResult = await pool.query(
+        'SELECT variant_id, visitor_key FROM split_test_assignments WHERE chatbot_id=$1',
+        [chatbot_id]
+      );
+
+      const variantsResult = await pool.query(
+        'SELECT id, name, percentage FROM split_test_variants WHERE split_test_id=$1 ORDER BY position, id',
+        [splitTestId]
+      );
+
+      const variants = variantsResult.rows;
+      const assignments = assignmentsResult.rows;
+
+      // Calculate hash distribution
+      const hashBuckets = {};
+      const variantCounts = {};
+
+      variants.forEach(v => {
+        variantCounts[v.id] = { name: v.name, percentage: v.percentage, count: 0, hashes: [] };
+      });
+
+      assignments.forEach(assignment => {
+        // Calculate hash for this visitor
+        let hash = 0;
+        const str = String(assignment.visitor_key);
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) - hash + str.charCodeAt(i)) >>> 0;
+        }
+        const roll = Math.abs(hash) % 100;
+
+        // Track hash buckets
+        if (!hashBuckets[roll]) hashBuckets[roll] = 0;
+        hashBuckets[roll]++;
+
+        // Track variant counts
+        if (variantCounts[assignment.variant_id]) {
+          variantCounts[assignment.variant_id].count++;
+          variantCounts[assignment.variant_id].hashes.push(roll);
+        }
+      });
+
+      const distribution = {
+        total_assignments: assignments.length,
+        variants: Object.values(variantCounts).map(v => ({
+          name: v.name,
+          expected_percentage: v.percentage,
+          actual_count: v.count,
+          actual_percentage: assignments.length > 0 ? ((v.count / assignments.length) * 100).toFixed(2) : 0,
+          hash_range: v.hashes.length > 0 ? `${Math.min(...v.hashes)}-${Math.max(...v.hashes)}` : 'N/A'
+        })),
+        hash_distribution: Object.keys(hashBuckets).sort((a,b) => parseInt(a) - parseInt(b)).map(bucket => ({
+          bucket: parseInt(bucket),
+          count: hashBuckets[bucket]
+        }))
+      };
+
+      return res.json(distribution);
+    } catch (err) {
+      console.error('GET /split-test-distribution error:', err);
       return res.status(500).json({ error: 'Server error', details: err.message });
     }
   });
