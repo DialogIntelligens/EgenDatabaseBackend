@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "puppeteer install",
+    "postinstall": "node -e \"if (process.env.NODE_ENV==='production') require('chromium');\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -29,7 +29,8 @@
     "openai": "^4.69.0",
     "pdfkit": "^0.14.0",
     "pg": "^8.12.0",
-    "puppeteer": "^24.19.0",
+    "puppeteer-core": "^24.19.0",
+    "chromium": "^112.0.5615.0",
     "stats-lite": "^2.2.0",
     "stopword": "^3.1.4"
   }
