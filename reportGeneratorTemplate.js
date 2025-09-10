@@ -16,28 +16,6 @@ const mdParser = new MarkdownIt({
 });
 
 /**
- * Get Chromium executable path (works both locally and on Render)
- */
-function getChromiumPath() {
-  const localChromium = puppeteer.executablePath();
-  if (fs.existsSync(localChromium)) return localChromium;
-
-  // fallback til Render path
-  const renderChromium = path.join(
-    process.cwd(),
-    'node_modules',
-    'puppeteer',
-    '.local-chromium',
-    'linux-140.0.7339.80',
-    'chrome-linux64',
-    'chrome'
-  );
-  if (fs.existsSync(renderChromium)) return renderChromium;
-
-  throw new Error('Chrome executable not found. Make sure puppeteer installed Chromium correctly.');
-}
-
-/**
  * Generate a PDF report using HTML template
  * @param {Object} data - The statistics data
  * @param {string} timePeriod - The time period for the report
@@ -58,6 +36,8 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
     }
 
     const templateSource = fs.readFileSync(templatePath, 'utf8');
+    console.log('Template loaded successfully, size:', templateSource.length);
+
     const template = Handlebars.compile(templateSource);
 
     // Process GPT analysis markdown to HTML
@@ -111,29 +91,45 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
     // Generate HTML
     const html = template(templateData);
 
-    // Launch Puppeteer
-    console.log('Launching Puppeteer browser...');
+    // --- Punkt 2 & 3: Launch Puppeteer with Render-compatible Chromium ---
+    const chromiumPath = puppeteer.executablePath();
+    console.log('Chromium executable path:', chromiumPath); // <-- Punkt 3: log pathen
+
     const browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-      executablePath: getChromiumPath()
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage'
+      ],
+      executablePath: chromiumPath // <-- Punkt 2: Brug Puppeteers egen Chromium
     });
 
+    console.log('Puppeteer browser launched successfully');
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: ['networkidle0', 'domcontentloaded'] });
+
+    await page.setContent(html, {
+      waitUntil: ['networkidle0', 'domcontentloaded']
+    });
 
     console.log('Generating PDF...');
     const pdfBuffer = await page.pdf({
       format: 'A4',
-      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+      margin: {
+        top: '20mm',
+        right: '20mm',
+        bottom: '20mm',
+        left: '20mm'
+      },
       printBackground: true,
       preferCSSPageSize: true
     });
 
-    await browser.close();
     console.log('PDF generated successfully, size:', pdfBuffer.length);
+    await browser.close();
 
     return pdfBuffer;
+
   } catch (error) {
     console.error('Error generating template-based PDF:', error);
     throw error;
