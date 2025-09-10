@@ -3,8 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
-import puppeteer from 'puppeteer-core';
-import chromium from 'chromium';
+import puppeteer from 'puppeteer';
 import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,23 +109,12 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
     console.log('Launching puppeteer browser...');
     const browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.NODE_ENV === 'production' 
-        ? chromium.path 
-        : undefined,
       args: [
         '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--disable-extensions'
+        '--disable-setuid-sandbox'
       ]
     });
+    
     console.log('Puppeteer browser launched successfully');
     
     const page = await browser.newPage();
