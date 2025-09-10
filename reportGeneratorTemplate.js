@@ -4,66 +4,28 @@ import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
 import puppeteer from 'puppeteer-core';
-import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
+import { getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const mdParser = new MarkdownIt({ html: true, linkify: true, typographer: true });
 
-// Initialize Markdown parser
-const mdParser = new MarkdownIt({
-  html: true,
-  linkify: true,
-  typographer: true
-});
-
-/**
- * Generate a PDF report using HTML template
- * @param {Object} data - The statistics data
- * @param {string} timePeriod - The time period for the report
- * @param {string} language - Language code for translations
- * @returns {Promise<Buffer>} - The PDF buffer
- */
 export async function generateStatisticsReportTemplate(data, timePeriod, language = 'en') {
   try {
     console.log('Starting template-based PDF generation...');
-    console.log('Current working directory:', process.cwd());
     
-    // Dynamically import chromium only in production
-    let chromium;
-    if (process.env.NODE_ENV === 'production') {
-      chromium = await import('chromium').then(mod => mod.default);
-    }
-    
-    // Read the HTML template
     const templatePath = path.join(__dirname, 'reportTemplates', 'default.html');
-    console.log('Template path:', templatePath);
-    
-    if (!fs.existsSync(templatePath)) {
-      throw new Error(`Template file not found at: ${templatePath}`);
-    }
-    
+    if (!fs.existsSync(templatePath)) throw new Error(`Template file not found: ${templatePath}`);
     const templateSource = fs.readFileSync(templatePath, 'utf8');
-    console.log('Template loaded successfully, size:', templateSource.length);
-    
     const template = Handlebars.compile(templateSource);
-    
-    let gptAnalysisHtml = '';
-    if (data.gptAnalysis) {
-      gptAnalysisHtml = mdParser.render(data.gptAnalysis);
-    }
-    
+
+    const gptAnalysisHtml = data.gptAnalysis ? mdParser.render(data.gptAnalysis) : '';
     const translations = getReportTranslations(language);
-    
+
     const templateData = {
       ...data,
       timePeriod: formatTimePeriod(timePeriod),
       gptAnalysis: gptAnalysisHtml,
-      generatedDate: new Date().toLocaleDateString('da-DK', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
+      generatedDate: new Date().toLocaleDateString('da-DK', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
       dailyChart: data.chartImages?.dailyChart,
       hourlyChart: data.chartImages?.hourlyChart,
       topicChart: data.chartImages?.topicChart,
@@ -90,55 +52,43 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
       performanceAnalyticsTranslated: translations.performanceAnalytics,
       performanceMetricsTranslated: translations.performanceMetrics
     };
-    
+
     const html = template(templateData);
-    
-    console.log('Launching puppeteer browser...');
-    const browser = await puppeteer.launch({
-      headless: true,
-      executablePath: process.env.NODE_ENV === 'production' ? chromium.path : undefined,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--disable-extensions'
-      ]
-    });
-    
-    console.log('Puppeteer browser launched successfully');
-    const page = await browser.newPage();
-    
-    await page.setContent(html, { waitUntil: ['networkidle0', 'domcontentloaded'] });
-    
-    console.log('Generating PDF...');
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
-      printBackground: true,
-      preferCSSPageSize: true
-    });
-    
-    console.log('PDF generated successfully, size:', pdfBuffer.length);
-    await browser.close();
-    
-    return pdfBuffer;
-    
+
+    // Kun generer PDF i produktion
+    if (process.env.NODE_ENV === 'production') {
+      const chromium = (await import('chromium')).default;
+      const browser = await puppeteer.launch({
+        headless: true,
+        executablePath: chromium.path,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage'
+        ]
+      });
+
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: ['networkidle0', 'domcontentloaded'] });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+        printBackground: true
+      });
+      await browser.close();
+      return pdfBuffer;
+    }
+
+    // Lokalt: PDF springes over
+    console.log('Skipping PDF generation locally.');
+    return null;
+
   } catch (error) {
     console.error('Error generating template-based PDF:', error);
     throw error;
   }
 }
 
-/**
- * Helper function to format time period
- */
 function formatTimePeriod(timePeriod) {
   if (!timePeriod) return 'All Time';
   if (timePeriod === 'all') return 'All Time';
@@ -151,22 +101,4 @@ function formatTimePeriod(timePeriod) {
     return `${start.toLocaleDateString('da-DK')} to ${end.toLocaleDateString('da-DK')}`;
   }
   return 'Custom Range';
-}
-
-/**
- * Helper function to get locale for date formatting
- */
-function getLocale(language) {
-  const localeMap = {
-    'da': 'da-DK',
-    'en': 'en-US',
-    'sv': 'sv-SE',
-    'no': 'nb-NO',
-    'de': 'de-DE',
-    'nl': 'nl-NL',
-    'fr': 'fr-FR',
-    'it': 'it-IT',
-    'fi': 'fi-FI'
-  };
-  return localeMap[language] || 'en-US';
 }
