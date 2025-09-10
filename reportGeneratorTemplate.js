@@ -3,9 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
-import puppeteer from 'puppeteer-core';
+import puppeteer from 'puppeteer';
 import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Markdown parser
@@ -107,27 +106,15 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
     
     // Launch puppeteer with production-friendly settings
     console.log('Launching puppeteer browser...');
-    const browser = await puppeteer.launch({
-      headless: true,
-      // For local development, let puppeteer find Chrome automatically
-      // For production, you'd need to install a proper chromium package
-      executablePath: process.env.NODE_ENV === 'production' 
-        ? '/usr/bin/google-chrome-stable' // or wherever Chrome is installed in production
-        : undefined,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--disable-extensions'
-      ]
-    });
+   const browser = await puppeteer.launch({
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox'
+  ]
+});
+
+    
     console.log('Puppeteer browser launched successfully');
     
     const page = await browser.newPage();
