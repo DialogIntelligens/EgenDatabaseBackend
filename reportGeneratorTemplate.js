@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
-import puppeteer from 'puppeteer';
+import puppeteer, { executablePath } from 'puppeteer';
 import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -100,7 +100,7 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage'
       ],
-      executablePath: process.env.CHROMIUM_PATH || undefined
+      executablePath: executablePath() // <- Sikrer at Puppeteer bruger downloadet Chrome
     });
 
     console.log('Puppeteer browser launched successfully');
@@ -139,7 +139,6 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
  */
 function formatTimePeriod(timePeriod) {
   if (!timePeriod) return 'All Time';
-
   if (timePeriod === 'all') return 'All Time';
   if (timePeriod === '7') return 'Last 7 Days';
   if (timePeriod === '30') return 'Last 30 Days';
@@ -149,7 +148,6 @@ function formatTimePeriod(timePeriod) {
     const end = new Date(timePeriod.endDate);
     return `${start.toLocaleDateString('da-DK')} to ${end.toLocaleDateString('da-DK')}`;
   }
-
   return 'Custom Range';
 }
 
