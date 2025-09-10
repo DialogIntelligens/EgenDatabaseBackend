@@ -3,36 +3,47 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
-import puppeteer from 'puppeteer-core'; // Brug puppeteer-core
+import puppeteer from 'puppeteer-core';
 import { getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Initialize Markdown parser
 const mdParser = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true
 });
 
+/**
+ * Generate a PDF report using HTML template
+ * @param {Object} data - Statistics data
+ * @param {string|Object} timePeriod - Time period for the report
+ * @param {string} language - Language code for translations
+ * @returns {Promise<Buffer|null>} PDF buffer or null if skipped
+ */
 export async function generateStatisticsReportTemplate(data, timePeriod, language = 'en') {
   try {
     console.log('Starting template-based PDF generation...');
 
+    // Load template
     const templatePath = path.join(__dirname, 'reportTemplates', 'default.html');
     if (!fs.existsSync(templatePath)) {
       throw new Error(`Template file not found at: ${templatePath}`);
     }
-
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     const template = Handlebars.compile(templateSource);
 
+    // Render GPT analysis markdown to HTML
     let gptAnalysisHtml = '';
     if (data.gptAnalysis) {
       gptAnalysisHtml = mdParser.render(data.gptAnalysis);
     }
 
+    // Get translations
     const translations = getReportTranslations(language);
 
+    // Prepare template data
     const templateData = {
       ...data,
       timePeriod: formatTimePeriod(timePeriod),
@@ -73,13 +84,31 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
 
     const html = template(templateData);
 
+    // --- Skip PDF locally ---
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Skipping PDF generation locally');
+      return null;
+    }
+
+    // Dynamically import chromium only in production
+    const chromium = await import('chromium');
+
     console.log('Launching puppeteer browser...');
     const browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      executablePath: chromium.path,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ]
     });
 
-    console.log('Puppeteer browser launched successfully');
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: ['networkidle0', 'domcontentloaded'] });
 
@@ -91,16 +120,21 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
       preferCSSPageSize: true
     });
 
-    console.log('PDF generated successfully, size:', pdfBuffer.length);
     await browser.close();
+    console.log('PDF generated successfully, size:', pdfBuffer.length);
     return pdfBuffer;
 
   } catch (error) {
     console.error('Error generating template-based PDF:', error);
-    return null; // return null hvis vi ikke kan generere PDF (backend fortsætter)
+    return null;
   }
 }
 
+/**
+ * Format time period for display
+ * @param {string|Object} timePeriod
+ * @returns {string}
+ */
 function formatTimePeriod(timePeriod) {
   if (!timePeriod) return 'All Time';
   if (timePeriod === 'all') return 'All Time';
@@ -113,19 +147,4 @@ function formatTimePeriod(timePeriod) {
     return `${start.toLocaleDateString('da-DK')} to ${end.toLocaleDateString('da-DK')}`;
   }
   return 'Custom Range';
-}
-
-function getLocale(language) {
-  const localeMap = {
-    'da': 'da-DK',
-    'en': 'en-US',
-    'sv': 'sv-SE',
-    'no': 'nb-NO',
-    'de': 'de-DE',
-    'nl': 'nl-NL',
-    'fr': 'fr-FR',
-    'it': 'it-IT',
-    'fi': 'fi-FI'
-  };
-  return localeMap[language] || 'en-US';
 }
