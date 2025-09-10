@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,30 +26,33 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
   try {
     console.log('Starting template-based PDF generation...');
     console.log('Current working directory:', process.cwd());
-
+    
+    // Dynamically import chromium only in production
+    let chromium;
+    if (process.env.NODE_ENV === 'production') {
+      chromium = await import('chromium').then(mod => mod.default);
+    }
+    
     // Read the HTML template
     const templatePath = path.join(__dirname, 'reportTemplates', 'default.html');
     console.log('Template path:', templatePath);
-
+    
     if (!fs.existsSync(templatePath)) {
       throw new Error(`Template file not found at: ${templatePath}`);
     }
-
+    
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     console.log('Template loaded successfully, size:', templateSource.length);
-
+    
     const template = Handlebars.compile(templateSource);
-
-    // Process GPT analysis markdown to HTML
+    
     let gptAnalysisHtml = '';
     if (data.gptAnalysis) {
       gptAnalysisHtml = mdParser.render(data.gptAnalysis);
     }
-
-    // Get translations
+    
     const translations = getReportTranslations(language);
-
-    // Prepare template data
+    
     const templateData = {
       ...data,
       timePeriod: formatTimePeriod(timePeriod),
@@ -87,49 +90,46 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
       performanceAnalyticsTranslated: translations.performanceAnalytics,
       performanceMetricsTranslated: translations.performanceMetrics
     };
-
-    // Generate HTML
+    
     const html = template(templateData);
-
-    // --- Punkt 2 & 3: Launch Puppeteer with Render-compatible Chromium ---
-    const chromiumPath = puppeteer.executablePath();
-    console.log('Chromium executable path:', chromiumPath); // <-- Punkt 3: log pathen
-
+    
+    console.log('Launching puppeteer browser...');
     const browser = await puppeteer.launch({
       headless: true,
+      executablePath: process.env.NODE_ENV === 'production' ? chromium.path : undefined,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
-      ],
-      executablePath: chromiumPath // <-- Punkt 2: Brug Puppeteers egen Chromium
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-extensions'
+      ]
     });
-
+    
     console.log('Puppeteer browser launched successfully');
     const page = await browser.newPage();
-
-    await page.setContent(html, {
-      waitUntil: ['networkidle0', 'domcontentloaded']
-    });
-
+    
+    await page.setContent(html, { waitUntil: ['networkidle0', 'domcontentloaded'] });
+    
     console.log('Generating PDF...');
     const pdfBuffer = await page.pdf({
       format: 'A4',
-      margin: {
-        top: '20mm',
-        right: '20mm',
-        bottom: '20mm',
-        left: '20mm'
-      },
+      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
       printBackground: true,
       preferCSSPageSize: true
     });
-
+    
     console.log('PDF generated successfully, size:', pdfBuffer.length);
     await browser.close();
-
+    
     return pdfBuffer;
-
+    
   } catch (error) {
     console.error('Error generating template-based PDF:', error);
     throw error;
@@ -158,15 +158,15 @@ function formatTimePeriod(timePeriod) {
  */
 function getLocale(language) {
   const localeMap = {
-    da: 'da-DK',
-    en: 'en-US',
-    sv: 'sv-SE',
-    no: 'nb-NO',
-    de: 'de-DE',
-    nl: 'nl-NL',
-    fr: 'fr-FR',
-    it: 'it-IT',
-    fi: 'fi-FI'
+    'da': 'da-DK',
+    'en': 'en-US',
+    'sv': 'sv-SE',
+    'no': 'nb-NO',
+    'de': 'de-DE',
+    'nl': 'nl-NL',
+    'fr': 'fr-FR',
+    'it': 'it-IT',
+    'fi': 'fi-FI'
   };
   return localeMap[language] || 'en-US';
 }
