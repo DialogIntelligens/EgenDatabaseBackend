@@ -5,7 +5,6 @@ import Handlebars from 'handlebars';
 import MarkdownIt from 'markdown-it';
 import puppeteer from 'puppeteer';
 import { getReportTranslation, getReportTranslations } from './reportTranslations.js';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Markdown parser
@@ -107,13 +106,14 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
     
     // Launch puppeteer with production-friendly settings
     console.log('Launching puppeteer browser...');
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox'
-      ]
-    });
+   const browser = await puppeteer.launch({
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox'
+  ]
+});
+
     
     console.log('Puppeteer browser launched successfully');
     
