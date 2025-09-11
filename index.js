@@ -4236,6 +4236,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         return {
           ...user,
           total_messages: totalMessages,
+          total_conversations: totalConversations,
           monthly_messages: monthlyMessages, // Last 30 days
           average_monthly_messages: Math.round(averageMonthlyMessages),
           last_month_messages: lastMonthMessages,
@@ -4256,6 +4257,7 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         return {
           ...user,
           total_messages: 0,
+          total_conversations: 0,
           monthly_payment: parseFloat(user.monthly_payment) || 0,
           total_dashboard_opens: 0,
           unique_sessions: 0,
@@ -4289,6 +4291,109 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching revenue analytics:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Monthly Conversation Breakdown endpoint (Admin only)
+app.get('/monthly-conversation-breakdown', authenticateToken, async (req, res) => {
+  // Only full admins can access this data
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  }
+
+  try {
+    console.log('Monthly conversation breakdown request started');
+    
+    // Fetch all users with their monthly payments and chatbot IDs
+    const usersQuery = `
+      SELECT 
+        id,
+        username,
+        monthly_payment,
+        chatbot_ids
+      FROM users 
+      WHERE monthly_payment > 0
+      ORDER BY monthly_payment DESC
+    `;
+    
+    const usersResult = await pool.query(usersQuery);
+    const users = usersResult.rows;
+    console.log(`Found ${users.length} paying users`);
+
+    // For each user, get monthly conversation breakdown for the last 12 months
+    const usersWithMonthlyData = await Promise.all(users.map(async (user) => {
+      try {
+        console.log(`Processing monthly data for user: ${user.username} (ID: ${user.id})`);
+        
+        // Get the user's chatbot IDs
+        let chatbotIds = user.chatbot_ids || [];
+        if (typeof chatbotIds === 'string') {
+          try {
+            chatbotIds = JSON.parse(chatbotIds);
+          } catch (e) {
+            console.error('Error parsing chatbot_ids for user:', user.username, e);
+            chatbotIds = [];
+          }
+        }
+
+        if (chatbotIds.length === 0) {
+          console.log(`No chatbot IDs found for user: ${user.username}`);
+          return {
+            ...user,
+            monthly_conversations: {}
+          };
+        }
+
+        // Query to get monthly conversation counts for the last 12 months
+        const monthlyQuery = `
+          SELECT 
+            DATE_TRUNC('month', created_at) as month,
+            COUNT(*) as conversation_count
+          FROM conversations 
+          WHERE chatbot_id = ANY($1)
+            AND created_at >= NOW() - INTERVAL '12 months'
+          GROUP BY DATE_TRUNC('month', created_at)
+          ORDER BY month DESC
+        `;
+
+        const monthlyResult = await pool.query(monthlyQuery, [chatbotIds]);
+        console.log(`Monthly query result for ${user.username}:`, monthlyResult.rows);
+        
+        // Convert results to a more usable format
+        const monthlyConversations = {};
+        monthlyResult.rows.forEach(row => {
+          const date = new Date(row.month);
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1; // JavaScript months are 0-indexed
+          const monthKey = `${year}-${month.toString().padStart(2, '0')}`;
+          monthlyConversations[monthKey] = parseInt(row.conversation_count);
+        });
+
+        console.log(`Found monthly data for ${user.username}:`, Object.keys(monthlyConversations).length, 'months');
+
+        return {
+          ...user,
+          monthly_conversations: monthlyConversations
+        };
+
+      } catch (error) {
+        console.error(`Error processing monthly data for user ${user.username}:`, error);
+        return {
+          ...user,
+          monthly_conversations: {}
+        };
+      }
+    }));
+
+    console.log('Monthly conversation breakdown request completed');
+    res.json({
+      users: usersWithMonthlyData
+    });
+
+  } catch (error) {
+    console.error('Error fetching monthly conversation breakdown:', error);
     console.error('Error stack:', error.stack);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
