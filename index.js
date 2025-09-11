@@ -5320,16 +5320,18 @@ app.post('/api/magento/orders', async (req, res) => {
     }
 
     // Build Magento API URL
-    const baseUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
+    const apiBaseUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
     const queryParams = new URLSearchParams();
 
     if (Object.keys(searchCriteria).length > 0) {
       queryParams.append('searchCriteria', JSON.stringify(searchCriteria));
     }
 
-    const magentoUrl = `${baseUrl}?${queryParams.toString()}`;
+    const magentoUrl = `${apiBaseUrl}?${queryParams.toString()}`;
 
     console.log('Making Magento API request to:', magentoUrl.replace(magentoAccessToken, '[HIDDEN]'));
+    console.log('🔑 MAGENTO: OAuth credentials check - Consumer Key:', magentoConsumerKey?.substring(0, 10) + '...');
+    console.log('🔑 MAGENTO: OAuth credentials check - Access Token:', magentoAccessToken?.substring(0, 10) + '...');
 
     // Generate OAuth 1.0a HMAC-SHA256 signature
     const crypto = await import('crypto');
@@ -5337,27 +5339,47 @@ app.post('/api/magento/orders', async (req, res) => {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const nonce = crypto.randomBytes(16).toString('hex');
 
-    // Create signature base string for OAuth 1.0a
-    const method = 'GET';
-    const url = encodeURIComponent(magentoUrl);
-    const params = [
-      `oauth_consumer_key=${encodeURIComponent(magentoConsumerKey)}`,
-      `oauth_nonce=${encodeURIComponent(nonce)}`,
-      `oauth_signature_method=HMAC-SHA256`,
-      `oauth_timestamp=${encodeURIComponent(timestamp)}`,
-      `oauth_token=${encodeURIComponent(magentoAccessToken)}`,
-      `oauth_version=1.0`
-    ].join('&');
+    // Parse URL to separate base URL from query parameters
+    const urlObj = new URL(magentoUrl);
+    const oauthBaseUrl = `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`;
+    
+    // Create parameter object for OAuth signature (including query params)
+    const oauthParams = {
+      oauth_consumer_key: magentoConsumerKey,
+      oauth_nonce: nonce,
+      oauth_signature_method: 'HMAC-SHA256',
+      oauth_timestamp: timestamp,
+      oauth_token: magentoAccessToken,
+      oauth_version: '1.0'
+    };
 
-    const signatureBaseString = `${method}&${url}&${encodeURIComponent(params)}`;
+    // Add query parameters to OAuth params if they exist
+    for (const [key, value] of urlObj.searchParams.entries()) {
+      oauthParams[key] = value;
+    }
+
+    // Sort parameters alphabetically (OAuth 1.0a requirement)
+    const sortedParams = Object.keys(oauthParams)
+      .sort()
+      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(oauthParams[key])}`)
+      .join('&');
+
+    // Create signature base string
+    const method = 'GET';
+    const encodedBaseUrl = encodeURIComponent(oauthBaseUrl);
+    const encodedParams = encodeURIComponent(sortedParams);
+    const signatureBaseString = `${method}&${encodedBaseUrl}&${encodedParams}`;
+
+    // Create signing key
     const signingKey = `${encodeURIComponent(magentoConsumerSecret)}&${encodeURIComponent(magentoTokenSecret)}`;
 
+    // Generate signature
     const signature = crypto.createHmac('sha256', signingKey)
       .update(signatureBaseString)
       .digest('base64');
 
     // Build Authorization header
-    const authHeader = `OAuth oauth_consumer_key="${magentoConsumerKey}",oauth_token="${magentoAccessToken}",oauth_signature_method="HMAC-SHA256",oauth_timestamp="${timestamp}",oauth_nonce="${nonce}",oauth_version="1.0",oauth_signature="${encodeURIComponent(signature)}"`;
+    const authHeader = `OAuth oauth_consumer_key="${encodeURIComponent(magentoConsumerKey)}",oauth_token="${encodeURIComponent(magentoAccessToken)}",oauth_signature_method="HMAC-SHA256",oauth_timestamp="${timestamp}",oauth_nonce="${encodeURIComponent(nonce)}",oauth_version="1.0",oauth_signature="${encodeURIComponent(signature)}"`;
 
     // Make request to Magento API
     const response = await fetch(magentoUrl, {
@@ -5499,25 +5521,47 @@ app.get('/api/magento/orders/:order_id', async (req, res) => {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const nonce = crypto.randomBytes(16).toString('hex');
 
-    const method = 'GET';
-    const url = encodeURIComponent(magentoUrl);
-    const params = [
-      `oauth_consumer_key=${encodeURIComponent(magentoConsumerKey)}`,
-      `oauth_nonce=${encodeURIComponent(nonce)}`,
-      `oauth_signature_method=HMAC-SHA256`,
-      `oauth_timestamp=${encodeURIComponent(timestamp)}`,
-      `oauth_token=${encodeURIComponent(magentoAccessToken)}`,
-      `oauth_version=1.0`
-    ].join('&');
+    // Parse URL to separate base URL from query parameters
+    const urlObj = new URL(magentoUrl);
+    const oauthBaseUrl = `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`;
+    
+    // Create parameter object for OAuth signature (including query params)
+    const oauthParams = {
+      oauth_consumer_key: magentoConsumerKey,
+      oauth_nonce: nonce,
+      oauth_signature_method: 'HMAC-SHA256',
+      oauth_timestamp: timestamp,
+      oauth_token: magentoAccessToken,
+      oauth_version: '1.0'
+    };
 
-    const signatureBaseString = `${method}&${url}&${encodeURIComponent(params)}`;
+    // Add query parameters to OAuth params if they exist
+    for (const [key, value] of urlObj.searchParams.entries()) {
+      oauthParams[key] = value;
+    }
+
+    // Sort parameters alphabetically (OAuth 1.0a requirement)
+    const sortedParams = Object.keys(oauthParams)
+      .sort()
+      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(oauthParams[key])}`)
+      .join('&');
+
+    // Create signature base string
+    const method = 'GET';
+    const encodedBaseUrl = encodeURIComponent(oauthBaseUrl);
+    const encodedParams = encodeURIComponent(sortedParams);
+    const signatureBaseString = `${method}&${encodedBaseUrl}&${encodedParams}`;
+
+    // Create signing key
     const signingKey = `${encodeURIComponent(magentoConsumerSecret)}&${encodeURIComponent(magentoTokenSecret)}`;
 
+    // Generate signature
     const signature = crypto.createHmac('sha256', signingKey)
       .update(signatureBaseString)
       .digest('base64');
 
-    const authHeader = `OAuth oauth_consumer_key="${magentoConsumerKey}",oauth_token="${magentoAccessToken}",oauth_signature_method="HMAC-SHA256",oauth_timestamp="${timestamp}",oauth_nonce="${nonce}",oauth_version="1.0",oauth_signature="${encodeURIComponent(signature)}"`;
+    // Build Authorization header
+    const authHeader = `OAuth oauth_consumer_key="${encodeURIComponent(magentoConsumerKey)}",oauth_token="${encodeURIComponent(magentoAccessToken)}",oauth_signature_method="HMAC-SHA256",oauth_timestamp="${timestamp}",oauth_nonce="${encodeURIComponent(nonce)}",oauth_version="1.0",oauth_signature="${encodeURIComponent(signature)}"`;
 
     // Make request to Magento API
     const response = await fetch(magentoUrl, {
