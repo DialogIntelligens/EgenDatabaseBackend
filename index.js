@@ -16,6 +16,7 @@ import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerShopifyCredentialsRoutes, setShopifyCredentialsPool } from './shopifyCredentialsRoutes.js';
+import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 
 const { Pool } = pg;
 
@@ -5253,6 +5254,352 @@ app.get('/api/shopify/orders/:order_id', async (req, res) => {
 
 
 /* ================================
+   Magento Order Endpoints
+================================ */
+
+/*
+  POST /api/magento/orders
+  Body: {
+    magentoBaseUrl: string,
+    magentoConsumerKey: string,
+    magentoConsumerSecret: string,
+    magentoAccessToken: string,
+    magentoTokenSecret: string,
+    email?: string,
+    phone?: string,
+    order_number?: string,
+    name?: string
+  }
+  Proxies Magento API calls to search for orders
+*/
+app.post('/api/magento/orders', async (req, res) => {
+  try {
+    const {
+      magentoBaseUrl,
+      magentoConsumerKey,
+      magentoConsumerSecret,
+      magentoAccessToken,
+      magentoTokenSecret,
+      email,
+      phone,
+      order_number,
+      name
+    } = req.body;
+
+    if (!magentoBaseUrl || !magentoConsumerKey || !magentoConsumerSecret || !magentoAccessToken || !magentoTokenSecret) {
+      return res.status(400).json({
+        error: 'magentoBaseUrl, magentoConsumerKey, magentoConsumerSecret, magentoAccessToken, and magentoTokenSecret are required'
+      });
+    }
+
+    // Build search criteria based on provided fields
+    let searchCriteria = {};
+
+    if (order_number) {
+      // Search by increment_id (order number)
+      searchCriteria = {
+        filter_groups: [{
+          filters: [{
+            field: 'increment_id',
+            value: order_number,
+            condition_type: 'eq'
+          }]
+        }]
+      };
+    } else if (email) {
+      // Search by customer email
+      searchCriteria = {
+        filter_groups: [{
+          filters: [{
+            field: 'customer_email',
+            value: email,
+            condition_type: 'eq'
+          }]
+        }]
+      };
+    }
+
+    // Build Magento API URL
+    const baseUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
+    const queryParams = new URLSearchParams();
+
+    if (Object.keys(searchCriteria).length > 0) {
+      queryParams.append('searchCriteria', JSON.stringify(searchCriteria));
+    }
+
+    const magentoUrl = `${baseUrl}?${queryParams.toString()}`;
+
+    console.log('Making Magento API request to:', magentoUrl.replace(magentoAccessToken, '[HIDDEN]'));
+
+    // Generate OAuth 1.0a HMAC-SHA256 signature
+    const crypto = await import('crypto');
+
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const nonce = crypto.randomBytes(16).toString('hex');
+
+    // Create signature base string for OAuth 1.0a
+    const method = 'GET';
+    const url = encodeURIComponent(magentoUrl);
+    const params = [
+      `oauth_consumer_key=${encodeURIComponent(magentoConsumerKey)}`,
+      `oauth_nonce=${encodeURIComponent(nonce)}`,
+      `oauth_signature_method=HMAC-SHA256`,
+      `oauth_timestamp=${encodeURIComponent(timestamp)}`,
+      `oauth_token=${encodeURIComponent(magentoAccessToken)}`,
+      `oauth_version=1.0`
+    ].join('&');
+
+    const signatureBaseString = `${method}&${url}&${encodeURIComponent(params)}`;
+    const signingKey = `${encodeURIComponent(magentoConsumerSecret)}&${encodeURIComponent(magentoTokenSecret)}`;
+
+    const signature = crypto.createHmac('sha256', signingKey)
+      .update(signatureBaseString)
+      .digest('base64');
+
+    // Build Authorization header
+    const authHeader = `OAuth oauth_consumer_key="${magentoConsumerKey}",oauth_token="${magentoAccessToken}",oauth_signature_method="HMAC-SHA256",oauth_timestamp="${timestamp}",oauth_nonce="${nonce}",oauth_version="1.0",oauth_signature="${encodeURIComponent(signature)}"`;
+
+    // Make request to Magento API
+    const response = await fetch(magentoUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Magento API error:', response.status, errorText);
+      return res.status(response.status).json({
+        error: 'Magento API error',
+        details: errorText,
+        status: response.status
+      });
+    }
+
+    const data = await response.json();
+
+    // Transform Magento data to match expected format
+    const transformedOrders = data.items ? data.items.map(order => ({
+      id: order.entity_id,
+      order_number: order.increment_id,
+      magentoBaseUrl: magentoBaseUrl, // Include base URL for admin link generation
+      email: order.customer_email,
+      phone: order.billing_address?.telephone || order.customer?.telephone,
+      total_price: order.grand_total,
+      currency: order.base_currency_code || order.order_currency_code,
+      financial_status: order.status,
+      fulfillment_status: order.status === 'shipped' ? 'fulfilled' : 'unfulfilled',
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      customer_name: `${order.customer_firstname || ''} ${order.customer_lastname || ''}`.trim(),
+      tags: [],
+      line_items: order.items ? order.items.map(item => ({
+        id: item.item_id,
+        name: item.name,
+        quantity: item.qty_ordered,
+        price: item.base_price,
+        fulfillment_status: item.qty_shipped > 0 ? 'fulfilled' : 'unfulfilled',
+        sku: item.sku
+      })) : [],
+      billing_address: order.billing_address ? {
+        first_name: order.billing_address.firstname,
+        last_name: order.billing_address.lastname,
+        address1: order.billing_address.street?.[0] || '',
+        address2: order.billing_address.street?.[1] || '',
+        city: order.billing_address.city,
+        province: order.billing_address.region,
+        country: order.billing_address.country_id,
+        zip: order.billing_address.postcode,
+        phone: order.billing_address.telephone
+      } : null,
+      shipping_address: order.extension_attributes?.shipping_assignments?.[0]?.shipping?.address ? {
+        first_name: order.extension_attributes.shipping_assignments[0].shipping.address.firstname,
+        last_name: order.extension_attributes.shipping_assignments[0].shipping.address.lastname,
+        address1: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[0] || '',
+        address2: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[1] || '',
+        city: order.extension_attributes.shipping_assignments[0].shipping.address.city,
+        province: order.extension_attributes.shipping_assignments[0].shipping.address.region,
+        country: order.extension_attributes.shipping_assignments[0].shipping.address.country_id,
+        zip: order.extension_attributes.shipping_assignments[0].shipping.address.postcode,
+        phone: order.extension_attributes.shipping_assignments[0].shipping.address.telephone
+      } : null
+    })) : [];
+
+    // Filter orders based on additional criteria if needed
+    let filteredOrders = transformedOrders;
+
+    if (phone && filteredOrders.length > 0) {
+      console.log(`🔍 MAGENTO FILTER: Filtering ${filteredOrders.length} orders by phone: ${phone}`);
+      filteredOrders = filteredOrders.filter(order => {
+        const orderPhone = order.phone || order.billing_address?.phone || order.shipping_address?.phone;
+        if (!orderPhone) return false;
+
+        // Normalize phone numbers for comparison (remove all non-digits and compare last 8 digits)
+        const normalizedInputPhone = String(phone).replace(/\D/g, '');
+        const normalizedOrderPhone = String(orderPhone).replace(/\D/g, '');
+        const inputLast8 = normalizedInputPhone.slice(-8);
+        const orderLast8 = normalizedOrderPhone.slice(-8);
+
+        const matches = inputLast8 === orderLast8 && inputLast8.length === 8;
+        console.log(`${matches ? '✅' : '❌'} PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phone: "${orderPhone}" -> "${orderLast8}"`);
+        return matches;
+      });
+    }
+
+    console.log(`✅ MAGENTO: Found ${filteredOrders.length} orders matching criteria`);
+
+    res.json({
+      orders: filteredOrders,
+      total_count: filteredOrders.length,
+      filtered_from: transformedOrders.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching Magento orders:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+/*
+  GET /api/magento/orders/:order_id
+  Query params: magentoBaseUrl, magentoConsumerKey, magentoConsumerSecret, magentoAccessToken, magentoTokenSecret
+  Gets details for a specific order
+*/
+app.get('/api/magento/orders/:order_id', async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const {
+      magentoBaseUrl,
+      magentoConsumerKey,
+      magentoConsumerSecret,
+      magentoAccessToken,
+      magentoTokenSecret
+    } = req.query;
+
+    if (!magentoBaseUrl || !magentoConsumerKey || !magentoConsumerSecret || !magentoAccessToken || !magentoTokenSecret) {
+      return res.status(400).json({
+        error: 'magentoBaseUrl, magentoConsumerKey, magentoConsumerSecret, magentoAccessToken, and magentoTokenSecret are required'
+      });
+    }
+
+    // Build Magento API URL for specific order
+    const magentoUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders/${order_id}`;
+
+    console.log('Making Magento API request to:', magentoUrl.replace(magentoAccessToken, '[HIDDEN]'));
+
+    // Generate OAuth 1.0a HMAC-SHA256 signature (same logic as above)
+    const crypto = await import('crypto');
+
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const nonce = crypto.randomBytes(16).toString('hex');
+
+    const method = 'GET';
+    const url = encodeURIComponent(magentoUrl);
+    const params = [
+      `oauth_consumer_key=${encodeURIComponent(magentoConsumerKey)}`,
+      `oauth_nonce=${encodeURIComponent(nonce)}`,
+      `oauth_signature_method=HMAC-SHA256`,
+      `oauth_timestamp=${encodeURIComponent(timestamp)}`,
+      `oauth_token=${encodeURIComponent(magentoAccessToken)}`,
+      `oauth_version=1.0`
+    ].join('&');
+
+    const signatureBaseString = `${method}&${url}&${encodeURIComponent(params)}`;
+    const signingKey = `${encodeURIComponent(magentoConsumerSecret)}&${encodeURIComponent(magentoTokenSecret)}`;
+
+    const signature = crypto.createHmac('sha256', signingKey)
+      .update(signatureBaseString)
+      .digest('base64');
+
+    const authHeader = `OAuth oauth_consumer_key="${magentoConsumerKey}",oauth_token="${magentoAccessToken}",oauth_signature_method="HMAC-SHA256",oauth_timestamp="${timestamp}",oauth_nonce="${nonce}",oauth_version="1.0",oauth_signature="${encodeURIComponent(signature)}"`;
+
+    // Make request to Magento API
+    const response = await fetch(magentoUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Magento API error:', response.status, errorText);
+      return res.status(response.status).json({
+        error: 'Magento API error',
+        details: errorText,
+        status: response.status
+      });
+    }
+
+    const order = await response.json();
+
+    // Transform single order data
+    const transformedOrder = {
+      id: order.entity_id,
+      order_number: order.increment_id,
+      magentoBaseUrl: magentoBaseUrl, // Include base URL for admin link generation
+      email: order.customer_email,
+      phone: order.billing_address?.telephone || order.customer?.telephone,
+      total_price: order.grand_total,
+      currency: order.base_currency_code || order.order_currency_code,
+      financial_status: order.status,
+      fulfillment_status: order.status === 'shipped' ? 'fulfilled' : 'unfulfilled',
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      customer_name: `${order.customer_firstname || ''} ${order.customer_lastname || ''}`.trim(),
+      tags: [],
+      line_items: order.items ? order.items.map(item => ({
+        id: item.item_id,
+        name: item.name,
+        quantity: item.qty_ordered,
+        price: item.base_price,
+        fulfillment_status: item.qty_shipped > 0 ? 'fulfilled' : 'unfulfilled',
+        sku: item.sku
+      })) : [],
+      billing_address: order.billing_address ? {
+        first_name: order.billing_address.firstname,
+        last_name: order.billing_address.lastname,
+        address1: order.billing_address.street?.[0] || '',
+        address2: order.billing_address.street?.[1] || '',
+        city: order.billing_address.city,
+        province: order.billing_address.region,
+        country: order.billing_address.country_id,
+        zip: order.billing_address.postcode,
+        phone: order.billing_address.telephone
+      } : null,
+      shipping_address: order.extension_attributes?.shipping_assignments?.[0]?.shipping?.address ? {
+        first_name: order.extension_attributes.shipping_assignments[0].shipping.address.firstname,
+        last_name: order.extension_attributes.shipping_assignments[0].shipping.address.lastname,
+        address1: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[0] || '',
+        address2: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[1] || '',
+        city: order.extension_attributes.shipping_assignments[0].shipping.address.city,
+        province: order.extension_attributes.shipping_assignments[0].shipping.address.region,
+        country: order.extension_attributes.shipping_assignments[0].shipping.address.country_id,
+        zip: order.extension_attributes.shipping_assignments[0].shipping.address.postcode,
+        phone: order.extension_attributes.shipping_assignments[0].shipping.address.telephone
+      } : null
+    };
+
+    res.json(transformedOrder);
+
+  } catch (error) {
+    console.error('Error fetching Magento order:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+/* ================================
    Chatbot Duplication Endpoint
 ================================ */
 
@@ -5365,8 +5712,37 @@ app.post('/duplicate-chatbot-settings', authenticateToken, async (req, res) => {
       );
       console.log(`Duplicated Shopify credentials`);
     }
-    
-    // 6. Duplicate prompt_overrides
+
+    // 6. Duplicate magento_credentials
+    const magentoCredentials = await client.query(
+      `SELECT magento_consumer_key, magento_consumer_secret, magento_base_url,
+              magento_access_token, magento_token_secret, magento_enabled
+       FROM magento_credentials WHERE chatbot_id = $1`,
+      [source_chatbot_id]
+    );
+
+    if (magentoCredentials.rows.length > 0) {
+      const cred = magentoCredentials.rows[0];
+      await client.query(
+        `INSERT INTO magento_credentials
+         (chatbot_id, magento_consumer_key, magento_consumer_secret, magento_base_url,
+          magento_access_token, magento_token_secret, magento_enabled)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (chatbot_id) DO UPDATE SET
+           magento_consumer_key = $2,
+           magento_consumer_secret = $3,
+           magento_base_url = $4,
+           magento_access_token = $5,
+           magento_token_secret = $6,
+           magento_enabled = $7,
+           updated_at = CURRENT_TIMESTAMP`,
+        [target_chatbot_id, cred.magento_consumer_key, cred.magento_consumer_secret,
+         cred.magento_base_url, cred.magento_access_token, cred.magento_token_secret, cred.magento_enabled]
+      );
+      console.log(`Duplicated Magento credentials`);
+    }
+
+    // 7. Duplicate prompt_overrides
     const promptOverrides = await client.query(
       'SELECT flow_key, section_key, action, content FROM prompt_overrides WHERE chatbot_id = $1',
       [source_chatbot_id]
@@ -5412,6 +5788,7 @@ app.post('/duplicate-chatbot-settings', authenticateToken, async (req, res) => {
       api_keys: apiKeys.rows.length,
       language_settings: languageSettings.rows.length,
       shopify_credentials: shopifyCredentials.rows.length,
+      magento_credentials: magentoCredentials.rows.length,
       prompt_overrides: promptOverrides.rows.length,
       gdpr_settings: gdprSettings.rows.length
     };
@@ -5559,6 +5936,8 @@ registerPopupMessageRoutes(app, pool, authenticateToken);
 registerSplitTestRoutes(app, pool, authenticateToken);
 setShopifyCredentialsPool(pool);
 registerShopifyCredentialsRoutes(app);
+setMagentoCredentialsPool(pool);
+registerMagentoCredentialsRoutes(app);
 
 /* ================================
    Error Logging Endpoints
