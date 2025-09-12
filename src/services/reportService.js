@@ -1,6 +1,7 @@
 import { generateGPTAnalysis } from '../../gptAnalysis.js';
 import { generateStatisticsReportTemplate } from '../../reportGeneratorTemplate.js';
-import { transformStatisticsForPDF, processConversationsInChunks, analyzeConversationsInChunks } from '../utils/mainUtils.js';
+import { processConversationsInChunks, analyzeConversationsInChunks } from '../utils/mainUtils.js';
+import { transformStatisticsForPDF } from '../utils/transformUtils.js';
 
 /**
  * Generate a PDF report with optional text analysis and GPT analysis
@@ -13,7 +14,6 @@ import { transformStatisticsForPDF, processConversationsInChunks, analyzeConvers
  * @param {string} language - Language for the report
  * @param {string} selectedEmne - Optional topic filter
  * @param {number} userId - User ID for database queries
- * @param {Object} pool - Database connection pool
  * @returns {Buffer} PDF buffer
  */
 export async function generateReport(
@@ -25,8 +25,7 @@ export async function generateReport(
   maxConversations,
   language,
   selectedEmne,
-  userId,
-  pool
+  userId
 ) {
   try {
     console.log('Starting modular report generation...');
@@ -88,7 +87,7 @@ export async function generateReport(
       console.log("Fetching conversation data for text analysis using streaming/chunked processing...");
 
       // Implement streaming/chunked processing for conversation data
-      const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, pool);
+      const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date);
       console.log(`Found ${result.rows.length} conversations with scores for analysis`);
 
       // Validate and log a sample conversation for debugging
@@ -206,7 +205,7 @@ export async function generateReport(
           try {
             // Use chunked processing for GPT analysis conversations too
             const chunkSize = Math.min(maxConversations, 200); // Process in smaller chunks for GPT
-            const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, pool, chunkSize);
+            const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, chunkSize);
 
             // Limit to maxConversations after chunked loading
             const limitedResults = result.rows.slice(0, maxConversations);

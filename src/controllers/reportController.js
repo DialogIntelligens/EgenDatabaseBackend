@@ -1,4 +1,4 @@
-import { generateReport } from '../services/mainService.js';
+import { generateReport } from '../services/reportService.js';
 
 /**
  * Generate report controller - handles the /generate-report endpoint
@@ -44,8 +44,7 @@ export async function generateReportController(req, res) {
       maxConversations,
       language,
       selectedEmne,
-      req.user.userId,
-      req.pool // Assuming pool is attached to req or we need to pass it differently
+      req.user.userId
     );
 
     // Set appropriate headers for PDF download

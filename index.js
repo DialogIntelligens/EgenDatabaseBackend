@@ -17,7 +17,8 @@ import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerShopifyCredentialsRoutes, setShopifyCredentialsPool } from './shopifyCredentialsRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
-import { registerMainRoutes } from './src/routes/mainRoutes.js';
+import { registerReportRoutes } from './src/routes/reportRoutes.js';
+import { getEmneAndScore } from './src/utils/mainUtils.js';
 
 const { Pool } = pg;
 
@@ -5328,7 +5329,7 @@ app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
 registerPopupMessageRoutes(app, pool, authenticateToken);
 registerSplitTestRoutes(app, pool, authenticateToken);
-registerMainRoutes(app, pool, authenticateToken);
+registerReportRoutes(app, authenticateToken);
 setShopifyCredentialsPool(pool);
 registerShopifyCredentialsRoutes(app);
 setMagentoCredentialsPool(pool);
@@ -5916,7 +5917,9 @@ const sendMessage = async (question = null) => {
     (async () => {
       try {
         const { emne, score, lacking_info, fallback } = await getEmneAndScore(
-          conversationText
+          conversationText,
+          null, // userId - not available in this context
+          null, // chatbotId - not available in this context
         );
 
         // Save conversation to database
@@ -6931,4 +6934,7 @@ cron.schedule('0 0 * * *', async () => {
 });
 
 console.log('Agent typing status cleanup scheduled to run daily at midnight');
+
+// Export pool for use in utility modules
+export { pool };
 
