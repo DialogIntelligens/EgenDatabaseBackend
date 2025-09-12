@@ -1,14 +1,14 @@
 import { analyzeConversations } from '../../textAnalysis.js';
-import { pool } from '../../index.js';
 
 /**
  * Get emne and score analysis for conversation text
  * @param {string} conversationText - The conversation text to analyze
  * @param {number} userId - User ID for settings
  * @param {number} chatbotId - Chatbot ID for prompt templates
+ * @param {Object} pool - Database connection pool
  * @returns {Object} Analysis results with emne, score, etc.
  */
-export const getEmneAndScore = async (conversationText, userId, chatbotId) => {
+export const getEmneAndScore = async (conversationText, userId, chatbotId, pool) => {
   try {
     // Use the standard statistics API endpoint
     const statisticsAPI = "https://den-utrolige-snebold.onrender.com/api/v1/prediction/53e9c446-b2a3-41ca-8a01-8d48c05fcc7a";
@@ -108,10 +108,11 @@ export const getEmneAndScore = async (conversationText, userId, chatbotId) => {
  * @param {string} selectedEmne - Optional topic filter
  * @param {string} start_date - Optional start date filter
  * @param {string} end_date - Optional end date filter
+ * @param {Object} pool - Database connection pool
  * @param {number} chunkSize - Size of each chunk (default: 500)
  * @returns {Object} Result object with rows array containing all conversations
  */
-export async function processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, chunkSize = 500) {
+export async function processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, pool, chunkSize = 500) {
   let offset = 0;
   let allResults = [];
   let totalProcessed = 0;

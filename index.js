@@ -2191,7 +2191,7 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
       const batchPromises = batch.map(async (conversation) => {
         try {
           const conversationText = conversation.conversation_data;
-          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id);
+          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id, pool);
 
           await pool.query(
             `UPDATE conversations
@@ -5920,6 +5920,7 @@ const sendMessage = async (question = null) => {
           conversationText,
           null, // userId - not available in this context
           null, // chatbotId - not available in this context
+          pool
         );
 
         // Save conversation to database

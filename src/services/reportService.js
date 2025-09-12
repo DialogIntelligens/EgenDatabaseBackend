@@ -2,6 +2,7 @@ import { generateGPTAnalysis } from '../../gptAnalysis.js';
 import { generateStatisticsReportTemplate } from '../../reportGeneratorTemplate.js';
 import { processConversationsInChunks, analyzeConversationsInChunks } from '../utils/mainUtils.js';
 import { transformStatisticsForPDF } from '../utils/transformUtils.js';
+import { pool } from '../../index.js';
 
 /**
  * Generate a PDF report with optional text analysis and GPT analysis
@@ -87,7 +88,7 @@ export async function generateReport(
       console.log("Fetching conversation data for text analysis using streaming/chunked processing...");
 
       // Implement streaming/chunked processing for conversation data
-      const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date);
+      const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, pool);
       console.log(`Found ${result.rows.length} conversations with scores for analysis`);
 
       // Validate and log a sample conversation for debugging
@@ -205,7 +206,7 @@ export async function generateReport(
           try {
             // Use chunked processing for GPT analysis conversations too
             const chunkSize = Math.min(maxConversations, 200); // Process in smaller chunks for GPT
-            const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, chunkSize);
+            const result = await processConversationsInChunks(chatbotIds, selectedEmne, start_date, end_date, pool, chunkSize);
 
             // Limit to maxConversations after chunked loading
             const limitedResults = result.rows.slice(0, maxConversations);
