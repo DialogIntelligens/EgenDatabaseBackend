@@ -5397,46 +5397,30 @@ app.post('/api/magento/orders', async (req, res) => {
       });
     }
 
-    // Build search criteria based on provided fields
-    let searchCriteria = {};
+    // Build Magento API URL with proper query format (like Postman)
+    const apiBaseUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
+    let magentoUrl = apiBaseUrl;
 
     if (order_number) {
-      // Search by increment_id (order number)
-      searchCriteria = {
-        filter_groups: [{
-          filters: [{
-            field: 'increment_id',
-            value: order_number,
-            condition_type: 'eq'
-          }]
-        }]
-      };
+      // Build URL like: /rest/V1/orders?searchCriteria[filter_groups][0][filters][0][field]=increment_id&...
+      const queryParams = new URLSearchParams();
+      queryParams.append('searchCriteria[filter_groups][0][filters][0][field]', 'increment_id');
+      queryParams.append('searchCriteria[filter_groups][0][filters][0][value]', order_number);
+      queryParams.append('searchCriteria[filter_groups][0][filters][0][condition_type]', 'eq');
+      magentoUrl = `${apiBaseUrl}?${queryParams.toString()}`;
     } else if (email) {
-      // Search by customer email
-      searchCriteria = {
-        filter_groups: [{
-          filters: [{
-            field: 'customer_email',
-            value: email,
-            condition_type: 'eq'
-          }]
-        }]
-      };
+      // Build URL for email search
+      const queryParams = new URLSearchParams();
+      queryParams.append('searchCriteria[filter_groups][0][filters][0][field]', 'customer_email');
+      queryParams.append('searchCriteria[filter_groups][0][filters][0][value]', email);
+      queryParams.append('searchCriteria[filter_groups][0][filters][0][condition_type]', 'eq');
+      magentoUrl = `${apiBaseUrl}?${queryParams.toString()}`;
     }
-
-    // Build Magento API URL
-    const apiBaseUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
-    const queryParams = new URLSearchParams();
-
-    if (Object.keys(searchCriteria).length > 0) {
-      queryParams.append('searchCriteria', JSON.stringify(searchCriteria));
-    }
-
-    const magentoUrl = `${apiBaseUrl}?${queryParams.toString()}`;
 
     console.log('Making Magento API request to:', magentoUrl.replace(magentoAccessToken, '[HIDDEN]'));
     console.log('🔑 MAGENTO: OAuth credentials check - Consumer Key:', magentoConsumerKey?.substring(0, 10) + '...');
     console.log('🔑 MAGENTO: OAuth credentials check - Access Token:', magentoAccessToken?.substring(0, 10) + '...');
+    console.log('🔑 MAGENTO: Final URL being called:', magentoUrl);
 
     // Generate OAuth 1.0a HMAC-SHA256 signature
     const crypto = await import('crypto');
@@ -5509,51 +5493,67 @@ app.post('/api/magento/orders', async (req, res) => {
     const data = await response.json();
 
     // Transform Magento data to match expected format
-    const transformedOrders = data.items ? data.items.map(order => ({
-      id: order.entity_id,
-      order_number: order.increment_id,
-      magentoBaseUrl: magentoBaseUrl, // Include base URL for admin link generation
-      email: order.customer_email,
-      phone: order.billing_address?.telephone || order.customer?.telephone,
-      total_price: order.grand_total,
-      currency: order.base_currency_code || order.order_currency_code,
-      financial_status: order.status,
-      fulfillment_status: order.status === 'shipped' ? 'fulfilled' : 'unfulfilled',
-      created_at: order.created_at,
-      updated_at: order.updated_at,
-      customer_name: `${order.customer_firstname || ''} ${order.customer_lastname || ''}`.trim(),
-      tags: [],
-      line_items: order.items ? order.items.map(item => ({
-        id: item.item_id,
-        name: item.name,
-        quantity: item.qty_ordered,
-        price: item.base_price,
-        fulfillment_status: item.qty_shipped > 0 ? 'fulfilled' : 'unfulfilled',
-        sku: item.sku
-      })) : [],
-      billing_address: order.billing_address ? {
-        first_name: order.billing_address.firstname,
-        last_name: order.billing_address.lastname,
-        address1: order.billing_address.street?.[0] || '',
-        address2: order.billing_address.street?.[1] || '',
-        city: order.billing_address.city,
-        province: order.billing_address.region,
-        country: order.billing_address.country_id,
-        zip: order.billing_address.postcode,
-        phone: order.billing_address.telephone
-      } : null,
-      shipping_address: order.extension_attributes?.shipping_assignments?.[0]?.shipping?.address ? {
-        first_name: order.extension_attributes.shipping_assignments[0].shipping.address.firstname,
-        last_name: order.extension_attributes.shipping_assignments[0].shipping.address.lastname,
-        address1: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[0] || '',
-        address2: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[1] || '',
-        city: order.extension_attributes.shipping_assignments[0].shipping.address.city,
-        province: order.extension_attributes.shipping_assignments[0].shipping.address.region,
-        country: order.extension_attributes.shipping_assignments[0].shipping.address.country_id,
-        zip: order.extension_attributes.shipping_assignments[0].shipping.address.postcode,
-        phone: order.extension_attributes.shipping_assignments[0].shipping.address.telephone
-      } : null
-    })) : [];
+    const transformedOrders = data.items ? data.items.map(order => {
+      // Generate Magento tracking URL following the exact PHP approach
+      const email = order.customer_email ? order.customer_email.toLowerCase().trim() : '';
+      const hash = email ? crypto.createHash('md5').update(email).digest('hex') : '';
+      const incrementId = order.increment_id;
+      
+      // Build tracking URL: baseUrl/track-order?o=incrementId&e=hash
+      const baseUrl = magentoBaseUrl.replace(/\/$/, ''); // rtrim equivalent
+      const trackingUrl = hash 
+        ? `${baseUrl}/track-order?o=${incrementId}&e=${hash}`
+        : null;
+
+      console.log('🔗 MAGENTO: Generated tracking URL for order', incrementId, ':', trackingUrl);
+
+      return {
+        id: order.entity_id,
+        order_number: order.increment_id,
+        magentoBaseUrl: magentoBaseUrl, // Include base URL for admin link generation
+        email: order.customer_email,
+        trackingUrl: trackingUrl, // Add the generated tracking URL
+        phone: order.billing_address?.telephone || order.customer?.telephone,
+        total_price: order.grand_total,
+        currency: order.base_currency_code || order.order_currency_code,
+        financial_status: order.status,
+        fulfillment_status: order.status === 'shipped' ? 'fulfilled' : 'unfulfilled',
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        customer_name: `${order.customer_firstname || ''} ${order.customer_lastname || ''}`.trim(),
+        tags: [],
+        line_items: order.items ? order.items.map(item => ({
+          id: item.item_id,
+          name: item.name,
+          quantity: item.qty_ordered,
+          price: item.base_price,
+          fulfillment_status: item.qty_shipped > 0 ? 'fulfilled' : 'unfulfilled',
+          sku: item.sku
+        })) : [],
+        billing_address: order.billing_address ? {
+          first_name: order.billing_address.firstname,
+          last_name: order.billing_address.lastname,
+          address1: order.billing_address.street?.[0] || '',
+          address2: order.billing_address.street?.[1] || '',
+          city: order.billing_address.city,
+          province: order.billing_address.region,
+          country: order.billing_address.country_id,
+          zip: order.billing_address.postcode,
+          phone: order.billing_address.telephone
+        } : null,
+        shipping_address: order.extension_attributes?.shipping_assignments?.[0]?.shipping?.address ? {
+          first_name: order.extension_attributes.shipping_assignments[0].shipping.address.firstname,
+          last_name: order.extension_attributes.shipping_assignments[0].shipping.address.lastname,
+          address1: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[0] || '',
+          address2: order.extension_attributes.shipping_assignments[0].shipping.address.street?.[1] || '',
+          city: order.extension_attributes.shipping_assignments[0].shipping.address.city,
+          province: order.extension_attributes.shipping_assignments[0].shipping.address.region,
+          country: order.extension_attributes.shipping_assignments[0].shipping.address.country_id,
+          zip: order.extension_attributes.shipping_assignments[0].shipping.address.postcode,
+          phone: order.extension_attributes.shipping_assignments[0].shipping.address.telephone
+        } : null
+      };
+    }) : [];
 
     // Filter orders based on additional criteria if needed
     let filteredOrders = transformedOrders;
@@ -5691,11 +5691,25 @@ app.get('/api/magento/orders/:order_id', async (req, res) => {
     const order = await response.json();
 
     // Transform single order data
+    // Generate Magento tracking URL following the exact PHP approach
+    const email = order.customer_email ? order.customer_email.toLowerCase().trim() : '';
+    const hash = email ? crypto.createHash('md5').update(email).digest('hex') : '';
+    const incrementId = order.increment_id;
+    
+    // Build tracking URL: baseUrl/track-order?o=incrementId&e=hash
+    const baseUrl = magentoBaseUrl.replace(/\/$/, ''); // rtrim equivalent
+    const trackingUrl = hash 
+      ? `${baseUrl}/track-order?o=${incrementId}&e=${hash}`
+      : null;
+
+    console.log('🔗 MAGENTO: Generated tracking URL for single order', incrementId, ':', trackingUrl);
+
     const transformedOrder = {
       id: order.entity_id,
       order_number: order.increment_id,
       magentoBaseUrl: magentoBaseUrl, // Include base URL for admin link generation
       email: order.customer_email,
+      trackingUrl: trackingUrl, // Add the generated tracking URL
       phone: order.billing_address?.telephone || order.customer?.telephone,
       total_price: order.grand_total,
       currency: order.base_currency_code || order.order_currency_code,
