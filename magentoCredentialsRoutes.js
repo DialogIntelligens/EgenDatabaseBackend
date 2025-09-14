@@ -157,7 +157,7 @@ export function registerMagentoCredentialsRoutes(app) {
         }
     });
 
-    // Get Magento settings for chatbot script (public endpoint for integrations)
+    // Get Magento settings for chatbot script (public endpoint for integrations - SECURE VERSION)
     app.get('/api/magento-settings/:chatbotId', async (req, res) => {
         try {
             const { chatbotId } = req.params;
@@ -167,8 +167,7 @@ export function registerMagentoCredentialsRoutes(app) {
             }
 
             const query = `
-                SELECT magento_enabled, magento_base_url, magento_access_token,
-                       magento_consumer_key, magento_consumer_secret, magento_token_secret
+                SELECT magento_enabled, magento_base_url
                 FROM magento_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -182,10 +181,6 @@ export function registerMagentoCredentialsRoutes(app) {
                 return res.json({
                     magentoEnabled: false,
                     magentoBaseUrl: '',
-                    magentoAccessToken: '',
-                    magentoConsumerKey: '',
-                    magentoConsumerSecret: '',
-                    magentoTokenSecret: '',
                     magentoApiVersion: 'V1',
                     orderTrackingUseProxy: true,
                     orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',
@@ -207,13 +202,11 @@ export function registerMagentoCredentialsRoutes(app) {
                 }
             }
 
+            // SECURITY: Only return non-sensitive configuration data
             res.json({
                 magentoEnabled: row.magento_enabled === true, // Default to false if not set
-                magentoBaseUrl: row.magento_base_url || '',
-                magentoAccessToken: row.magento_access_token || '',
-                magentoConsumerKey: row.magento_consumer_key || '',
-                magentoConsumerSecret: row.magento_consumer_secret || '',
-                magentoTokenSecret: row.magento_token_secret || '',
+                magentoBaseUrl: row.magento_base_url || '', // Base URL is not sensitive (it's public)
+                // REMOVED: magentoAccessToken, magentoConsumerKey, magentoConsumerSecret, magentoTokenSecret (all sensitive!)
                 magentoApiVersion: 'V1',
                 orderTrackingUseProxy: true,
                 orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',

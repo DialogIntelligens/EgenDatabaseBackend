@@ -4317,17 +4317,44 @@ app.post('/api/shopify/orders', async (req, res) => {
       email,
       phone,
       order_number,
-      name
+      name,
+      chatbot_id // Add chatbot_id to fetch credentials from database
     } = req.body;
 
-    if (!shopifyStore || !shopifyAccessToken) {
+    let finalShopifyStore = shopifyStore;
+    let finalShopifyAccessToken = shopifyAccessToken;
+
+    // If credentials not provided in request, try to fetch from database using chatbot_id
+    if ((!shopifyStore || !shopifyAccessToken) && chatbot_id) {
+      console.log('🔑 SHOPIFY: Credentials not provided in request, fetching from database for chatbot:', chatbot_id);
+      
+      try {
+        const credentialsResult = await pool.query(
+          'SELECT shopify_store, shopify_access_token FROM shopify_credentials WHERE chatbot_id = $1',
+          [chatbot_id]
+        );
+        
+        if (credentialsResult.rows.length > 0) {
+          const dbCredentials = credentialsResult.rows[0];
+          finalShopifyStore = dbCredentials.shopify_store;
+          finalShopifyAccessToken = dbCredentials.shopify_access_token;
+          console.log('🔑 SHOPIFY: Successfully fetched credentials from database for store:', finalShopifyStore);
+        } else {
+          console.log('🔑 SHOPIFY: No credentials found in database for chatbot:', chatbot_id);
+        }
+      } catch (dbError) {
+        console.error('🔑 SHOPIFY: Error fetching credentials from database:', dbError);
+      }
+    }
+
+    if (!finalShopifyStore || !finalShopifyAccessToken) {
       return res.status(400).json({ 
-        error: 'shopifyStore and shopifyAccessToken are required' 
+        error: 'Shopify credentials not available. Either provide shopifyStore and shopifyAccessToken in request, or ensure chatbot_id has credentials configured in database.' 
       });
     }
 
-    // Build Shopify API URL
-    const baseUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders.json`;
+    // Build Shopify API URL using final credentials
+    const baseUrl = `https://${finalShopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders.json`;
     
     // Build query parameters
     const queryParams = new URLSearchParams();
@@ -4341,13 +4368,13 @@ app.post('/api/shopify/orders', async (req, res) => {
     
     const shopifyUrl = `${baseUrl}?${queryParams.toString()}`;
 
-    console.log('Making Shopify API request to:', shopifyUrl.replace(shopifyAccessToken, '[HIDDEN]'));
+    console.log('Making Shopify API request to:', shopifyUrl.replace(finalShopifyAccessToken, '[HIDDEN]'));
 
-    // Make request to Shopify API
+    // Make request to Shopify API using final credentials
     const response = await fetch(shopifyUrl, {
       method: 'GET',
       headers: {
-        'X-Shopify-Access-Token': shopifyAccessToken,
+        'X-Shopify-Access-Token': finalShopifyAccessToken,
         'Content-Type': 'application/json',
         'User-Agent': 'DialogIntelligens-Chatbot/1.0'
       }
@@ -4455,11 +4482,11 @@ app.post('/api/shopify/orders', async (req, res) => {
       // Fetch fulfillments for this order
       let fulfillments = [];
       try {
-        const fulfillmentUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order.id}/fulfillments.json`;
+        const fulfillmentUrl = `https://${finalShopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order.id}/fulfillments.json`;
         const fulfillmentResponse = await fetch(fulfillmentUrl, {
           method: 'GET',
           headers: {
-            'X-Shopify-Access-Token': shopifyAccessToken,
+            'X-Shopify-Access-Token': finalShopifyAccessToken,
             'Content-Type': 'application/json',
             'User-Agent': 'DialogIntelligens-Chatbot/1.0'
           }
@@ -4634,17 +4661,50 @@ app.post('/api/magento/orders', async (req, res) => {
       email,
       phone,
       order_number,
-      name
+      name,
+      chatbot_id // Add chatbot_id to fetch credentials from database
     } = req.body;
 
-    if (!magentoBaseUrl || !magentoConsumerKey || !magentoConsumerSecret || !magentoAccessToken || !magentoTokenSecret) {
+    let finalMagentoBaseUrl = magentoBaseUrl;
+    let finalMagentoConsumerKey = magentoConsumerKey;
+    let finalMagentoConsumerSecret = magentoConsumerSecret;
+    let finalMagentoAccessToken = magentoAccessToken;
+    let finalMagentoTokenSecret = magentoTokenSecret;
+
+    // If credentials not provided in request, try to fetch from database using chatbot_id
+    if ((!magentoBaseUrl || !magentoConsumerKey || !magentoConsumerSecret || !magentoAccessToken || !magentoTokenSecret) && chatbot_id) {
+      console.log('🔑 MAGENTO: Credentials not provided in request, fetching from database for chatbot:', chatbot_id);
+      
+      try {
+        const credentialsResult = await pool.query(
+          'SELECT magento_base_url, magento_consumer_key, magento_consumer_secret, magento_access_token, magento_token_secret FROM magento_credentials WHERE chatbot_id = $1',
+          [chatbot_id]
+        );
+        
+        if (credentialsResult.rows.length > 0) {
+          const dbCredentials = credentialsResult.rows[0];
+          finalMagentoBaseUrl = dbCredentials.magento_base_url;
+          finalMagentoConsumerKey = dbCredentials.magento_consumer_key;
+          finalMagentoConsumerSecret = dbCredentials.magento_consumer_secret;
+          finalMagentoAccessToken = dbCredentials.magento_access_token;
+          finalMagentoTokenSecret = dbCredentials.magento_token_secret;
+          console.log('🔑 MAGENTO: Successfully fetched credentials from database for base URL:', finalMagentoBaseUrl);
+        } else {
+          console.log('🔑 MAGENTO: No credentials found in database for chatbot:', chatbot_id);
+        }
+      } catch (dbError) {
+        console.error('🔑 MAGENTO: Error fetching credentials from database:', dbError);
+      }
+    }
+
+    if (!finalMagentoBaseUrl || !finalMagentoConsumerKey || !finalMagentoConsumerSecret || !finalMagentoAccessToken || !finalMagentoTokenSecret) {
       return res.status(400).json({
-        error: 'magentoBaseUrl, magentoConsumerKey, magentoConsumerSecret, magentoAccessToken, and magentoTokenSecret are required'
+        error: 'Magento credentials not available. Either provide all Magento credentials in request, or ensure chatbot_id has credentials configured in database.'
       });
     }
 
-    // Build Magento API URL with proper query format (like Postman)
-    const apiBaseUrl = `${magentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
+    // Build Magento API URL with proper query format using final credentials
+    const apiBaseUrl = `${finalMagentoBaseUrl.replace(/\/$/, '')}/rest/V1/orders`;
     let magentoUrl = apiBaseUrl;
 
     if (order_number) {
@@ -4663,12 +4723,12 @@ app.post('/api/magento/orders', async (req, res) => {
       magentoUrl = `${apiBaseUrl}?${queryParams.toString()}`;
     }
 
-    console.log('Making Magento API request to:', magentoUrl.replace(magentoAccessToken, '[HIDDEN]'));
-    console.log('🔑 MAGENTO: OAuth credentials check - Consumer Key:', magentoConsumerKey?.substring(0, 10) + '...');
-    console.log('🔑 MAGENTO: OAuth credentials check - Access Token:', magentoAccessToken?.substring(0, 10) + '...');
+    console.log('Making Magento API request to:', magentoUrl.replace(finalMagentoAccessToken, '[HIDDEN]'));
+    console.log('🔑 MAGENTO: OAuth credentials check - Consumer Key:', finalMagentoConsumerKey?.substring(0, 10) + '...');
+    console.log('🔑 MAGENTO: OAuth credentials check - Access Token:', finalMagentoAccessToken?.substring(0, 10) + '...');
     console.log('🔑 MAGENTO: Final URL being called:', magentoUrl);
 
-    // Generate OAuth 1.0a HMAC-SHA256 signature
+    // Generate OAuth 1.0a HMAC-SHA256 signature using final credentials
     const crypto = await import('crypto');
 
     const timestamp = Math.floor(Date.now() / 1000).toString();
@@ -4680,11 +4740,11 @@ app.post('/api/magento/orders', async (req, res) => {
     
     // Create parameter object for OAuth signature (including query params)
     const oauthParams = {
-      oauth_consumer_key: magentoConsumerKey,
+      oauth_consumer_key: finalMagentoConsumerKey,
       oauth_nonce: nonce,
       oauth_signature_method: 'HMAC-SHA256',
       oauth_timestamp: timestamp,
-      oauth_token: magentoAccessToken,
+      oauth_token: finalMagentoAccessToken,
       oauth_version: '1.0'
     };
 
@@ -4745,8 +4805,8 @@ app.post('/api/magento/orders', async (req, res) => {
       const hash = email ? crypto.createHash('md5').update(email).digest('hex') : '';
       const incrementId = order.increment_id;
       
-      // Build tracking URL: baseUrl/track-order?o=incrementId&e=hash
-      const baseUrl = magentoBaseUrl.replace(/\/$/, ''); // rtrim equivalent
+      // Build tracking URL: baseUrl/track-order?o=incrementId&e=hash using final credentials
+      const baseUrl = finalMagentoBaseUrl.replace(/\/$/, ''); // rtrim equivalent
       const trackingUrl = hash 
         ? `${baseUrl}/track-order?o=${incrementId}&e=${hash}`
         : null;
