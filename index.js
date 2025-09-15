@@ -2138,25 +2138,52 @@ app.patch('/conversation/:id/flag', authenticateToken, async (req, res) => {
 app.patch('/conversation/:id/subject', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { emne } = req.body;
-  
+
   if (!emne || typeof emne !== 'string' || emne.trim() === '') {
     return res.status(400).json({ error: 'emne is required and must be a non-empty string' });
   }
-  
+
   try {
     // Update the conversation subject and clear tags
     const result = await pool.query(
-      'UPDATE conversations SET emne = $1, tags = NULL WHERE id = $2 RETURNING *', 
+      'UPDATE conversations SET emne = $1, tags = NULL WHERE id = $2 RETURNING *',
       [emne.trim(), id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating conversation subject:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// GET all available subjects (emne) for a chatbot
+app.get('/conversation-subjects/:chatbot_id', authenticateToken, async (req, res) => {
+  const { chatbot_id } = req.params;
+
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+
+    const result = await pool.query(
+      `SELECT DISTINCT emne
+       FROM conversations
+       WHERE chatbot_id = ANY($1) AND emne IS NOT NULL AND emne != ''
+       ORDER BY emne`,
+      [chatbotIds]
+    );
+
+    const subjects = result.rows.map(row => row.emne);
+    res.json({ subjects });
+  } catch (err) {
+    console.error('Error fetching conversation subjects:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
