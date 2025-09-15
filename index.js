@@ -2134,6 +2134,33 @@ app.patch('/conversation/:id/flag', authenticateToken, async (req, res) => {
   }
 });
 
+// PATCH to update conversation subject (emne) and clear tags
+app.patch('/conversation/:id/subject', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { emne } = req.body;
+  
+  if (!emne || typeof emne !== 'string' || emne.trim() === '') {
+    return res.status(400).json({ error: 'emne is required and must be a non-empty string' });
+  }
+  
+  try {
+    // Update the conversation subject and clear tags
+    const result = await pool.query(
+      'UPDATE conversations SET emne = $1, tags = NULL WHERE id = $2 RETURNING *', 
+      [emne.trim(), id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating conversation subject:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 /* ================================
    update-conversations Endpoint
 ================================ */
