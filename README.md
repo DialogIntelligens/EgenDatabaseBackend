@@ -37,9 +37,4 @@ Utils indeholder generelle hjælpefunktioner.
 4. **Service** kan bruge funktioner fra **utils** til at håndtere data.  
 5. **Controller** returnerer resultatet til klienten.  
 
----
 
-## 🛠️ Fordele ved strukturen
-- **Klar opdeling af ansvar** – nemmere at finde rundt i projektet.  
-- **Skalerbarhed** – nye features kan tilføjes uden at blande kode sammen.  
-- **Genbrugelighed** – utils og services kan anvendes på tværs af projektet.  
