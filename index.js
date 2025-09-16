@@ -41,6 +41,21 @@ cron.schedule('*/5 * * * *', () => {
   // Any cleanup logic can go here if needed
 });
 
+// Cleanup old conversation update jobs (keep jobs for 7 days)
+cron.schedule('0 2 * * *', async () => {
+  try {
+    console.log('Cleaning up old conversation update jobs...');
+    const result = await pool.query(`
+      DELETE FROM conversation_update_jobs 
+      WHERE created_at < NOW() - INTERVAL '7 days'
+      AND status IN ('completed', 'failed', 'cancelled')
+    `);
+    console.log(`Cleaned up ${result.rowCount} old conversation update jobs`);
+  } catch (error) {
+    console.error('Error cleaning up old conversation update jobs:', error);
+  }
+});
+
 // Check for required environment variables
 if (!process.env.OPENAI_API_KEY) {
   console.error('ERROR: OPENAI_API_KEY environment variable is required');
@@ -2084,9 +2099,56 @@ app.patch('/conversation/:id/subject', authenticateToken, async (req, res) => {
 });
 
 /* ================================
-   update-conversations Endpoint
+   update-conversations Endpoint (Job-based with progress tracking)
 ================================ */
-app.post('/update-conversations', authenticateToken, async (req, res) => {
+
+// Database schema for conversation update jobs
+async function ensureConversationUpdateJobsTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversation_update_jobs (
+        id SERIAL PRIMARY KEY,
+        chatbot_id TEXT NOT NULL,
+        user_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        total_conversations INTEGER DEFAULT 0,
+        processed_conversations INTEGER DEFAULT 0,
+        successful_conversations INTEGER DEFAULT 0,
+        failed_conversations INTEGER DEFAULT 0,
+        limit_count INTEGER,
+        error_message TEXT,
+        progress_percentage INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Check if we need to alter the existing table to change user_id from INTEGER to TEXT
+    const columnCheck = await pool.query(`
+      SELECT data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'conversation_update_jobs' AND column_name = 'user_id'
+    `);
+    
+    if (columnCheck.rows.length > 0 && columnCheck.rows[0].data_type === 'integer') {
+      console.log('Migrating conversation_update_jobs.user_id from INTEGER to TEXT...');
+      await pool.query('ALTER TABLE conversation_update_jobs ALTER COLUMN user_id TYPE TEXT');
+      console.log('Successfully migrated user_id column to TEXT');
+    }
+    
+    console.log('Conversation update jobs table ensured');
+  } catch (error) {
+    console.error('Error creating conversation update jobs table:', error);
+  }
+}
+
+// Initialize the jobs table on startup
+ensureConversationUpdateJobsTable();
+
+// Start a conversation update job
+app.post('/start-conversation-update-job', authenticateToken, async (req, res) => {
   const { chatbot_id, limit } = req.body;
 
   if (!chatbot_id) {
@@ -2094,131 +2156,302 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Build query with optional limit for recent conversations
-    let query = 'SELECT * FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC';
-    let queryParams = [chatbot_id];
+    // First, count total conversations to be processed
+    let countQuery = 'SELECT COUNT(*) as total FROM conversations WHERE chatbot_id = $1';
+    let countParams = [chatbot_id];
     
     if (limit && limit > 0) {
-      // First limit the working set to the most recent "limit" rows, then apply batch window
-      query = `
-        SELECT * FROM (
-          SELECT * FROM conversations
+      countQuery = `
+        SELECT COUNT(*) as total FROM (
+          SELECT id FROM conversations
           WHERE chatbot_id = $1
           ORDER BY created_at DESC
           LIMIT $2
         ) AS limited_conversations
-        LIMIT $4 OFFSET $3
       `;
-      queryParams.push(limit, batch_offset, batch_size);
-    } else {
-      // No top-level limit; page directly over the full set
-      query = `
-        SELECT * FROM conversations
-        WHERE chatbot_id = $1
-        ORDER BY created_at DESC
-        LIMIT $3 OFFSET $2
-      `;
-      queryParams.push(batch_offset, batch_size);
+      countParams.push(limit);
     }
     
-    const conversations = await pool.query(query, queryParams);
-    if (conversations.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ error: 'No conversations found for the given chatbot_id' });
+    const countResult = await pool.query(countQuery, countParams);
+    const totalConversations = parseInt(countResult.rows[0].total);
+    
+    if (totalConversations === 0) {
+      return res.status(404).json({ error: 'No conversations found for the given chatbot_id' });
     }
 
-    // Get userId from the first conversation (all conversations for a chatbot should have the same user_id)
-    const userId = conversations.rows[0].user_id;
-    if (!userId) {
-      return res.status(400).json({ error: 'Could not determine user_id from conversations' });
+    // Get userId from a conversation
+    const userResult = await pool.query(
+      'SELECT user_id FROM conversations WHERE chatbot_id = $1 LIMIT 1',
+      [chatbot_id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'No conversations found for the given chatbot_id' });
+    }
+    
+    const userId = userResult.rows[0].user_id;
+
+    // Create a new job record
+    const jobResult = await pool.query(`
+      INSERT INTO conversation_update_jobs 
+      (chatbot_id, user_id, total_conversations, limit_count, status)
+      VALUES ($1, $2, $3, $4, 'pending')
+      RETURNING id
+    `, [chatbot_id, userId, totalConversations, limit || null]);
+
+    const jobId = jobResult.rows[0].id;
+
+    // Start processing the job in the background
+    processConversationUpdateJob(jobId, chatbot_id, userId, limit, totalConversations);
+
+    res.json({
+      job_id: jobId,
+      message: 'Conversation update job started',
+      total_conversations: totalConversations,
+      status: 'pending'
+    });
+
+  } catch (error) {
+    console.error('Error starting conversation update job:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+// Get job status
+app.get('/conversation-update-job/:jobId', authenticateToken, async (req, res) => {
+  const { jobId } = req.params;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM conversation_update_jobs WHERE id = $1',
+      [jobId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Job not found' });
     }
 
-    const totalConversations = conversations.rows.length;
+    const job = result.rows[0];
+    
+    // Calculate progress percentage if not set
+    if (job.total_conversations > 0 && job.progress_percentage === 0 && job.processed_conversations > 0) {
+      job.progress_percentage = Math.round((job.processed_conversations / job.total_conversations) * 100);
+    }
+
+    res.json(job);
+  } catch (error) {
+    console.error('Error fetching job status:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Get all jobs for a user (admin only)
+app.get('/conversation-update-jobs', authenticateToken, async (req, res) => {
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT cuj.*, u.username 
+      FROM conversation_update_jobs cuj
+      LEFT JOIN users u ON cuj.user_id = u.id
+      ORDER BY cuj.created_at DESC
+      LIMIT 50
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching jobs:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+// Background job processor
+async function processConversationUpdateJob(jobId, chatbotId, userId, limit, totalConversations) {
+  const client = await pool.connect();
+  
+  try {
+    // Mark job as running
+    await client.query(`
+      UPDATE conversation_update_jobs 
+      SET status = 'running', started_at = CURRENT_TIMESTAMP, last_updated = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [jobId]);
+
+    console.log(`Starting background job ${jobId} for chatbot ${chatbotId} - ${totalConversations} conversations`);
+
+    const BATCH_SIZE = 5; // Smaller batches for better reliability
+    const CHUNK_SIZE = 100; // Process conversations in chunks to avoid memory issues
     let processedCount = 0;
     let successCount = 0;
     let errorCount = 0;
-    const errors = [];
+    let offset = 0;
 
-    const limitInfo = limit ? ` (limited to ${limit} most recent)` : ' (all conversations)';
-    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
+    while (offset < totalConversations) {
+      // Get a chunk of conversations
+      let query = `
+        SELECT id, conversation_data, user_id 
+        FROM conversations 
+        WHERE chatbot_id = $1 
+        ORDER BY created_at DESC 
+        LIMIT $2 OFFSET $3
+      `;
+      let queryParams = [chatbotId, CHUNK_SIZE, offset];
+      
+      if (limit && limit > 0) {
+        // If there's a limit, we need to adjust our approach
+        const remainingFromLimit = Math.max(0, limit - offset);
+        const currentChunkSize = Math.min(CHUNK_SIZE, remainingFromLimit);
+        
+        if (currentChunkSize <= 0) break;
+        
+        query = `
+          SELECT id, conversation_data, user_id FROM (
+            SELECT id, conversation_data, user_id, ROW_NUMBER() OVER (ORDER BY created_at DESC) as rn
+            FROM conversations
+            WHERE chatbot_id = $1
+          ) ranked_conversations
+          WHERE rn > $2 AND rn <= $3
+        `;
+        queryParams = [chatbotId, offset, offset + currentChunkSize];
+      }
 
-    // Process conversations in batches to avoid overwhelming the API
-    const BATCH_SIZE = 10;
-    const batches = [];
-    for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
-      batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
-    }
+      const conversations = await client.query(query, queryParams);
+      
+      if (conversations.rows.length === 0) {
+        break; // No more conversations to process
+      }
 
-    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-      const batch = batches[batchIndex];
-      console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} conversations)`);
+      console.log(`Job ${jobId}: Processing chunk ${Math.floor(offset/CHUNK_SIZE) + 1} - ${conversations.rows.length} conversations`);
 
-      // Process batch in parallel with limited concurrency
-      const batchPromises = batch.map(async (conversation) => {
-        try {
-          const conversationText = conversation.conversation_data;
-          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id, pool);
+      // Process this chunk in smaller batches
+      const batches = [];
+      for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
+        batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
+      }
 
-          await pool.query(
-            `UPDATE conversations
-             SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
-             WHERE id = $6`,
-            [emne, score, lacking_info, fallback, tags, conversation.id]
-          );
+      for (const batch of batches) {
+        // Process batch with limited concurrency
+        const batchPromises = batch.map(async (conversation) => {
+          try {
+            const conversationText = conversation.conversation_data;
+            const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbotId, pool);
 
-          successCount++;
-          return { success: true, id: conversation.id };
-        } catch (error) {
-          errorCount++;
-          const errorDetails = {
-            conversationId: conversation.id,
-            error: error.message
-          };
-          errors.push(errorDetails);
-          console.error(`Error processing conversation ${conversation.id}:`, error);
-          return { success: false, id: conversation.id, error: error.message };
+            await client.query(
+              `UPDATE conversations
+               SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+               WHERE id = $6`,
+              [emne, score, lacking_info, fallback, tags, conversation.id]
+            );
+
+            return { success: true, id: conversation.id };
+          } catch (error) {
+            console.error(`Job ${jobId}: Error processing conversation ${conversation.id}:`, error);
+            return { success: false, id: conversation.id, error: error.message };
+          }
+        });
+
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Update counters
+        for (const result of batchResults) {
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
         }
-      });
+        
+        processedCount += batch.length;
 
-      // Wait for batch to complete
-      await Promise.all(batchPromises);
-      processedCount += batch.length;
+        // Update job progress in database
+        const progressPercentage = Math.round((processedCount / totalConversations) * 100);
+        await client.query(`
+          UPDATE conversation_update_jobs 
+          SET processed_conversations = $1, 
+              successful_conversations = $2, 
+              failed_conversations = $3,
+              progress_percentage = $4,
+              last_updated = CURRENT_TIMESTAMP
+          WHERE id = $5
+        `, [processedCount, successCount, errorCount, progressPercentage, jobId]);
 
-      // Log progress
-      const progressPercent = Math.round((processedCount / totalConversations) * 100);
-      console.log(`Progress: ${processedCount}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
+        console.log(`Job ${jobId}: Progress ${processedCount}/${totalConversations} (${progressPercentage}%) - Success: ${successCount}, Errors: ${errorCount}`);
 
-      // Small delay between batches to be nice to the API
-      if (batchIndex < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Small delay between batches to prevent overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      offset += conversations.rows.length;
+
+      // Check if job was cancelled (you could add a cancel endpoint)
+      const jobCheck = await client.query('SELECT status FROM conversation_update_jobs WHERE id = $1', [jobId]);
+      if (jobCheck.rows[0]?.status === 'cancelled') {
+        console.log(`Job ${jobId} was cancelled`);
+        return;
       }
     }
 
-    const response = {
-      message: 'Conversations update completed',
-      total: totalConversations,
-      processed: processedCount,
-      successful: successCount,
-      failed: errorCount
-    };
+    // Mark job as completed
+    await client.query(`
+      UPDATE conversation_update_jobs 
+      SET status = 'completed', 
+          completed_at = CURRENT_TIMESTAMP,
+          last_updated = CURRENT_TIMESTAMP,
+          progress_percentage = 100
+      WHERE id = $1
+    `, [jobId]);
 
-    // Include error details if there were any failures
-    if (errors.length > 0) {
-      response.errors = errors.slice(0, 10); // Limit to first 10 errors to avoid large responses
-      if (errors.length > 10) {
-        response.note = `Showing first 10 errors. Total errors: ${errors.length}`;
-      }
-    }
-
-    console.log('Update conversations completed:', response);
-    return res.status(200).json(response);
+    console.log(`Job ${jobId} completed: ${processedCount} processed, ${successCount} successful, ${errorCount} failed`);
 
   } catch (error) {
-    console.error('Error updating conversations:', error);
-    res
-      .status(500)
-      .json({ error: 'Internal server error', details: error.message });
+    console.error(`Job ${jobId} failed:`, error);
+    
+    // Mark job as failed
+    await client.query(`
+      UPDATE conversation_update_jobs 
+      SET status = 'failed', 
+          error_message = $1,
+          completed_at = CURRENT_TIMESTAMP,
+          last_updated = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [error.message, jobId]);
+  } finally {
+    client.release();
+  }
+}
+
+// Cancel a conversation update job
+app.post('/cancel-conversation-update-job/:jobId', authenticateToken, async (req, res) => {
+  const { jobId } = req.params;
+
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    const result = await pool.query(`
+      UPDATE conversation_update_jobs 
+      SET status = 'cancelled', 
+          completed_at = CURRENT_TIMESTAMP,
+          last_updated = CURRENT_TIMESTAMP
+      WHERE id = $1 AND status IN ('pending', 'running')
+      RETURNING *
+    `, [jobId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Job not found or cannot be cancelled' });
+    }
+
+    res.json({
+      message: 'Job cancelled successfully',
+      job: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error cancelling job:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
 
