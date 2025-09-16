@@ -1442,7 +1442,14 @@ app.get('/conversations', authenticateToken, async (req, res) => {
     const chatbotIds = chatbot_id.split(',');
 
     let queryText = `
-      SELECT *
+      SELECT c.*,
+        -- Pre-calculate message counts using PostgreSQL JSON functions
+        COALESCE((
+          SELECT COUNT(*)
+          FROM jsonb_array_elements(c.conversation_data::jsonb) as msg
+          WHERE (msg->>'isUser')::boolean = true
+        ), 0) as user_message_count,
+        COALESCE(jsonb_array_length(c.conversation_data::jsonb), 0) as total_message_count
       FROM conversations c
       WHERE c.chatbot_id = ANY($1)
     `;
@@ -2356,6 +2363,259 @@ cron.schedule('0 * * * *', async () => {
 
 
 /* ================================
+   Consolidated Statistics Endpoint (Performance Optimized)
+================================ */
+app.get('/statistics-consolidated', authenticateToken, async (req, res) => {
+  const { chatbot_id, start_date, end_date } = req.query;
+  
+  if (!chatbot_id) {
+    return res.status(400).json({ error: 'chatbot_id is required' });
+  }
+
+  try {
+    const chatbotIds = chatbot_id.split(',');
+    
+    // Build date filter
+    let dateFilter = '';
+    let queryParams = [chatbotIds];
+    let paramIndex = 2;
+    
+    if (start_date && end_date) {
+      dateFilter = ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+      queryParams.push(start_date, end_date);
+    }
+
+    // Single comprehensive query to get all statistics
+    const statsQuery = `
+      WITH conversation_stats AS (
+        SELECT 
+          c.id,
+          c.created_at,
+          c.emne,
+          c.customer_rating,
+          c.fallback,
+          c.ligegyldig,
+          c.purchase_tracking_enabled,
+          c.user_id,
+          c.chatbot_id,
+          EXTRACT(HOUR FROM c.created_at) as hour_of_day,
+          EXTRACT(DOW FROM c.created_at) as day_of_week,
+          DATE(c.created_at) as conversation_date,
+          -- Pre-calculate message counts using PostgreSQL JSON functions
+          COALESCE((
+            SELECT COUNT(*)
+            FROM jsonb_array_elements(c.conversation_data::jsonb) as msg
+            WHERE (msg->>'isUser')::boolean = true
+          ), 0) as user_message_count
+        FROM conversations c
+        WHERE c.chatbot_id = ANY($1) ${dateFilter}
+      ),
+      daily_aggregates AS (
+        SELECT 
+          conversation_date,
+          SUM(user_message_count) as daily_messages,
+          COUNT(*) as daily_conversations
+        FROM conversation_stats
+        GROUP BY conversation_date
+      ),
+      hourly_aggregates AS (
+        SELECT 
+          hour_of_day,
+          SUM(user_message_count) as hourly_messages
+        FROM conversation_stats
+        GROUP BY hour_of_day
+      ),
+      topic_aggregates AS (
+        SELECT 
+          COALESCE(emne, 'Unknown') as topic,
+          COUNT(*) as topic_count
+        FROM conversation_stats
+        WHERE emne IS NOT NULL
+        GROUP BY emne
+      )
+      SELECT 
+        -- Basic statistics
+        (SELECT COUNT(*) FROM conversation_stats) as total_conversations,
+        (SELECT SUM(user_message_count) FROM conversation_stats) as total_messages,
+        
+        -- Rating statistics
+        (SELECT AVG(customer_rating) FROM conversation_stats WHERE customer_rating IS NOT NULL) as avg_rating,
+        (SELECT COUNT(*) FROM conversation_stats WHERE customer_rating IS NOT NULL) as total_ratings,
+        (SELECT COUNT(*) FROM conversation_stats WHERE customer_rating >= 4) as satisfied_ratings,
+        (SELECT COUNT(*) FROM conversation_stats WHERE customer_rating = 5) as thumbs_up_count,
+        (SELECT COUNT(*) FROM conversation_stats WHERE customer_rating = 1) as thumbs_down_count,
+        
+        -- Fallback statistics
+        (SELECT COUNT(*) FROM conversation_stats WHERE fallback = true) as fallback_count,
+        (SELECT COUNT(*) FROM conversation_stats WHERE fallback IS NOT NULL) as fallback_total,
+        
+        -- Ligegyldig statistics
+        (SELECT COUNT(*) FROM conversation_stats WHERE ligegyldig = true) as ligegyldig_count,
+        (SELECT COUNT(*) FROM conversation_stats WHERE ligegyldig IS NOT NULL) as ligegyldig_total,
+        
+        -- Daily data as JSON
+        (SELECT json_object_agg(conversation_date::text, daily_messages) 
+         FROM daily_aggregates) as daily_data,
+        
+        -- Hourly data as JSON
+        (SELECT json_object_agg(hour_of_day::text, hourly_messages) 
+         FROM hourly_aggregates) as hourly_data,
+        
+        -- Topic data as JSON
+        (SELECT json_object_agg(topic, topic_count) 
+         FROM topic_aggregates) as topic_data,
+        
+        -- Purchase tracking conversations count
+        (SELECT COUNT(*) FROM conversation_stats WHERE purchase_tracking_enabled = true) as purchase_tracking_conversations
+    `;
+
+    const statsResult = await pool.query(statsQuery, queryParams);
+    const stats = statsResult.rows[0];
+
+    // Get purchase data in parallel
+    const purchasePromises = chatbotIds.map(async (chatbotId) => {
+      try {
+        const purchaseQuery = `
+          SELECT COUNT(*) as purchase_count, SUM(amount) as total_revenue
+          FROM purchases 
+          WHERE chatbot_id = $1 ${start_date && end_date ? 'AND created_at BETWEEN $2 AND $3' : ''}
+        `;
+        const purchaseParams = start_date && end_date 
+          ? [chatbotId, start_date, end_date] 
+          : [chatbotId];
+        
+        const result = await pool.query(purchaseQuery, purchaseParams);
+        return {
+          purchases: parseInt(result.rows[0].purchase_count) || 0,
+          revenue: parseFloat(result.rows[0].total_revenue) || 0
+        };
+      } catch (error) {
+        console.error(`Error fetching purchases for chatbot ${chatbotId}:`, error);
+        return { purchases: 0, revenue: 0 };
+      }
+    });
+
+    // Get greeting rate data in parallel
+    const greetingRatePromise = (async () => {
+      try {
+        let greetingDateFilter = '';
+        let greetingParams = [chatbotIds];
+        let greetingParamIndex = 2;
+        
+        if (start_date && end_date) {
+          greetingDateFilter = ` AND opened_at BETWEEN $${greetingParamIndex++} AND $${greetingParamIndex++}`;
+          greetingParams.push(start_date, end_date);
+        }
+        
+        const greetingQuery = `
+          SELECT 
+            (SELECT COUNT(DISTINCT user_id) FROM chatbot_opens WHERE chatbot_id = ANY($1) ${greetingDateFilter}) as total_opens,
+            (SELECT COUNT(DISTINCT user_id) FROM conversations WHERE chatbot_id = ANY($1) ${dateFilter}) as total_conversations
+        `;
+        
+        const result = await pool.query(greetingQuery, greetingParams);
+        const totalOpens = parseInt(result.rows[0].total_opens) || 0;
+        const totalConversations = parseInt(result.rows[0].total_conversations) || 0;
+        
+        return {
+          totalOpens,
+          greetingRate: totalOpens > 0 ? Math.round((totalConversations / totalOpens) * 100) : 0,
+          hasData: totalOpens > 0
+        };
+      } catch (error) {
+        console.error('Error fetching greeting rate:', error);
+        return { totalOpens: 0, greetingRate: 0, hasData: false };
+      }
+    })();
+
+    // Get leads count in parallel
+    const leadsPromise = (async () => {
+      try {
+        const leadsQuery = `
+          SELECT COUNT(*) as leads_count
+          FROM conversations 
+          WHERE chatbot_id = ANY($1) ${dateFilter}
+          AND form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')
+        `;
+        const result = await pool.query(leadsQuery, queryParams);
+        return parseInt(result.rows[0].leads_count) || 0;
+      } catch (error) {
+        console.error('Error fetching leads count:', error);
+        return 0;
+      }
+    })();
+
+    // Wait for all parallel operations to complete
+    const [purchaseResults, greetingRateData, leadsCount] = await Promise.all([
+      Promise.all(purchasePromises),
+      greetingRatePromise,
+      leadsPromise
+    ]);
+
+    // Aggregate purchase data
+    const totalPurchases = purchaseResults.reduce((sum, result) => sum + result.purchases, 0);
+    const totalRevenue = purchaseResults.reduce((sum, result) => sum + result.revenue, 0);
+
+    // Format response
+    const response = {
+      // Basic stats
+      totalMessages: parseInt(stats.total_messages) || 0,
+      totalConversations: parseInt(stats.total_conversations) || 0,
+      
+      // Rating stats
+      totalRatings: parseInt(stats.total_ratings) || 0,
+      avgRating: stats.avg_rating ? parseFloat(stats.avg_rating).toFixed(2) : 'N/A',
+      satisfiedRatings: parseInt(stats.satisfied_ratings) || 0,
+      thumbsUpCount: parseInt(stats.thumbs_up_count) || 0,
+      thumbsDownCount: parseInt(stats.thumbs_down_count) || 0,
+      
+      // Fallback stats
+      fallbackCount: parseInt(stats.fallback_count) || 0,
+      fallbackTotal: parseInt(stats.fallback_total) || 0,
+      fallbackRate: stats.fallback_total > 0 
+        ? `${((stats.fallback_count / stats.fallback_total) * 100).toFixed(1)}%`
+        : 'N/A',
+      
+      // Ligegyldig stats
+      ligegyldigCount: parseInt(stats.ligegyldig_count) || 0,
+      ligegyldigTotal: parseInt(stats.ligegyldig_total) || 0,
+      ligegyldigRate: stats.ligegyldig_total > 0 
+        ? `${((stats.ligegyldig_count / stats.ligegyldig_total) * 100).toFixed(1)}%`
+        : 'N/A',
+      
+      // Chart data
+      dailyData: stats.daily_data || {},
+      hourlyData: stats.hourly_data || {},
+      topicData: stats.topic_data || {},
+      
+      // Purchase stats
+      totalPurchases,
+      totalRevenue,
+      averagePurchaseValue: totalPurchases > 0 ? (totalRevenue / totalPurchases).toFixed(2) : 'N/A',
+      conversionRate: stats.purchase_tracking_conversations > 0 
+        ? `${((totalPurchases / stats.purchase_tracking_conversations) * 100).toFixed(1)}%`
+        : 'N/A',
+      hasPurchaseTracking: totalPurchases > 0,
+      
+      // Greeting rate stats
+      totalChatbotOpens: greetingRateData.totalOpens,
+      greetingRate: greetingRateData.hasData ? `${greetingRateData.greetingRate}%` : 'N/A',
+      hasGreetingRateData: greetingRateData.hasData,
+      
+      // Leads stats
+      totalLeads: leadsCount,
+      hasLeadsData: leadsCount > 0
+    };
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('Error fetching consolidated statistics:', error);
+    res.status(500).json({ error: 'Database error', details: error.message });
+  }
+});
+
+/* ================================
    Tag Statistics Endpoint
 ================================ */
 app.get('/tag-statistics', authenticateToken, async (req, res) => {
@@ -3154,7 +3414,13 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             customer_rating,
             purchase_tracking_enabled,
             fallback,
-            ligegyldig
+            ligegyldig,
+            -- Pre-calculate message counts using PostgreSQL JSON functions
+            COALESCE((
+              SELECT COUNT(*)
+              FROM jsonb_array_elements(conversation_data::jsonb) as msg
+              WHERE (msg->>'isUser')::boolean = true
+            ), 0) as user_message_count
           FROM conversations 
           WHERE chatbot_id = ANY($1)
         `;
@@ -3194,17 +3460,10 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
         conversations.forEach(conv => {
           // Count conversations
           totalConversations += 1;
-          let conversationData = conv.conversation_data;
           
-          // Parse conversation_data if it's a string
-          if (typeof conversationData === 'string') {
-            try {
-              conversationData = JSON.parse(conversationData);
-            } catch (e) {
-              console.error('Error parsing conversation_data:', e);
-              conversationData = [];
-            }
-          }
+          // Use pre-calculated message count from database instead of parsing JSON
+          const userMessageCount = parseInt(conv.user_message_count) || 0;
+          totalMessages += userMessageCount;
           
           // Count metadata-based metrics
           if (conv.purchase_tracking_enabled === true) {
@@ -3225,26 +3484,17 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
             ligegyldigCount += 1;
           }
 
-          // Ensure it's an array
-          if (Array.isArray(conversationData)) {
-            // Count user messages (messages from the chatbot users, not the dashboard user)
-            const userMessages = conversationData.filter(msg => 
-              msg && (msg.isUser === true || msg.sender === 'user')
-            );
-            totalMessages += userMessages.length;
-            
-            // Count monthly messages (only from last 30 days)
-            const conversationDate = new Date(conv.created_at);
-            if (conversationDate >= thirtyDaysAgo) {
-              monthlyMessages += userMessages.length;
-              monthlyConversations += 1;
-            }
-            
-            // Count last month messages (previous calendar month)
-            if (conversationDate >= lastMonthStart && conversationDate <= lastMonthEnd) {
-              lastMonthMessages += userMessages.length;
-              lastMonthConversations += 1;
-            }
+          // Count monthly messages (only from last 30 days)
+          const conversationDate = new Date(conv.created_at);
+          if (conversationDate >= thirtyDaysAgo) {
+            monthlyMessages += userMessageCount;
+            monthlyConversations += 1;
+          }
+          
+          // Count last month messages (previous calendar month)
+          if (conversationDate >= lastMonthStart && conversationDate <= lastMonthEnd) {
+            lastMonthMessages += userMessageCount;
+            lastMonthConversations += 1;
           }
         });
 
