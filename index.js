@@ -18,6 +18,7 @@ import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerShopifyCredentialsRoutes, setShopifyCredentialsPool } from './shopifyCredentialsRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
+import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
 import { getEmneAndScore } from './src/utils/mainUtils.js';
 import { registerBevcoRoutes } from './src/routes/bevcoRoutes.js';
 
@@ -1178,155 +1179,7 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
    Comment Endpoints
 ================================ */
 // GET comments for a conversation
-app.get('/conversations/:id/comments', authenticateToken, async (req, res) => {
-  const conversationId = req.params.id;
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM conversation_comments WHERE conversation_id = $1 ORDER BY created_at ASC',
-      [conversationId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching comments:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// POST new comment
-app.post('/conversations/:id/comments', authenticateToken, async (req, res) => {
-  const conversationId = req.params.id;
-  const { username, comment_text } = req.body;
-
-  if (!username || !comment_text) {
-    return res.status(400).json({ error: 'Username and comment_text are required' });
-  }
-
-  try {
-    const result = await pool.query(
-      'INSERT INTO conversation_comments (conversation_id, username, comment_text) VALUES ($1, $2, $3) RETURNING *',
-      [conversationId, username, comment_text]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Error creating comment:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// PUT update comment
-app.put('/conversations/:id/comments/:commentId', authenticateToken, async (req, res) => {
-  const { commentId } = req.params;
-  const { username, comment_text } = req.body;
-
-  if (!username || !comment_text) {
-    return res.status(400).json({ error: 'Username and comment_text are required' });
-  }
-
-  try {
-    const result = await pool.query(
-      'UPDATE conversation_comments SET username = $1, comment_text = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
-      [username, comment_text, commentId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Comment not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating comment:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// DELETE comment
-app.delete('/conversations/:id/comments/:commentId', authenticateToken, async (req, res) => {
-  const { commentId } = req.params;
-
-  try {
-    const result = await pool.query(
-      'DELETE FROM conversation_comments WHERE id = $1 RETURNING *',
-      [commentId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Comment not found' });
-    }
-    
-    res.json({ message: 'Comment deleted successfully', deleted: result.rows[0] });
-  } catch (err) {
-    console.error('Error deleting comment:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// POST mark comments as viewed for a conversation
-app.post('/conversations/:id/comments/mark-viewed', authenticateToken, async (req, res) => {
-  const conversationId = req.params.id;
-  const userId = req.user.userId;
-
-  try {
-    // Get all comments for this conversation
-    const comments = await pool.query(
-      'SELECT id FROM conversation_comments WHERE conversation_id = $1',
-      [conversationId]
-    );
-
-    if (comments.rows.length === 0) {
-      return res.json({ message: 'No comments to mark as viewed' });
-    }
-
-    // Mark all comments as viewed by this user
-    const commentIds = comments.rows.map(comment => comment.id);
-    
-    // Use INSERT ... ON CONFLICT to avoid duplicates
-    for (const commentId of commentIds) {
-      await pool.query(
-        `INSERT INTO conversation_comment_views (user_id, comment_id)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id, comment_id) DO NOTHING`,
-        [userId, commentId]
-      );
-    }
-
-    res.json({ message: 'Comments marked as viewed', count: commentIds.length });
-  } catch (err) {
-    console.error('Error marking comments as viewed:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// POST mark comments as unread for a conversation
-app.post('/conversations/:id/comments/mark-unread', authenticateToken, async (req, res) => {
-  const conversationId = req.params.id;
-  const userId = req.user.userId;
-
-  try {
-    // Get all comments for this conversation
-    const comments = await pool.query(
-      'SELECT id FROM conversation_comments WHERE conversation_id = $1',
-      [conversationId]
-    );
-
-    if (comments.rows.length === 0) {
-      return res.json({ message: 'No comments to mark as unread' });
-    }
-
-    // Remove all view records for this user and conversation's comments
-    const commentIds = comments.rows.map(comment => comment.id);
-    
-    await pool.query(
-      'DELETE FROM conversation_comment_views WHERE user_id = $1 AND comment_id = ANY($2)',
-      [userId, commentIds]
-    );
-
-    res.json({ message: 'Comments marked as unread', count: commentIds.length });
-  } catch (err) {
-    console.error('Error marking comments as unread:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// moved to commentsRoutes
 
     // Helper upsert function
     async function upsertConversation(
@@ -5055,6 +4908,7 @@ registerMagentoCredentialsRoutes(app);
 registerBevcoRoutes(app);
 registerLivechatRoutes(app, pool, authenticateToken);
 registerUserSettingsRoutes(app, pool, authenticateToken);
+registerCommentsRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
