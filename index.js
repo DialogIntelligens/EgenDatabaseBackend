@@ -2226,16 +2226,31 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
     }
 
     // Build query to get conversations for this batch
-    let query = 'SELECT * FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC';
+    let query;
     let queryParams = [chatbot_id];
 
     if (limit && limit > 0) {
-      query += ' LIMIT $2';
-      queryParams.push(limit);
+      // First limit the working set to the most recent "limit" rows, then apply batch window
+      query = `
+        SELECT * FROM (
+          SELECT * FROM conversations
+          WHERE chatbot_id = $1
+          ORDER BY created_at DESC
+          LIMIT $2
+        ) AS limited_conversations
+        LIMIT $4 OFFSET $3
+      `;
+      queryParams.push(limit, batch_offset, batch_size);
+    } else {
+      // No top-level limit; page directly over the full set
+      query = `
+        SELECT * FROM conversations
+        WHERE chatbot_id = $1
+        ORDER BY created_at DESC
+        LIMIT $3 OFFSET $2
+      `;
+      queryParams.push(batch_offset, batch_size);
     }
-
-    query += ' OFFSET $' + (queryParams.length + 1) + ' LIMIT $' + (queryParams.length + 2);
-    queryParams.push(batch_offset, batch_size);
 
     const conversations = await pool.query(query, queryParams);
 
@@ -6675,4 +6690,5 @@ console.log('Agent typing status cleanup scheduled to run daily at midnight');
 
 // Export pool for use in utility modules
 export { pool };
+
 
