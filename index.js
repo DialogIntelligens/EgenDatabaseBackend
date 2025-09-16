@@ -2138,52 +2138,25 @@ app.patch('/conversation/:id/flag', authenticateToken, async (req, res) => {
 app.patch('/conversation/:id/subject', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { emne } = req.body;
-
+  
   if (!emne || typeof emne !== 'string' || emne.trim() === '') {
     return res.status(400).json({ error: 'emne is required and must be a non-empty string' });
   }
-
+  
   try {
     // Update the conversation subject and clear tags
     const result = await pool.query(
-      'UPDATE conversations SET emne = $1, tags = NULL WHERE id = $2 RETURNING *',
+      'UPDATE conversations SET emne = $1, tags = NULL WHERE id = $2 RETURNING *', 
       [emne.trim(), id]
     );
-
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
-
+    
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating conversation subject:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// GET all available subjects (emne) for a chatbot
-app.get('/conversation-subjects/:chatbot_id', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.params;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    const chatbotIds = chatbot_id.split(',');
-
-    const result = await pool.query(
-      `SELECT DISTINCT emne
-       FROM conversations
-       WHERE chatbot_id = ANY($1) AND emne IS NOT NULL AND emne != ''
-       ORDER BY emne`,
-      [chatbotIds]
-    );
-
-    const subjects = result.rows.map(row => row.emne);
-    res.json({ subjects });
-  } catch (err) {
-    console.error('Error fetching conversation subjects:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
@@ -2192,13 +2165,14 @@ app.get('/conversation-subjects/:chatbot_id', authenticateToken, async (req, res
    update-conversations Endpoint
 ================================ */
 app.post('/update-conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id, limit, batch_offset = 0, batch_size = 50 } = req.body;
+  const { chatbot_id, limit } = req.body;
 
   if (!chatbot_id) {
     return res.status(400).json({ error: 'chatbot_id is required' });
   }
 
   try {
+<<<<<<< HEAD
     // First, get total count of conversations to process
     let countQuery;
     let countParams;
@@ -2227,8 +2201,12 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
 
     // Build query to get conversations for this batch
     let query;
+=======
+    // Build query with optional limit for recent conversations
+    let query = 'SELECT * FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC';
+>>>>>>> c86de360a7956312a37ab096238c34d5613f5d99
     let queryParams = [chatbot_id];
-
+    
     if (limit && limit > 0) {
       // First limit the working set to the most recent "limit" rows, then apply batch window
       query = `
@@ -2251,80 +2229,102 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
       `;
       queryParams.push(batch_offset, batch_size);
     }
+<<<<<<< HEAD
 
+=======
+    
+>>>>>>> c86de360a7956312a37ab096238c34d5613f5d99
     const conversations = await pool.query(query, queryParams);
+    if (conversations.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ error: 'No conversations found for the given chatbot_id' });
+    }
 
     // Get userId from the first conversation (all conversations for a chatbot should have the same user_id)
-    const userId = conversations.rows[0]?.user_id;
+    const userId = conversations.rows[0].user_id;
     if (!userId) {
       return res.status(400).json({ error: 'Could not determine user_id from conversations' });
     }
 
-    const currentBatchSize = conversations.rows.length;
+    const totalConversations = conversations.rows.length;
+    let processedCount = 0;
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
 
     const limitInfo = limit ? ` (limited to ${limit} most recent)` : ' (all conversations)';
-    console.log(`Processing batch: offset ${batch_offset}, size ${batch_size} for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
+    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
 
-    // Process this batch
-    const batchPromises = conversations.rows.map(async (conversation) => {
-      try {
-        const conversationText = conversation.conversation_data;
-        const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id, pool);
+    // Process conversations in batches to avoid overwhelming the API
+    const BATCH_SIZE = 10;
+    const batches = [];
+    for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
+      batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
+    }
 
-        await pool.query(
-          `UPDATE conversations
-           SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
-           WHERE id = $6`,
-          [emne, score, lacking_info, fallback, tags, conversation.id]
-        );
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} conversations)`);
 
-        successCount++;
-        return { success: true, id: conversation.id };
-      } catch (error) {
-        errorCount++;
-        const errorDetails = {
-          conversationId: conversation.id,
-          error: error.message
-        };
-        errors.push(errorDetails);
-        console.error(`Error processing conversation ${conversation.id}:`, error);
-        return { success: false, id: conversation.id, error: error.message };
+      // Process batch in parallel with limited concurrency
+      const batchPromises = batch.map(async (conversation) => {
+        try {
+          const conversationText = conversation.conversation_data;
+          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id, pool);
+
+          await pool.query(
+            `UPDATE conversations
+             SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+             WHERE id = $6`,
+            [emne, score, lacking_info, fallback, tags, conversation.id]
+          );
+
+          successCount++;
+          return { success: true, id: conversation.id };
+        } catch (error) {
+          errorCount++;
+          const errorDetails = {
+            conversationId: conversation.id,
+            error: error.message
+          };
+          errors.push(errorDetails);
+          console.error(`Error processing conversation ${conversation.id}:`, error);
+          return { success: false, id: conversation.id, error: error.message };
+        }
+      });
+
+      // Wait for batch to complete
+      await Promise.all(batchPromises);
+      processedCount += batch.length;
+
+      // Log progress
+      const progressPercent = Math.round((processedCount / totalConversations) * 100);
+      console.log(`Progress: ${processedCount}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
+
+      // Small delay between batches to be nice to the API
+      if (batchIndex < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    });
-
-    // Wait for batch to complete
-    await Promise.all(batchPromises);
-
-    // Calculate progress
-    const processedThisBatch = currentBatchSize;
-    const totalProcessedSoFar = batch_offset + processedThisBatch;
-    const hasMore = totalProcessedSoFar < totalConversations;
-    const progressPercent = Math.round((totalProcessedSoFar / totalConversations) * 100);
+    }
 
     const response = {
-      message: hasMore ? `Batch completed. ${totalProcessedSoFar}/${totalConversations} processed (${progressPercent}%)` : 'All conversations update completed',
+      message: 'Conversations update completed',
       total: totalConversations,
-      processedThisBatch,
-      totalProcessed: totalProcessedSoFar,
+      processed: processedCount,
       successful: successCount,
-      failed: errorCount,
-      hasMore,
-      nextOffset: hasMore ? totalProcessedSoFar : null,
-      progressPercent
+      failed: errorCount
     };
 
     // Include error details if there were any failures
     if (errors.length > 0) {
-      response.errors = errors.slice(0, 5); // Limit to first 5 errors per batch
-      if (errors.length > 5) {
-        response.note = `Showing first 5 errors from this batch. Total errors so far: ${errors.length}`;
+      response.errors = errors.slice(0, 10); // Limit to first 10 errors to avoid large responses
+      if (errors.length > 10) {
+        response.note = `Showing first 10 errors. Total errors: ${errors.length}`;
       }
     }
 
-    console.log(`Batch completed: ${totalProcessedSoFar}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
+    console.log('Update conversations completed:', response);
     return res.status(200).json(response);
 
   } catch (error) {
@@ -4371,343 +4371,7 @@ app.delete('/api/shopify/credentials/:chatbot_id', async (req, res) => {
   }
 });
 
-/* ================================
-   Shopify Order Tracking Proxy
-================================ */
-
-/*
-  POST /api/shopify/orders
-  Body: { 
-    shopifyStore: string,
-    shopifyAccessToken: string,
-    shopifyApiVersion: string,
-    email?: string,
-    phone?: string,
-    order_number?: string,
-    name?: string
-  }
-  Proxies Shopify API calls to search for orders
-*/
-app.post('/api/shopify/orders', async (req, res) => {
-  try {
-    const { 
-      shopifyStore, 
-      shopifyAccessToken, 
-      shopifyApiVersion = '2024-10',
-      email,
-      phone,
-      order_number,
-      name,
-      chatbot_id // Add chatbot_id to fetch credentials from database
-    } = req.body;
-
-    let finalShopifyStore = shopifyStore;
-    let finalShopifyAccessToken = shopifyAccessToken;
-
-    // If credentials not provided in request, try to fetch from database using chatbot_id
-    if ((!shopifyStore || !shopifyAccessToken) && chatbot_id) {
-      console.log('🔑 SHOPIFY: Credentials not provided in request, fetching from database for chatbot:', chatbot_id);
-      
-      try {
-        const credentialsResult = await pool.query(
-          'SELECT shopify_store, shopify_access_token FROM shopify_credentials WHERE chatbot_id = $1',
-          [chatbot_id]
-        );
-        
-        if (credentialsResult.rows.length > 0) {
-          const dbCredentials = credentialsResult.rows[0];
-          finalShopifyStore = dbCredentials.shopify_store;
-          finalShopifyAccessToken = dbCredentials.shopify_access_token;
-          console.log('🔑 SHOPIFY: Successfully fetched credentials from database for store:', finalShopifyStore);
-        } else {
-          console.log('🔑 SHOPIFY: No credentials found in database for chatbot:', chatbot_id);
-        }
-      } catch (dbError) {
-        console.error('🔑 SHOPIFY: Error fetching credentials from database:', dbError);
-      }
-    }
-
-    if (!finalShopifyStore || !finalShopifyAccessToken) {
-      return res.status(400).json({ 
-        error: 'Shopify credentials not available. Either provide shopifyStore and shopifyAccessToken in request, or ensure chatbot_id has credentials configured in database.' 
-      });
-    }
-
-    // Build Shopify API URL using final credentials
-    const baseUrl = `https://${finalShopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders.json`;
-    
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    queryParams.append('status', 'any');
-    queryParams.append('limit', '50');
-    queryParams.append('fulfillment_status', 'any'); // Include all fulfillment statuses
-    
-    if (email) queryParams.append('email', email);
-    if (phone) queryParams.append('phone', phone);
-    if (order_number) queryParams.append('name', order_number);
-    
-    const shopifyUrl = `${baseUrl}?${queryParams.toString()}`;
-
-    console.log('Making Shopify API request to:', shopifyUrl.replace(finalShopifyAccessToken, '[HIDDEN]'));
-
-    // Make request to Shopify API using final credentials
-    const response = await fetch(shopifyUrl, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': finalShopifyAccessToken,
-        'Content-Type': 'application/json',
-        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Shopify API error:', response.status, errorText);
-      return res.status(response.status).json({ 
-        error: 'Shopify API error', 
-        details: errorText,
-        status: response.status
-      });
-    }
-
-    const data = await response.json();
-    
-    // Filter orders to ensure they match ALL provided search criteria (AND logic)
-    let filteredOrders = data.orders || [];
-    
-    if (email || phone || order_number) {
-      console.log(`🔍 SHOPIFY FILTER: Filtering ${filteredOrders.length} orders with criteria:`, { email, phone, order_number });
-      filteredOrders = filteredOrders.filter(order => {
-        const emailMatches = !email || (order.email && order.email.toLowerCase() === email.toLowerCase());
-        
-        const phoneMatches = !phone || (() => {
-          // Check multiple phone number locations on the order
-          const phoneLocations = [
-            order.phone,
-            order.billing_address?.phone,
-            order.shipping_address?.phone,
-            order.customer?.phone
-          ].filter(p => p && typeof p === 'string'); // Remove null/undefined values and ensure strings
-          
-          if (phoneLocations.length === 0) {
-            console.log(`❌ PHONE MATCH: Order ${order.id} has no phone numbers in any location`);
-            return false;
-          }
-          
-          // Normalize input phone by removing all non-digits
-          const normalizedInputPhone = String(phone).replace(/\D/g, '');
-          const inputLast8 = normalizedInputPhone.slice(-8);
-          
-          // Check if any phone location matches
-          for (const orderPhone of phoneLocations) {
-            const normalizedOrderPhone = String(orderPhone).replace(/\D/g, '');
-            const orderLast8 = normalizedOrderPhone.slice(-8);
-            
-            if (inputLast8 === orderLast8 && inputLast8.length === 8) {
-              console.log(`✅ PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phone: "${orderPhone}" -> "${orderLast8}", Location matched`);
-              return true;
-            }
-          }
-          
-          console.log(`❌ PHONE MATCH: Order ${order.id} - Input: "${phone}" -> "${inputLast8}", Order phones: [${phoneLocations.map(p => `"${p}" -> "${String(p).replace(/\D/g, '').slice(-8)}"`).join(', ')}], No match`);
-          return false;
-        })();
-        
-        const orderNumberMatches = !order_number || (() => {
-          if (!order.name && !order.order_number) {
-            console.log(`❌ ORDER MATCH: Order ${order.id} has no order name or number`);
-            return false;
-          }
-
-          // Normalize input order number by removing # prefix and trimming
-          const normalizedInput = String(order_number).replace(/^#/, '').trim();
-          
-          // Safely convert order fields to strings and normalize
-          const normalizedOrderName = order.name ? String(order.name).replace(/^#/, '').trim() : '';
-          const normalizedOrderNumber = order.order_number ? String(order.order_number).replace(/^#/, '').trim() : '';
-
-          // Match if either normalized version equals the input
-          const matches = normalizedOrderName === normalizedInput || normalizedOrderNumber === normalizedInput;
-          console.log(`${matches ? '✅' : '❌'} ORDER MATCH: Order ${order.id} - Input: "${order_number}" -> "${normalizedInput}", Order name: "${order.name || 'N/A'}" -> "${normalizedOrderName}", Order number: "${order.order_number || 'N/A'}" -> "${normalizedOrderNumber}", Match: ${matches}`);
-          return matches;
-        })();
-
-        const allMatch = emailMatches && phoneMatches && orderNumberMatches;
-
-        if (!allMatch) {
-          console.log(`❌ SHOPIFY FILTER: Excluding order ${order.id} (#${order.name || order.order_number || 'N/A'}) - Email match: ${emailMatches}, Phone match: ${phoneMatches}, Order match: ${orderNumberMatches}`);
-          console.log(`❌ EXCLUDED ORDER DETAILS:`, JSON.stringify({
-            id: order.id,
-            name: order.name,
-            email: order.email,
-            phone: order.phone,
-            billing_phone: order.billing_address?.phone,
-            shipping_phone: order.shipping_address?.phone,
-            customer_phone: order.customer?.phone,
-            tags: order.tags,
-            created_at: order.created_at
-          }, null, 2));
-        } else {
-          console.log(`✅ SHOPIFY FILTER: Including order ${order.id} (#${order.name || order.order_number || 'N/A'}) - All criteria matched`);
-        }
-
-        // Only return orders that match ALL provided criteria (AND logic)
-        return allMatch;
-      });
-      console.log(`✅ SHOPIFY FILTER: After filtering: ${filteredOrders.length} orders remain out of ${data.orders.length} total`);
-    }
-    
-    // Transform the data and fetch fulfillment information for each order
-    const transformedOrders = filteredOrders ? await Promise.all(filteredOrders.map(async (order) => {
-      // Fetch fulfillments for this order
-      let fulfillments = [];
-      try {
-        const fulfillmentUrl = `https://${finalShopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order.id}/fulfillments.json`;
-        const fulfillmentResponse = await fetch(fulfillmentUrl, {
-          method: 'GET',
-          headers: {
-            'X-Shopify-Access-Token': finalShopifyAccessToken,
-            'Content-Type': 'application/json',
-            'User-Agent': 'DialogIntelligens-Chatbot/1.0'
-          }
-        });
-        
-        if (fulfillmentResponse.ok) {
-          const fulfillmentData = await fulfillmentResponse.json();
-          fulfillments = fulfillmentData.fulfillments || [];
-          console.log(`Fetched ${fulfillments.length} fulfillments for order ${order.id}`);
-        } else {
-          console.warn(`Failed to fetch fulfillments for order ${order.id}:`, fulfillmentResponse.status);
-        }
-      } catch (fulfillmentError) {
-        console.error(`Error fetching fulfillments for order ${order.id}:`, fulfillmentError);
-      }
-      
-      return {
-        id: order.id,
-        order_number: order.name || order.order_number,
-        email: order.email,
-        phone: order.phone || (order.billing_address && order.billing_address.phone),
-        total_price: order.total_price,
-        currency: order.currency,
-        financial_status: order.financial_status,
-        fulfillment_status: order.fulfillment_status,
-        created_at: order.created_at,
-        updated_at: order.updated_at,
-        customer_name: order.customer && `${order.customer.first_name} ${order.customer.last_name}`.trim(),
-        tags: order.tags ? order.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : [],
-        line_items: order.line_items ? order.line_items.map(item => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-          fulfillment_status: item.fulfillment_status,
-          sku: item.sku,
-          product_id: item.product_id,
-          variant_id: item.variant_id
-        })) : [],
-        shipping_address: order.shipping_address,
-        billing_address: order.billing_address,
-        // Add fulfillment and tracking information
-        fulfillments: fulfillments.map(fulfillment => ({
-          id: fulfillment.id,
-          status: fulfillment.status,
-          tracking_company: fulfillment.tracking_company,
-          tracking_number: fulfillment.tracking_number,
-          tracking_url: fulfillment.tracking_url,
-          tracking_urls: fulfillment.tracking_urls || [],
-          created_at: fulfillment.created_at,
-          updated_at: fulfillment.updated_at,
-          shipment_status: fulfillment.shipment_status,
-          location_id: fulfillment.location_id,
-          line_items: fulfillment.line_items ? fulfillment.line_items.map(item => ({
-            id: item.id,
-            quantity: item.quantity
-          })) : []
-        })),
-        // Extract primary tracking info for easy access
-        primary_tracking: fulfillments.length > 0 ? {
-          tracking_number: fulfillments[0].tracking_number,
-          tracking_url: fulfillments[0].tracking_url,
-          tracking_company: fulfillments[0].tracking_company,
-          status: fulfillments[0].status,
-          shipment_status: fulfillments[0].shipment_status
-        } : null
-      };
-    })) : [];
-
-    return res.json({
-      success: true,
-      orders: transformedOrders,
-      total_count: transformedOrders.length,
-      filtered_from: data.orders ? data.orders.length : 0
-    });
-
-  } catch (error) {
-    console.error('Error in Shopify proxy:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
-});
-
-/*
-  GET /api/shopify/orders/:order_id
-  Query params: shopifyStore, shopifyAccessToken, shopifyApiVersion
-  Gets details for a specific order
-*/
-app.get('/api/shopify/orders/:order_id', async (req, res) => {
-  try {
-    const { order_id } = req.params;
-    const { 
-      shopifyStore, 
-      shopifyAccessToken, 
-      shopifyApiVersion = '2024-10'
-    } = req.query;
-
-    if (!shopifyStore || !shopifyAccessToken) {
-      return res.status(400).json({ 
-        error: 'shopifyStore and shopifyAccessToken are required' 
-      });
-    }
-
-    // Build Shopify API URL
-    const shopifyUrl = `https://${shopifyStore}.myshopify.com/admin/api/${shopifyApiVersion}/orders/${order_id}.json`;
-
-    console.log('Making Shopify API request for order:', order_id);
-
-    // Make request to Shopify API
-    const response = await fetch(shopifyUrl, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': shopifyAccessToken,
-        'Content-Type': 'application/json',
-        'User-Agent': 'DialogIntelligens-Chatbot/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Shopify API error:', response.status, errorText);
-      return res.status(response.status).json({ 
-        error: 'Shopify API error', 
-        details: errorText,
-        status: response.status
-      });
-    }
-
-    const data = await response.json();
-    return res.json(data);
-
-  } catch (error) {
-    console.error('Error in Shopify order details proxy:', error);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
-});
+// Shopify endpoints moved to modular routes (registerShopifyRoutes)
 
 
 
@@ -5487,12 +5151,14 @@ registerReportRoutes(app, authenticateToken);
 import { registerGdprRoutes } from './src/routes/gdprRoutes.js';
 import { ensureGdprSettingsTable, scheduleGdprCleanup } from './src/utils/gdprUtils.js';
 import { runGdprCleanupAllService } from './src/services/gdprService.js';
+import { registerShopifyRoutes } from './src/routes/shopifyRoutes.js';
 
 // Initialize GDPR table and routes
 ensureGdprSettingsTable(pool).catch(err => console.error('GDPR init error:', err));
 registerGdprRoutes(app, pool, authenticateToken);
 // Optional scheduler (kept equivalent behavior)
 scheduleGdprCleanup(pool, runGdprCleanupAllService);
+registerShopifyRoutes(app, pool);
 setShopifyCredentialsPool(pool);
 registerShopifyCredentialsRoutes(app);
 setMagentoCredentialsPool(pool);
