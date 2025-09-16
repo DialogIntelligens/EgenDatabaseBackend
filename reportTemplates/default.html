@@ -21,12 +21,19 @@
       --text-secondary: #4a5568;
       --text-muted: #718096;
       --background-primary: #ffffff;
+<<<<<<< HEAD
       --background-secondary: #f8f9fa;
       --background-accent: #e9ecef;
       --border-color: #DBDCEC;
       --border-light: #DBDCEC;
       --shadow-primary: 0px 8px 16px 0px rgba(104, 107, 241, 0.16);
       --shadow-light: 0px 4px 12px 0px rgba(104, 107, 241, 0.08);
+=======
+      --background-secondary: #f7fafc;
+      --background-accent: #edf2f7;
+      --border-color: #e2e8f0;
+      --border-light: #f1f5f9;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       --spacing-xs: 8px;
       --spacing-sm: 12px;
       --spacing-md: 20px;
@@ -48,7 +55,11 @@
       font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
       color: var(--text-primary);
+<<<<<<< HEAD
       background: white;
+=======
+      background: var(--background-secondary);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       margin: 0;
       padding: 0;
       font-size: 14px;
@@ -57,6 +68,7 @@
       font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     }
     
+<<<<<<< HEAD
     /* PDF Container - A4 optimized */
     .report-container {
       width: 100%;
@@ -65,6 +77,15 @@
       background: white;
       min-height: auto;
       page-break-after: auto;
+=======
+    /* Main Container with Professional Layout */
+    .report-container {
+      max-width: 210mm;
+      margin: 0 auto;
+      background: var(--background-primary);
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      min-height: 297mm;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     /* PDF-Friendly Typography */
@@ -78,10 +99,29 @@
       break-after: avoid;
     }
     
+<<<<<<< HEAD
     h1 { font-size: 28px; font-weight: 700; }
     h2 { font-size: 22px; font-weight: 600; }
     h3 { font-size: 18px; font-weight: 600; }
     h4 { font-size: 15px; font-weight: 600; }
+=======
+    h1 { 
+      font-size: 32px; 
+      font-weight: 700; 
+    }
+    h2 { 
+      font-size: 24px; 
+      font-weight: 600;
+    }
+    h3 { 
+      font-size: 20px; 
+      font-weight: 600;
+    }
+    h4 { 
+      font-size: 16px; 
+      font-weight: 600;
+    }
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     
     p {
       margin-bottom: 1em;
@@ -91,6 +131,7 @@
       widows: 3;
     }
     
+<<<<<<< HEAD
     /* Content Container - More Compact */
     .content {
       padding: 30px 25px;
@@ -112,6 +153,62 @@
 
     .content > .section:first-of-type .analysis-content {
       margin-top: 8px;
+=======
+    /* Premium Header Design */
+    .header {
+      background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+      color: white;
+      padding: var(--spacing-2xl);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* Subtle pattern overlay */
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        radial-gradient(circle at 25% 25%, rgba(255,255,255,0.1) 1px, transparent 1px),
+        radial-gradient(circle at 75% 75%, rgba(255,255,255,0.1) 1px, transparent 1px);
+      background-size: 20px 20px;
+      opacity: 0.3;
+    }
+    
+    .header-content {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+    }
+    
+    .header h1 {
+      color: white;
+      margin-bottom: var(--spacing-sm);
+      font-size: 36px;
+      font-weight: 700;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .header .subtitle {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: var(--spacing-sm);
+    }
+    
+    .header .meta {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 14px;
+      font-weight: 400;
+    }
+    
+    /* Content Container */
+    .content {
+      padding: var(--spacing-2xl) var(--spacing-xl);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     /* PDF-Safe Section Styling */
@@ -123,10 +220,17 @@
     
     .section-header {
       color: var(--primary-color);
+<<<<<<< HEAD
       border-bottom: 2px solid var(--secondary-color);
       padding-bottom: 6px;
       margin-bottom: 18px;
       font-size: 18px;
+=======
+      border-bottom: 3px solid var(--secondary-color);
+      padding-bottom: var(--spacing-sm);
+      margin-bottom: var(--spacing-xl);
+      font-size: 24px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -145,7 +249,36 @@
       color: white;
       font-size: 13px;
       font-weight: bold;
+<<<<<<< HEAD
       flex-shrink: 0;
+=======
+      box-shadow: 0 4px 8px rgba(49, 130, 206, 0.3);
+    }
+    
+    /* Executive Summary Box */
+    .executive-summary {
+      background: linear-gradient(135deg, var(--background-secondary) 0%, rgba(49, 130, 206, 0.05) 100%);
+      border: 2px solid var(--border-light);
+      border-left: 6px solid var(--secondary-color);
+      border-radius: 12px;
+      padding: var(--spacing-2xl);
+      margin-bottom: var(--spacing-2xl);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    
+    .executive-summary h2 {
+      color: var(--primary-color);
+      font-size: 26px;
+      margin-bottom: var(--spacing-lg);
+      text-align: center;
+    }
+    
+    .executive-text {
+      font-size: 16px;
+      line-height: 1.8;
+      color: var(--text-secondary);
+      text-align: justify;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     /* Executive Summary - Updated with Dashboard Border Radius */
@@ -186,6 +319,7 @@
     /* Metric Cards - Updated with Dashboard Styling */
     .metric-card {
       background: white;
+<<<<<<< HEAD
       border: 1px solid var(--border-color);
       border-radius: 24px;
       padding: 25px;
@@ -212,21 +346,66 @@
     
     .metric-card.success {
       border-top-color: var(--success-color);
+=======
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: var(--spacing-xl);
+      position: relative;
+      margin-bottom: var(--spacing-md);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: var(--secondary-color);
+      border-radius: 12px 12px 0 0;
+    }
+    
+    .metric-card.highlight::before {
+      background: linear-gradient(90deg, var(--accent-color), var(--success-color));
+    }
+    
+    .metric-card.warning::before {
+      background: linear-gradient(90deg, var(--warning-color), #f6ad55);
+    }
+    
+    .metric-card.success::before {
+      background: linear-gradient(90deg, var(--success-color), #68d391);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .metric-card h4 {
       color: var(--text-muted);
+<<<<<<< HEAD
       font-size: 12px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 15px;
       margin-top: 0;
+=======
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: var(--spacing-md);
+      margin-top: var(--spacing-sm);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .metric-card .value {
       color: var(--primary-color);
+<<<<<<< HEAD
       font-size: 28px;
+=======
+      font-size: 32px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       font-weight: 700;
       margin-bottom: 8px;
       line-height: 1.1;
@@ -239,6 +418,7 @@
       font-weight: 500;
     }
     
+<<<<<<< HEAD
     /* PDF-Safe Status Indicators */
     .status-indicator {
       position: absolute;
@@ -246,6 +426,15 @@
       right: 15px;
       width: 10px;
       height: 10px;
+=======
+    /* Status Indicators */
+    .status-indicator {
+      position: absolute;
+      top: var(--spacing-md);
+      right: var(--spacing-md);
+      width: 12px;
+      height: 12px;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       border-radius: 50%;
       background: var(--success-color);
     }
@@ -261,6 +450,7 @@
     /* Chart Containers - Updated with Dashboard Styling */
     .chart-container {
       background: white;
+<<<<<<< HEAD
       border: 1px solid var(--border-color);
       border-radius: 24px;
       padding: 25px;
@@ -275,16 +465,31 @@
 
     .chart-container:hover {
       box-shadow: var(--shadow-primary);
+=======
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: var(--spacing-xl);
+      margin-bottom: var(--spacing-xl);
+      break-inside: avoid;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .chart-container h3 {
       margin-bottom: 20px;
       text-align: center;
       color: var(--primary-color);
+<<<<<<< HEAD
       font-size: 18px;
       font-weight: 600;
       padding-bottom: 10px;
       border-bottom: 1px solid var(--border-light);
+=======
+      font-size: 20px;
+      font-weight: 600;
+      padding-bottom: var(--spacing-sm);
+      border-bottom: 2px solid var(--border-light);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .chart-image {
@@ -292,9 +497,15 @@
       max-height: 300px;
       height: auto;
       display: block;
+<<<<<<< HEAD
       margin: 20px auto;
       border-radius: 12px;
       object-fit: contain;
+=======
+      margin: 0 auto;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .chart-description {
@@ -304,12 +515,17 @@
       text-align: center;
       font-style: italic;
       font-weight: 500;
+<<<<<<< HEAD
       padding-top: 15px; /* Increased padding */
+=======
+      padding-top: var(--spacing-sm);
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       border-top: 1px solid var(--border-light);
     }
     
     /* Analysis Content - Compact for Page 1 */
     .analysis-content {
+<<<<<<< HEAD
       background: var(--background-secondary);
       border-left: 4px solid var(--accent-color);
       border-radius: 16px;
@@ -321,6 +537,26 @@
       break-inside: avoid;
       box-shadow: var(--shadow-light);
       border: 1px solid var(--border-color);
+=======
+      background: linear-gradient(135deg, var(--background-secondary) 0%, rgba(56, 161, 105, 0.05) 100%);
+      border-left: 6px solid var(--accent-color);
+      border-radius: 12px;
+      padding: var(--spacing-2xl);
+      margin-bottom: var(--spacing-xl);
+      font-size: 15px;
+      line-height: 1.8;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      position: relative;
+    }
+    
+    .analysis-content::before {
+      content: '💡';
+      position: absolute;
+      top: var(--spacing-lg);
+      right: var(--spacing-lg);
+      font-size: 24px;
+      opacity: 0.3;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
 
     /* Compact headings for AI Analysis */
@@ -334,6 +570,7 @@
       line-height: 1.2;
       font-weight: 600;
     }
+<<<<<<< HEAD
 
     .analysis-content h1:first-child,
     .analysis-content h2:first-child,
@@ -362,6 +599,68 @@
 
     /* Simple strong text styling */
     .analysis-content strong {
+=======
+    
+    /* Key Insights Section */
+    .key-insights {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: var(--spacing-2xl);
+      border-radius: 12px;
+      margin-bottom: var(--spacing-xl);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .key-insights::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100px;
+      height: 100px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 50%;
+      transform: translate(30px, -30px);
+    }
+    
+    .key-insights h3 {
+      color: white;
+      font-size: 22px;
+      margin-bottom: var(--spacing-lg);
+      position: relative;
+      z-index: 2;
+    }
+    
+    .insights-list {
+      position: relative;
+      z-index: 2;
+    }
+    
+    .insight-item {
+      background: rgba(255, 255, 255, 0.15);
+      padding: var(--spacing-md);
+      border-radius: 8px;
+      margin-bottom: var(--spacing-sm);
+      font-size: 14px;
+      line-height: 1.6;
+      border-left: 4px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* Professional Footer */
+    .footer {
+      background: var(--background-accent);
+      border-top: 4px solid var(--primary-color);
+      padding: var(--spacing-xl);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    
+    .footer-brand {
+      font-size: 18px;
+      font-weight: 700;
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       color: var(--primary-color);
       font-weight: 700;
     }
@@ -640,6 +939,7 @@
     .faq-percentage {
       color: var(--text-secondary);
     }
+<<<<<<< HEAD
 
     .faq-variations {
       color: var(--text-muted);
@@ -708,6 +1008,94 @@
       border-radius: 16px;
       overflow: hidden;
       box-shadow: var(--shadow-light);
+=======
+    
+    /* Data Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: var(--spacing-lg);
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    
+    .data-table th,
+    .data-table td {
+      padding: var(--spacing-md);
+      text-align: left;
+      border-bottom: 1px solid var(--border-light);
+    }
+    
+    .data-table th {
+      background: var(--background-secondary);
+      font-weight: 600;
+      color: var(--primary-color);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .data-table tr:nth-child(even) {
+      background: var(--background-secondary);
+    }
+    
+    /* Print Optimization */
+    @media print {
+      body {
+        background: white !important;
+        padding: 0 !important;
+      }
+      
+      .report-container {
+        box-shadow: none !important;
+        max-width: none !important;
+        margin: 0 !important;
+      }
+      
+      .header,
+      .section,
+      .chart-container,
+      .metric-card,
+      .executive-summary,
+      .analysis-content {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      
+      .analysis-content {
+        font-size: 14px;
+      }
+      
+      .chart-container {
+        max-height: 400px;
+      }
+      
+      .key-insights {
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+      }
+    }
+    
+    /* Responsive Design */
+    @media screen and (max-width: 768px) {
+      .content {
+        padding: var(--spacing-lg);
+      }
+      
+      .metric-grid {
+        flex-direction: column;
+      }
+      
+      .metric-grid .metric-card {
+        min-width: auto;
+      }
+      
+      .header h1 {
+        font-size: 28px;
+      }
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     }
     
     .data-table th,
@@ -820,6 +1208,7 @@
     .mb-0 { margin-bottom: 0; }
     .mt-lg { margin-top: 20px; }
     .hidden { display: none; }
+<<<<<<< HEAD
     
     /* PDF-Specific Optimizations - Enhanced */
     @media print, screen {
@@ -1029,10 +1418,13 @@
       height: 30px;
       page-break-inside: avoid;
     }
+=======
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
   </style>
 </head>
 <body>
   <div class="report-container">
+<<<<<<< HEAD
     <!-- Clean Front Page -->
     <div class="front-page">
       <!-- Enhanced Blue Header Section -->
@@ -1050,11 +1442,22 @@
               <strong>{{translations.generated}}:</strong> {{generatedDate}}
             </div>
           </div>
+=======
+    <!-- Professional Header -->
+    <div class="header">
+      <div class="header-content">
+        <h1>{{#if reportTitle}}{{reportTitle}}{{else}}Statistics Report{{/if}}</h1>
+        <div class="subtitle">{{timePeriod}}</div>
+        <div class="meta">
+          Generated on {{generatedDate}}
+          {{#if companyInfo}} • {{companyInfo}}{{/if}}
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
         </div>
       </div>
     </div>
 
     <div class="content">
+<<<<<<< HEAD
        <!-- AI Analysis Section -->
        {{#if gptAnalysis}}
        <div class="section page-break-inside-avoid">
@@ -1144,16 +1547,59 @@
 
        </div>
 
+=======
+      <!-- Executive Summary Section -->
+      <div class="executive-summary">
+        <h2>Executive Summary</h2>
+        <div class="executive-text">
+          Chatbotten leverer stabil kundeservice med en samlet Customer Satisfaction (CSAT) 
+          på {{csatScore}} og en gennemsnitlig rating på {{averageCustomerRating}} ud af 5. 
+          Over tiden er der håndteret {{totalMessages}} samtaler og afsendt {{totalConversations}} 
+          beskeder, svarende til i gennemsnit {{#if dailyAverage}}{{dailyAverage}}{{else}}N/A{{/if}} 
+          beskeder per dag. Dette indikerer, at chatbotten aktivt assisterer besøgende og aflaster supportteamet.
+        </div>
+      </div>
+      
+      <!-- Key Insights Section -->
+      <div class="key-insights">
+        <h3>🔍 Key Performance Insights</h3>
+        <div class="insights-list">
+          <div class="insight-item">
+            <strong>High Engagement:</strong> {{totalMessages}} total messages indicate active user interaction
+          </div>
+          <div class="insight-item">
+            <strong>Customer Satisfaction:</strong> {{averageCustomerRating}}/5 rating shows excellent service quality
+          </div>
+          <div class="insight-item">
+            <strong>Consistent Performance:</strong> {{csatScore}} CSAT score demonstrates reliable support
+          </div>
+          {{#if hasPurchaseTracking}}
+          <div class="insight-item">
+            <strong>Business Impact:</strong> {{totalRevenue}} revenue generated through chatbot interactions
+          </div>
+          {{/if}}
+        </div>
+      </div>
+      
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
       <!-- Executive Metrics Section -->
       <div class="section page-break-inside-avoid">
         <h2 class="section-header">
           <span class="section-icon">📊</span>
+<<<<<<< HEAD
           {{translations.performanceMetrics}}
+=======
+          Performance Metrics Overview
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
         </h2>
         <div class="metric-grid">
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.totalMessages}}</h4>
+=======
+            <h4>Total Messages</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{totalMessages}}</div>
             <div class="description">{{translations.totalMessagesMetricDesc}}</div>
           </div>
@@ -1169,7 +1615,11 @@
           
           <div class="metric-card">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.totalConversations}}</h4>
+=======
+            <h4>Total Conversations</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{totalConversations}}</div>
             <div class="description">{{translations.totalConversationsDesc}}</div>
           </div>
@@ -1185,14 +1635,22 @@
           
           <div class="metric-card success">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.customerSatisfactionMetric}}</h4>
+=======
+            <h4>Customer Satisfaction</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{averageCustomerRating}}</div>
             <div class="description">{{translations.customerSatisfactionMetricDesc}}</div>
           </div>
           
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.csatScore}}</h4>
+=======
+            <h4>CSAT Score</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{csatScore}}</div>
             <div class="description">{{translations.csatScoreDesc}}</div>
           </div>
@@ -1200,6 +1658,7 @@
           {{#if hasPurchaseTracking}}
           <div class="metric-card success">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.totalPurchases}}</h4>
             <div class="value">{{totalPurchases}}</div>
             <div class="description">{{translations.totalPurchasesDesc}}</div>
@@ -1208,6 +1667,9 @@
           <div class="metric-card success">
             <div class="status-indicator"></div>
             <h4>{{translations.totalRevenue}}</h4>
+=======
+            <h4>Total Revenue</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{totalRevenue}}</div>
             <div class="description">{{translations.totalRevenueDesc}}</div>
           </div>
@@ -1221,7 +1683,11 @@
           
           <div class="metric-card highlight">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.conversionRate}}</h4>
+=======
+            <h4>Conversion Rate</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{conversionRate}}</div>
             <div class="description">{{translations.conversionRateDesc}}</div>
           </div>
@@ -1230,7 +1696,11 @@
           {{#if hasGreetingRateData}}
           <div class="metric-card">
             <div class="status-indicator"></div>
+<<<<<<< HEAD
             <h4>{{translations.greetingSuccessRate}}</h4>
+=======
+            <h4>Greeting Success Rate</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{greetingRate}}</div>
             <div class="description">{{translations.greetingSuccessRateDesc}}</div>
           </div>
@@ -1239,7 +1709,11 @@
           {{#if hasFallbackData}}
           <div class="metric-card warning">
             <div class="status-indicator warning"></div>
+<<<<<<< HEAD
             <h4>{{translations.fallbackRate}}</h4>
+=======
+            <h4>Fallback Rate</h4>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
             <div class="value">{{fallbackRate}}</div>
             <div class="description">{{translations.fallbackRateDesc}}</div>
           </div>
@@ -1255,6 +1729,67 @@
           {{/if}}
         </div>
       </div>
+<<<<<<< HEAD
+=======
+
+      <!-- AI Analysis Section -->
+      {{#if gptAnalysis}}
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">🤖</span>
+          AI-Powered Business Insights
+        </h2>
+        <div class="analysis-content">
+          {{{gptAnalysis}}}
+        </div>
+      </div>
+      {{/if}}
+
+      <!-- Performance Analytics Section -->
+      <div class="section">
+        <h2 class="section-header">
+          <span class="section-icon">📈</span>
+          Performance Analytics Dashboard
+        </h2>
+        
+        {{#if dailyChart}}
+        <div class="chart-container">
+          <h3>{{#if isWeekly}}Weekly{{else}}Daily{{/if}} Message Volume Trends</h3>
+          <img src="{{dailyChart}}" alt="Message Volume Analytics" class="chart-image">
+          <div class="chart-description">
+            Message distribution patterns over {{#if isWeekly}}weekly{{else}}daily{{/if}} intervals showing peak activity periods
+          </div>
+        </div>
+        {{/if}}
+        
+        {{#if hourlyChart}}
+        <div class="chart-container">
+          <h3>Peak Activity Hours Analysis</h3>
+          <img src="{{hourlyChart}}" alt="Hourly Activity Distribution" class="chart-image">
+          <div class="chart-description">
+            Customer engagement patterns throughout the day revealing optimal support hours
+          </div>
+        </div>
+        {{/if}}
+        
+        {{#if topicChart}}
+        <div class="chart-container">
+          <h3>Customer Inquiry Topic Distribution</h3>
+          <img src="{{topicChart}}" alt="Topic Analysis Chart" class="chart-image">
+          <div class="chart-description">
+            Most frequently discussed topics and customer interests driving engagement
+          </div>
+        </div>
+        {{/if}}
+      </div>
+    </div>
+    
+    <!-- Professional Footer -->
+    <div class="footer">
+      <div class="footer-brand">Dialog Intelligens</div>
+      <p>Professional Analytics Report • Generated {{generatedDate}}</p>
+      <div class="footer-tagline">Empowering businesses through intelligent conversation analytics</div>
+>>>>>>> 1d54a31edde4197a56e76337d866c7faaa21ae6d
     </div>
   </div>
 </body>
