@@ -19,6 +19,7 @@ import { registerShopifyCredentialsRoutes, setShopifyCredentialsPool } from './s
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { getEmneAndScore } from './src/utils/mainUtils.js';
+import { registerBevcoRoutes } from './src/routes/bevcoRoutes.js';
 
 const { Pool } = pg;
 
@@ -350,86 +351,7 @@ app.post('/api/proxy/order', async (req, res) => {
 /* ================================
    BevCo Order API Proxy
 ================================ */
-app.post('/api/proxy/bevco-order', async (req, res) => {
-  try {
-    // Log the request for debugging
-    console.log("BevCo API request:", JSON.stringify(req.body, null, 2));
-    
-    // Forward the request to BevCo API
-    const response = await fetch("https://api.bevco.dk/store-api/dialog-intelligens/order/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "sw-api-key": "9533ee33bf82412f94dd8936ce59b908",
-        "sw-access-key": "SWSCX1MTFXXC4BHA0UDNEHYBFQ"
-      },
-      body: JSON.stringify(req.body),
-    });
-
-    // First get response as text for debugging
-    const responseText = await response.text();
-    console.log("BevCo API raw response:", responseText);
-    
-    // Check if the response is ok
-    if (!response.ok) {
-      console.error("BevCo API error response:", responseText);
-      return res.status(response.status).json({
-        status: "error",
-        message: `Failed to fetch order details. ${response.status} ${response.statusText}`,
-        details: responseText
-      });
-    }
-    
-    try {
-      // Try to parse the JSON
-      const data = responseText ? JSON.parse(responseText) : {};
-      
-      // Ensure we have a standardized response format
-      const standardizedResponse = {
-        status: "success",
-        orders: []
-      };
-      
-      // If we have order data, format it appropriately
-      if (data) {
-        if (Array.isArray(data)) {
-          standardizedResponse.orders = data;
-        } else if (data.orders && Array.isArray(data.orders)) {
-          standardizedResponse.orders = data.orders;
-        } else if (Object.keys(data).length > 0) {
-          // Treat as a single order
-          standardizedResponse.orders = [data];
-        }
-      }
-      
-      return res.json(standardizedResponse);
-    } catch (jsonError) {
-      console.error("Error parsing BevCo JSON response:", jsonError);
-      console.log("Failed to parse JSON:", responseText);
-      
-      // Return a default response for invalid JSON
-      return res.json({
-        status: "success",
-        orders: [{
-          order_number: req.body.order_number || "Unknown",
-          order_status: "Error",
-          attention: "Der kunne ikke hentes ordredetaljer. Formatet af svaret var uventet."
-        }]
-      });
-    }
-  } catch (error) {
-    console.error("Error proxying request to BevCo:", error);
-    return res.status(500).json({
-      status: "success", // Still return success to avoid frontend errors
-      message: "Could not retrieve order information. The system might be temporarily unavailable.",
-      orders: [{
-        order_number: req.body.order_number || "Unknown",
-        order_status: "Error",
-        attention: "Der opstod en teknisk fejl. Prøv igen senere eller kontakt kundeservice."
-      }]
-    });
-  }
-});
+// moved to bevcoRoutes
 
 /* ================================
    Pinecone Data Endpoints
@@ -2172,34 +2094,8 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
   }
 
   try {
-    // First, get total count of conversations to process
-    let countQuery;
-    let countParams;
-
-    if (limit && limit > 0) {
-      countQuery = 'SELECT COUNT(*) as total FROM (SELECT id FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC LIMIT $2) as limited_conversations';
-      countParams = [chatbot_id, limit];
-    } else {
-      countQuery = 'SELECT COUNT(*) as total FROM conversations WHERE chatbot_id = $1';
-      countParams = [chatbot_id];
-    }
-
-    const totalResult = await pool.query(countQuery, countParams);
-    const totalConversations = parseInt(totalResult.rows[0].total);
-
-    if (totalConversations === 0) {
-      return res.status(404).json({
-        error: 'No conversations found for the given chatbot_id',
-        total: 0,
-        processed: 0,
-        successful: 0,
-        failed: 0,
-        hasMore: false
-      });
-    }
-
-    // Build query to get conversations for this batch
-    let query;
+    // Build query with optional limit for recent conversations
+    let query = 'SELECT * FROM conversations WHERE chatbot_id = $1 ORDER BY created_at DESC';
     let queryParams = [chatbot_id];
     
     if (limit && limit > 0) {
@@ -2224,7 +2120,7 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
       `;
       queryParams.push(batch_offset, batch_size);
     }
-
+    
     const conversations = await pool.query(query, queryParams);
     if (conversations.rows.length === 0) {
       return res
@@ -2233,76 +2129,89 @@ app.post('/update-conversations', authenticateToken, async (req, res) => {
     }
 
     // Get userId from the first conversation (all conversations for a chatbot should have the same user_id)
-    const userId = conversations.rows[0]?.user_id;
+    const userId = conversations.rows[0].user_id;
     if (!userId) {
       return res.status(400).json({ error: 'Could not determine user_id from conversations' });
     }
 
-    const currentBatchSize = conversations.rows.length;
+    const totalConversations = conversations.rows.length;
+    let processedCount = 0;
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
 
     const limitInfo = limit ? ` (limited to ${limit} most recent)` : ' (all conversations)';
-    console.log(`Processing batch: offset ${batch_offset}, size ${batch_size} for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
+    console.log(`Starting to update ${totalConversations} conversations for chatbot ${chatbot_id} (user ${userId})${limitInfo}`);
 
-    // Process this batch
-    const batchPromises = conversations.rows.map(async (conversation) => {
-      try {
-        const conversationText = conversation.conversation_data;
-        const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id, pool);
+    // Process conversations in batches to avoid overwhelming the API
+    const BATCH_SIZE = 10;
+    const batches = [];
+    for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
+      batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
+    }
 
-        await pool.query(
-          `UPDATE conversations
-           SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
-           WHERE id = $6`,
-          [emne, score, lacking_info, fallback, tags, conversation.id]
-        );
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} conversations)`);
 
-        successCount++;
-        return { success: true, id: conversation.id };
-      } catch (error) {
-        errorCount++;
-        const errorDetails = {
-          conversationId: conversation.id,
-          error: error.message
-        };
-        errors.push(errorDetails);
-        console.error(`Error processing conversation ${conversation.id}:`, error);
-        return { success: false, id: conversation.id, error: error.message };
+      // Process batch in parallel with limited concurrency
+      const batchPromises = batch.map(async (conversation) => {
+        try {
+          const conversationText = conversation.conversation_data;
+          const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbot_id, pool);
+
+          await pool.query(
+            `UPDATE conversations
+             SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+             WHERE id = $6`,
+            [emne, score, lacking_info, fallback, tags, conversation.id]
+          );
+
+          successCount++;
+          return { success: true, id: conversation.id };
+        } catch (error) {
+          errorCount++;
+          const errorDetails = {
+            conversationId: conversation.id,
+            error: error.message
+          };
+          errors.push(errorDetails);
+          console.error(`Error processing conversation ${conversation.id}:`, error);
+          return { success: false, id: conversation.id, error: error.message };
+        }
+      });
+
+      // Wait for batch to complete
+      await Promise.all(batchPromises);
+      processedCount += batch.length;
+
+      // Log progress
+      const progressPercent = Math.round((processedCount / totalConversations) * 100);
+      console.log(`Progress: ${processedCount}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
+
+      // Small delay between batches to be nice to the API
+      if (batchIndex < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    });
-
-    // Wait for batch to complete
-    await Promise.all(batchPromises);
-
-    // Calculate progress
-    const processedThisBatch = currentBatchSize;
-    const totalProcessedSoFar = batch_offset + processedThisBatch;
-    const hasMore = totalProcessedSoFar < totalConversations;
-    const progressPercent = Math.round((totalProcessedSoFar / totalConversations) * 100);
+    }
 
     const response = {
-      message: hasMore ? `Batch completed. ${totalProcessedSoFar}/${totalConversations} processed (${progressPercent}%)` : 'All conversations update completed',
+      message: 'Conversations update completed',
       total: totalConversations,
-      processedThisBatch,
-      totalProcessed: totalProcessedSoFar,
+      processed: processedCount,
       successful: successCount,
-      failed: errorCount,
-      hasMore,
-      nextOffset: hasMore ? totalProcessedSoFar : null,
-      progressPercent
+      failed: errorCount
     };
 
     // Include error details if there were any failures
     if (errors.length > 0) {
-      response.errors = errors.slice(0, 5); // Limit to first 5 errors per batch
-      if (errors.length > 5) {
-        response.note = `Showing first 5 errors from this batch. Total errors so far: ${errors.length}`;
+      response.errors = errors.slice(0, 10); // Limit to first 10 errors to avoid large responses
+      if (errors.length > 10) {
+        response.note = `Showing first 10 errors. Total errors: ${errors.length}`;
       }
     }
 
-    console.log(`Batch completed: ${totalProcessedSoFar}/${totalConversations} (${progressPercent}%) - Success: ${successCount}, Errors: ${errorCount}`);
+    console.log('Update conversations completed:', response);
     return res.status(200).json(response);
 
   } catch (error) {
@@ -5142,6 +5051,7 @@ setShopifyCredentialsPool(pool);
 registerShopifyCredentialsRoutes(app);
 setMagentoCredentialsPool(pool);
 registerMagentoCredentialsRoutes(app);
+registerBevcoRoutes(app);
 registerLivechatRoutes(app, pool, authenticateToken);
 
 /* ================================
