@@ -937,140 +937,7 @@ app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
   }
 });
 
-/* ================================
-   Registration & Login
-================================ */
-app.post('/register', async (req, res) => {
-  const {
-    username,
-    password,
-    chatbot_ids,
-    pinecone_api_key,
-    pinecone_indexes,
-    chatbot_filepath,
-    is_admin,
-    is_limited_admin,
-    accessible_chatbot_ids,
-    accessible_user_ids
-  } = req.body;
-
-  // Basic validation: Ensure chatbot_filepath is an array if provided
-  if (chatbot_filepath && !Array.isArray(chatbot_filepath)) {
-    return res.status(400).json({ error: 'chatbot_filepath must be an array of strings.' });
-  }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    // Convert chatbot_ids to a JSON array or similar
-    const chatbotIdsArray = chatbot_ids;
-
-    const pineconeIndexesJSON = JSON.stringify(pinecone_indexes);
-
-    const result = await pool.query(
-      `INSERT INTO users (
-         username,
-         password,
-         chatbot_ids,
-         pinecone_api_key,
-         pinecone_indexes,
-         chatbot_filepath,
-         is_admin,
-         is_limited_admin,
-         accessible_chatbot_ids,
-         accessible_user_ids
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING *`,
-
-      [
-         username,
-        hashedPassword,
-        chatbotIdsArray,
-        pinecone_api_key,
-        pineconeIndexesJSON,
-        chatbot_filepath || [],
-        is_admin,
-        is_limited_admin,
-        accessible_chatbot_ids || [],
-        accessible_user_ids || []
-      ]
-    );
-
-    return res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) {
-    console.error('Error registering user:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const result = await pool.query('SELECT *, agent_name, profile_picture FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid username or password' });
-    }
-
-    const user = result.rows[0];
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Invalid username or password' });
-    }
-
-    // Sign the JWT, including limited admin details
-    const tokenPayload = {
-      userId: user.id,
-      isAdmin: user.is_admin,
-      isLimitedAdmin: user.is_limited_admin,
-      accessibleChatbotIds: user.accessible_chatbot_ids || [],
-      accessibleUserIds: user.accessible_user_ids || []
-    };
-    const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: '24h' });
-
-    // Determine chatbot access list based on role
-    let chatbotIds = user.chatbot_ids || [];
-    if (typeof chatbotIds === 'string') {
-      chatbotIds = JSON.parse(chatbotIds);
-    }
-
-    if (user.is_admin) {
-      const allUsers = await pool.query('SELECT chatbot_ids FROM users');
-      let mergedIds = [];
-      for (const row of allUsers.rows) {
-        let ids = row.chatbot_ids || [];
-        if (typeof ids === 'string') {
-          ids = JSON.parse(ids);
-        }
-        mergedIds = mergedIds.concat(ids);
-      }
-      const uniqueIds = [...new Set(mergedIds)];
-      chatbotIds = uniqueIds;
-    } else if (user.is_limited_admin) {
-      // Limited admin: use the accessible_chatbot_ids list
-      chatbotIds = user.accessible_chatbot_ids || [];
-    }
-
-    return res.json({
-      token,
-      chatbot_ids: chatbotIds,
-      chatbot_filepath: user.chatbot_filepath || [],
-      is_admin: user.is_admin,
-      is_limited_admin: user.is_limited_admin,
-      accessible_chatbot_ids: user.accessible_chatbot_ids || [],
-      accessible_user_ids: user.accessible_user_ids || [],
-      thumbs_rating: user.thumbs_rating || false,
-      company_info: user.company_info || '',
-      livechat: user.livechat || false,
-      split_test_enabled: user.split_test_enabled || false,
-      agent_name: user.agent_name || 'Support Agent',
-      profile_picture: user.profile_picture || ''
-    });
-  } catch (err) {
-    console.error('Error logging in:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// removed: Registration & Login were moved to usersRoutes
 
 
 app.delete('/conversations/:id', authenticateToken, async (req, res) => {
@@ -2252,12 +2119,7 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
   }
 }
 
-
-// Helper for prediction using standard statistics API
-
-/* ===============================
-   CRON JOB for Expiration Cleanup
-================================ */
+// removed: CRON JOB for Expiration Cleanup
 cron.schedule('0 * * * *', async () => {
   // Runs every hour. Modify interval to your needs
   try {
@@ -2291,14 +2153,6 @@ cron.schedule('0 * * * *', async () => {
     console.error('Error deleting expired data:', err);
   }
 });
-
-
-/* ================================
-   Helper Functions for Report Generation
-================================ */
-
-
-
 
 /* ================================
    Consolidated Statistics Endpoint (Performance Optimized)
@@ -3280,44 +3134,6 @@ app.get('/monthly-conversation-breakdown', authenticateToken, async (req, res) =
   }
 });
 
-// User Tracking Endpoints
-app.post('/track/dashboard-open', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { session_id, ip_address, user_agent } = req.body;
-
-  try {
-    // Insert dashboard open record (with unique constraint to prevent duplicate daily session counts)
-    await pool.query(`
-      INSERT INTO user_dashboard_opens (user_id, session_id, ip_address, user_agent)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (user_id, session_id, DATE(opened_at)) DO NOTHING
-    `, [userId, session_id, ip_address, user_agent]);
-
-    res.status(201).json({ message: 'Dashboard open tracked successfully' });
-  } catch (error) {
-    console.error('Error tracking dashboard open:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-app.post('/track/page-visit', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { page_name, session_id, duration, ip_address, user_agent } = req.body;
-
-  try {
-    // Insert page visit record
-    await pool.query(`
-      INSERT INTO user_page_visits (user_id, page_name, session_id, duration, ip_address, user_agent)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `, [userId, page_name, session_id, duration, ip_address, user_agent]);
-
-    res.status(201).json({ message: 'Page visit tracked successfully' });
-  } catch (error) {
-    console.error('Error tracking page visit:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
 // Get user tracking statistics (Admin only)
 app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
   if (!req.user.isAdmin) {
@@ -3394,180 +3210,6 @@ app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
-
-// Add this before the app.listen section, near other user-related endpoints
-
-// Add endpoint to update company information
-app.put('/update-company-info', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { company_info } = req.body;
-
-  if (company_info === undefined) {
-    return res.status(400).json({ error: 'company_info field is required' });
-  }
-
-  try {
-    // Update company_info in the users table
-    const result = await pool.query(
-      'UPDATE users SET company_info = $1 WHERE id = $2 RETURNING id, username, company_info',
-      [company_info, userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Company information updated successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username,
-        company_info: result.rows[0].company_info
-      }
-    });
-  } catch (error) {
-    console.error('Error updating company information:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-
-// Add this endpoint after the other company info endpoints
-app.get('/company-info', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-
-  try {
-    // Get user's company info
-    const result = await pool.query(
-      'SELECT company_info FROM users WHERE id = $1',
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      company_info: result.rows[0].company_info || '' 
-    });
-  } catch (error) {
-    console.error('Error fetching company information:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// New endpoint to update agent name
-app.put('/update-agent-name', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { agent_name } = req.body;
-
-  if (!agent_name || typeof agent_name !== 'string' || agent_name.trim() === '') {
-    return res.status(400).json({ error: 'agent_name is required and must be a non-empty string' });
-  }
-
-  try {
-    const result = await pool.query(
-      'UPDATE users SET agent_name = $1 WHERE id = $2 RETURNING id, username, agent_name',
-      [agent_name.trim(), userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Agent name updated successfully',
-      user: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating agent name:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// New endpoint to update profile picture
-app.put('/update-profile-picture', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { profile_picture } = req.body;
-
-  if (!profile_picture || typeof profile_picture !== 'string' || profile_picture.trim() === '') {
-    return res.status(400).json({ error: 'profile_picture is required and must be a non-empty string' });
-  }
-
-  try {
-    const updateResult = await pool.query(
-      'UPDATE users SET profile_picture = $1 WHERE id = $2 RETURNING id, username, profile_picture',
-      [profile_picture.trim(), userId]
-    );
-
-    if (updateResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Profile picture updated successfully',
-      user: updateResult.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating profile picture:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-// Upload logo/image endpoint for profile pictures
-app.post('/upload-logo', authenticateToken, async (req, res) => {
-  try {
-    // Handle both multipart form data and direct base64
-    let imageData = null;
-    let mimeType = null;
-    
-    if (req.body.image) {
-      // Handle base64 data from form data
-      const base64Data = req.body.image;
-      if (base64Data.startsWith('data:')) {
-        // Extract mime type and base64 data
-        const matches = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-        if (matches) {
-          mimeType = matches[1];
-          imageData = matches[2];
-        } else {
-          return res.status(400).json({ error: 'Invalid base64 image format' });
-        }
-      } else {
-        return res.status(400).json({ error: 'Image must be base64 encoded with data URL format' });
-      }
-    } else {
-      return res.status(400).json({ error: 'No image data provided' });
-    }
-
-    // Validate mime type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(mimeType)) {
-      return res.status(400).json({ error: 'Invalid file type. Allowed types: JPEG, PNG, GIF, WebP' });
-    }
-
-    // Validate base64 size (approximate file size check)
-    const sizeInBytes = (imageData.length * 3) / 4;
-    const maxSizeInBytes = 5 * 1024 * 1024; // 5MB
-    if (sizeInBytes > maxSizeInBytes) {
-      return res.status(400).json({ error: 'File size too large. Maximum 5MB allowed.' });
-    }
-
-    // For now, return the data URL as the "uploaded" URL
-    // In production, you would upload to a cloud service like Cloudinary or AWS S3
-    const dataUrl = `data:${mimeType};base64,${imageData}`;
-    
-    return res.status(200).json({
-      message: 'Image uploaded successfully',
-      url: dataUrl
-    });
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    return res.status(500).json({ error: 'Upload failed', details: error.message });
-  }
-});
-
-
 
 /* ================================
    Freshdesk Ticket Creation Proxy
@@ -4558,6 +4200,7 @@ import { registerLivechatRoutes } from './src/routes/livechatRoutes.js';
 import { registerUserSettingsRoutes } from './src/routes/userSettingsRoutes.js';
 import { registerSupportRoutes } from './src/routes/supportRoutes.js';
 import { registerAdminRoutes } from './src/routes/adminRoutes.js';
+import { registerUsersRoutes } from './src/routes/usersRoutes.js';
 
 // Initialize GDPR table and routes
 ensureGdprSettingsTable(pool).catch(err => console.error('GDPR init error:', err));
@@ -4575,6 +4218,7 @@ registerUserSettingsRoutes(app, pool, authenticateToken);
 registerCommentsRoutes(app, pool, authenticateToken);
 registerSupportRoutes(app, pool, authenticateToken);
 registerAdminRoutes(app, pool, authenticateToken, getPineconeApiKeyForIndex);
+registerUsersRoutes(app, pool, authenticateToken, SECRET_KEY);
 
 /* ================================
    Error Logging Endpoints
@@ -5070,109 +4714,6 @@ app.get('/unread-livechat-count', authenticateToken, async (req, res) => {
   }
 });
 
-// GET user's livechat notification sound preference
-app.get('/livechat-notification-sound', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  try {
-    const result = await pool.query(
-      'SELECT livechat_notification_sound FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const soundEnabled = result.rows[0].livechat_notification_sound !== false; // Default to true if null
-    res.json({ livechat_notification_sound: soundEnabled });
-  } catch (err) {
-    console.error('Error fetching livechat notification sound preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// PUT update user's livechat notification sound preference
-app.put('/livechat-notification-sound', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { livechat_notification_sound } = req.body;
-  
-  if (typeof livechat_notification_sound !== 'boolean') {
-    return res.status(400).json({ error: 'livechat_notification_sound must be a boolean' });
-  }
-  
-  try {
-    const result = await pool.query(
-      'UPDATE users SET livechat_notification_sound = $2 WHERE id = $1 RETURNING livechat_notification_sound',
-      [userId, livechat_notification_sound]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({ 
-      message: 'Livechat notification sound preference updated successfully',
-      livechat_notification_sound: result.rows[0].livechat_notification_sound 
-    });
-  } catch (err) {
-    console.error('Error updating livechat notification sound preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// GET user's show user profile pictures preference
-app.get('/show-user-profile-pictures', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  try {
-    const result = await pool.query(
-      'SELECT show_user_profile_pictures FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const showPictures = result.rows[0].show_user_profile_pictures !== false; // Default to true if null
-    res.json({ show_user_profile_pictures: showPictures });
-  } catch (err) {
-    console.error('Error fetching show user profile pictures preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// PUT update user's show user profile pictures preference
-app.put('/show-user-profile-pictures', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { show_user_profile_pictures } = req.body;
-  
-  if (typeof show_user_profile_pictures !== 'boolean') {
-    return res.status(400).json({ error: 'show_user_profile_pictures must be a boolean' });
-  }
-  
-  try {
-    const result = await pool.query(
-      'UPDATE users SET show_user_profile_pictures = $2 WHERE id = $1 RETURNING show_user_profile_pictures',
-      [userId, show_user_profile_pictures]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({ 
-      message: 'Show user profile pictures preference updated successfully',
-      show_user_profile_pictures: result.rows[0].show_user_profile_pictures 
-    });
-  } catch (err) {
-    console.error('Error updating show user profile pictures preference:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-
 /* ================================
    Agent Typing Status Cleanup
 ================================ */
@@ -5209,5 +4750,3 @@ console.log('Agent typing status cleanup scheduled to run daily at midnight');
 
 // Export pool for use in utility modules
 export { pool };
-
-
