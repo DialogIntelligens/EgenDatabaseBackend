@@ -11,7 +11,7 @@ import { generateStatisticsReportTemplate } from './reportGeneratorTemplate.js';
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
-import { createFreshdeskTicket } from './freshdeskHandler.js';
+import { registerFreshdeskRoutes } from './src/routes/freshdeskRoutes.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
@@ -3051,71 +3051,7 @@ app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
   }
 });
 
-/* ================================
-   Freshdesk Ticket Creation Proxy
-================================ */
-
-// POST /api/create-freshdesk-ticket - Proxy for Freshdesk ticket creation to avoid CORS issues
-app.post('/api/create-freshdesk-ticket', async (req, res) => {
-  try {
-    console.log("Backend: Received Freshdesk ticket creation request");
-    
-    // Validate required fields
-    const { email, subject, description } = req.body;
-    if (!email || !subject || !description) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: email, subject, and description are required' 
-      });
-    }
-
-    // Call the Freshdesk handler
-    const result = await createFreshdeskTicket(req.body);
-    
-    console.log("Backend: Freshdesk ticket created successfully, returning to frontend");
-    
-    // Return the ticket ID in the format expected by the frontend
-    res.status(201).json({
-      ticket_id: result.id,
-      message: 'Freshdesk ticket created successfully',
-      freshdesk_response: result
-    });
-    
-  } catch (error) {
-    console.error("Backend: Error creating Freshdesk ticket:", error);
-    
-    // Extended logging: write the error details to the error_logs table so the dashboard can pick it up
-    try {
-      // Extract minimal request info for context (avoid storing full description HTML)
-      const { email: reqEmail, subject: reqSubject } = req.body || {};
-
-      const error_details = {
-        ...(error.context || {}),
-        requestMeta: {
-          email: reqEmail,
-          subject: reqSubject
-        }
-      };
-
-      // Explicitly categorize as FRESHDESK_ERROR since this is in the Freshdesk ticket creation endpoint
-      const error_category = 'FRESHDESK_ERROR';
-
-      await pool.query(
-        `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [null, null, error_category, error.message || "Freshdesk ticket failure", JSON.stringify(error_details), error.stack || null]
-      );
-    } catch (logErr) {
-      console.error('Backend: Failed to log Freshdesk error to DB:', logErr);
-    }
-    
-    // Return a structured error response
-    res.status(500).json({
-      error: 'Failed to create Freshdesk ticket',
-      message: error.message,
-      details: error.stack
-    });
-  }
-});
+// moved to freshdeskRoutes
 
 /* ================================
    Shopify Credentials Management
@@ -4053,6 +3989,7 @@ setShopifyCredentialsPool(pool);
 registerShopifyCredentialsRoutes(app);
 setMagentoCredentialsPool(pool);
 registerMagentoCredentialsRoutes(app);
+registerFreshdeskRoutes(app, pool);
 registerBevcoRoutes(app);
 registerLivechatRoutes(app, pool, authenticateToken);
 registerUserSettingsRoutes(app, pool, authenticateToken);
