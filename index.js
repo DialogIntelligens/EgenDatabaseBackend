@@ -365,11 +365,6 @@ app.post('/api/proxy/order', async (req, res) => {
 });
 
 /* ================================
-   BevCo Order API Proxy
-================================ */
-// moved to bevcoRoutes
-
-/* ================================
    Pinecone Data Endpoints
 ================================ */
 app.post('/pinecone-data', authenticateToken, async (req, res) => {
@@ -1175,11 +1170,6 @@ app.patch('/conversations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-/* ================================
-   Comment Endpoints
-================================ */
-// GET comments for a conversation
-// moved to commentsRoutes
 
     // Helper upsert function
     async function upsertConversation(
@@ -2105,8 +2095,6 @@ app.get('/conversation-update-job/:jobId', authenticateToken, async (req, res) =
   }
 });
 
-// Get all jobs for a user (admin only)
-// moved to adminRoutes
 
 // Background job processor
 async function processConversationUpdateJob(jobId, chatbotId, userId, limit, totalConversations) {
@@ -2264,8 +2252,6 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
   }
 }
 
-// Cancel a conversation update job
-// moved to adminRoutes
 
 // Helper for prediction using standard statistics API
 
@@ -2890,29 +2876,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Add this endpoint to delete a user
-// moved to adminRoutes
-
-// moved to adminRoutes
-
-// moved to adminRoutes
-
-// Get user's statistic settings
-// moved to userSettingsRoutes
-
-// Add this endpoint to update a user's chatbot IDs and filepaths
-// moved to adminRoutes
-
-
-
-// Add this endpoint to reset a user's password (admin only)
-// moved to adminRoutes
-
-// Add this endpoint to archive/unarchive a user (admin only)
-// moved to adminRoutes
-
-// Get archived users (admin only)
-// moved to adminRoutes
 
 // Revenue Analytics endpoint (Admin only)
 app.get('/revenue-analytics', authenticateToken, async (req, res) => {
@@ -3468,8 +3431,6 @@ app.put('/update-company-info', authenticateToken, async (req, res) => {
   }
 });
 
-// Allow admins to update company info for any user
-// moved to adminRoutes
 
 // Add this endpoint after the other company info endpoints
 app.get('/company-info', authenticateToken, async (req, res) => {
@@ -3607,20 +3568,6 @@ app.post('/upload-logo', authenticateToken, async (req, res) => {
 });
 
 
-/* ================================
-   Support Status Endpoints
-================================ */
-
-// moved to supportRoutes
-
-/* ================================
-   (Removed) Legacy Individual Livechat Messages Endpoints
-   Replaced by atomic endpoints: /append-livechat-message, /conversation-messages
-================================ */
-
-// moved to supportRoutes
-
-// moved to supportRoutes
 
 /* ================================
    Freshdesk Ticket Creation Proxy
@@ -3827,7 +3774,6 @@ app.delete('/api/shopify/credentials/:chatbot_id', async (req, res) => {
   }
 });
 
-// Shopify endpoints moved to modular routes (registerShopifyRoutes)
 
 
 
@@ -4715,11 +4661,6 @@ app.post('/api/log-error', async (req, res) => {
   }
 });
 
-// GET /api/error-logs - Get error logs with filtering (admin only)
-// moved to adminRoutes
-
-// GET /api/error-statistics - Get error statistics (admin only)
-// moved to adminRoutes
 
 // Add this function after the existing helper functions
 async function saveContextChunks(conversationId, messageIndex, chunks) {
@@ -5231,39 +5172,6 @@ app.put('/show-user-profile-pictures', authenticateToken, async (req, res) => {
   }
 });
 
-// =========================================
-// ATOMIC LIVECHAT MESSAGE ENDPOINTS
-// =========================================
-
-// POST append single message atomically
-// moved to livechatRoutes
-
-// Agent typing status endpoints
-// moved to livechatRoutes
-
-// moved to livechatRoutes
-
-// GET conversation messages in atomic format
-// moved to livechatRoutes
-
-
-
-// POST migrate conversation to atomic message system with provided conversation data
-// moved to livechatRoutes
-
-// GET livechat conversation with atomic message support
-// moved to livechatRoutes
-
-/* ================================
-   GDPR Compliance API Endpoints
-================================ */
-
-// Initialize GDPR settings table on startup
-// moved to modular init ensureGdprSettingsTable(pool)
-
-// GET GDPR settings for a specific client
-
-// moved to gdprUtils.scheduleGdprCleanup(pool, runGdprCleanupAllService)
 
 /* ================================
    Agent Typing Status Cleanup
