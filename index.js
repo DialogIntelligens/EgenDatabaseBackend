@@ -2106,26 +2106,7 @@ app.get('/conversation-update-job/:jobId', authenticateToken, async (req, res) =
 });
 
 // Get all jobs for a user (admin only)
-app.get('/conversation-update-jobs', authenticateToken, async (req, res) => {
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  try {
-    const result = await pool.query(`
-      SELECT cuj.*, u.username 
-      FROM conversation_update_jobs cuj
-      LEFT JOIN users u ON cuj.user_id = u.id
-      ORDER BY cuj.created_at DESC
-      LIMIT 50
-    `);
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching jobs:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Background job processor
 async function processConversationUpdateJob(jobId, chatbotId, userId, limit, totalConversations) {
@@ -2186,33 +2167,33 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
       console.log(`Job ${jobId}: Processing chunk ${Math.floor(offset/CHUNK_SIZE) + 1} - ${conversations.rows.length} conversations`);
 
       // Process this chunk in smaller batches
-      const batches = [];
-      for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
-        batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
-      }
+    const batches = [];
+    for (let i = 0; i < conversations.rows.length; i += BATCH_SIZE) {
+      batches.push(conversations.rows.slice(i, i + BATCH_SIZE));
+    }
 
       for (const batch of batches) {
         // Process batch with limited concurrency
-        const batchPromises = batch.map(async (conversation) => {
-          try {
-            const conversationText = conversation.conversation_data;
+      const batchPromises = batch.map(async (conversation) => {
+        try {
+          const conversationText = conversation.conversation_data;
             const { emne, score, lacking_info, fallback, tags } = await getEmneAndScore(conversationText, userId, chatbotId, pool);
 
             await client.query(
-              `UPDATE conversations
-               SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
-               WHERE id = $6`,
-              [emne, score, lacking_info, fallback, tags, conversation.id]
-            );
+            `UPDATE conversations
+             SET emne = $1, score = $2, lacking_info = $3, fallback = $4, tags = $5
+             WHERE id = $6`,
+            [emne, score, lacking_info, fallback, tags, conversation.id]
+          );
 
-            return { success: true, id: conversation.id };
-          } catch (error) {
+          return { success: true, id: conversation.id };
+        } catch (error) {
             console.error(`Job ${jobId}: Error processing conversation ${conversation.id}:`, error);
-            return { success: false, id: conversation.id, error: error.message };
-          }
-        });
+          return { success: false, id: conversation.id, error: error.message };
+        }
+      });
 
-        // Wait for batch to complete
+      // Wait for batch to complete
         const batchResults = await Promise.all(batchPromises);
         
         // Update counters
@@ -2284,36 +2265,7 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
 }
 
 // Cancel a conversation update job
-app.post('/cancel-conversation-update-job/:jobId', authenticateToken, async (req, res) => {
-  const { jobId } = req.params;
-
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  try {
-    const result = await pool.query(`
-      UPDATE conversation_update_jobs 
-      SET status = 'cancelled', 
-          completed_at = CURRENT_TIMESTAMP,
-          last_updated = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status IN ('pending', 'running')
-      RETURNING *
-    `, [jobId]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Job not found or cannot be cancelled' });
-    }
-
-    res.json({
-      message: 'Job cancelled successfully',
-      job: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error cancelling job:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Helper for prediction using standard statistics API
 
@@ -2384,7 +2336,7 @@ app.get('/statistics-consolidated', authenticateToken, async (req, res) => {
       dateFilter = ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
       queryParams.push(start_date, end_date);
     }
-
+    
     // Single comprehensive query to get all statistics
     const statsQuery = `
       WITH conversation_stats AS (
@@ -2489,7 +2441,7 @@ app.get('/statistics-consolidated', authenticateToken, async (req, res) => {
           purchases: parseInt(result.rows[0].purchase_count) || 0,
           revenue: parseFloat(result.rows[0].total_revenue) || 0
         };
-      } catch (error) {
+    } catch (error) {
         console.error(`Error fetching purchases for chatbot ${chatbotId}:`, error);
         return { purchases: 0, revenue: 0 };
       }
@@ -2539,7 +2491,7 @@ app.get('/statistics-consolidated', authenticateToken, async (req, res) => {
         `;
         const result = await pool.query(leadsQuery, queryParams);
         return parseInt(result.rows[0].leads_count) || 0;
-      } catch (error) {
+                } catch (error) {
         console.error('Error fetching leads count:', error);
         return 0;
       }
@@ -2609,7 +2561,7 @@ app.get('/statistics-consolidated', authenticateToken, async (req, res) => {
 
     res.json(response);
 
-  } catch (error) {
+    } catch (error) {
     console.error('Error fetching consolidated statistics:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
   }
@@ -2939,378 +2891,28 @@ app.use((err, req, res, next) => {
 });
 
 // Add this endpoint to delete a user
-app.delete('/users/:id', authenticateToken, async (req, res) => {
-  // Only admins can delete users
-  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
+// moved to adminRoutes
 
-  const { id } = req.params;
-  
-  try {
-    // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+// moved to adminRoutes
 
-    // Delete any related data first 
-    // (optional, depending on your database constraints and requirements)
-    // For example, delete user's conversations
-    await pool.query('DELETE FROM conversations WHERE user_id = $1', [id]);
-    
-    // Also delete Pinecone data
-    const pineconeResult = await pool.query('SELECT * FROM pinecone_data WHERE user_id = $1', [id]);
-    
-    // For each piece of Pinecone data, delete from Pinecone first if needed
-    for (const row of pineconeResult.rows) {
-      try {
-        // Use the helper function to get the appropriate API key for this index
-        const pineconeApiKey = await getPineconeApiKeyForIndex(
-          id, 
-          row.pinecone_index_name, 
-          row.namespace
-        );
-        
-        if (pineconeApiKey && row.pinecone_vector_id && row.namespace) {
-          const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-          const index = pineconeClient.index(row.namespace);
-          await index.deleteOne(row.pinecone_vector_id, { namespace: row.namespace });
-        }
-      } catch (pineconeError) {
-        console.error('Error deleting from Pinecone:', pineconeError);
-        // Continue with other deletions even if Pinecone fails
-      }
-    }
-    
-    // Delete the Pinecone data records
-    await pool.query('DELETE FROM pinecone_data WHERE user_id = $1', [id]);
-    
-    // Finally delete the user
-    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING username', [id]);
-    
-    res.status(200).json({ 
-      message: 'User deleted successfully',
-      username: result.rows[0].username 
-    });
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-app.get('/users', authenticateToken, async (req, res) => {
-  // Require full or limited admin
-  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  try {
-    const { include_archived } = req.query;
-    
-    // If full admin, fetch all users, otherwise only the ones in accessibleUserIds
-    let queryText = `
-      SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified, archived
-      FROM users`;
-    let queryParams = [];
-
-    // Base condition for archived status
-    let whereConditions = [];
-    
-    // Only include archived users if explicitly requested
-    if (include_archived !== 'true') {
-      whereConditions.push('(archived IS NULL OR archived = FALSE)');
-    }
-
-    if (req.user.isLimitedAdmin) {
-      const ids = req.user.accessibleUserIds || [];
-      if (ids.length === 0) {
-        return res.json([]);
-      }
-      whereConditions.push('id = ANY($1)');
-      queryParams.push(ids);
-    }
-
-    if (whereConditions.length > 0) {
-      queryText += ' WHERE ' + whereConditions.join(' AND ');
-    }
-
-    queryText += ' ORDER BY last_modified DESC NULLS LAST';
-
-    const result = await pool.query(queryText, queryParams);
-    const users = result.rows.map(user => {
-      return {
-        ...user,
-        chatbot_filepath: user.chatbot_filepath || [],
-        archived: user.archived || false
-      };
-    });
-    res.json(users);
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
-
-app.get('/user/:id', authenticateToken, async (req, res) => {
-  const userId = req.params.id;
-
-  // Access control
-  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(parseInt(userId))))) {
-    return res.status(403).json({ error: 'Forbidden: You do not have access to this user' });
-  }
-
-  try {
-    // Get full user details except password, including chatbot_filepath array
-    const result = await pool.query(`
-      SELECT id, username, is_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment
-      FROM users
-      WHERE id = $1
-    `, [userId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Ensure chatbot_filepath is always an array in the response
-    const user = {
-      ...result.rows[0],
-      chatbot_filepath: result.rows[0].chatbot_filepath || []
-    };
-    
-    // Parse pinecone_indexes if it's a string
-    if (typeof user.pinecone_indexes === 'string') {
-      try {
-        user.pinecone_indexes = JSON.parse(user.pinecone_indexes);
-      } catch (e) {
-        console.error('Error parsing pinecone_indexes:', e);
-        user.pinecone_indexes = [];
-      }
-    }
-    
-    res.json(user);
-  } catch (error) {
-    console.error('Error fetching user details:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Get user's statistic settings
 // moved to userSettingsRoutes
 
 // Add this endpoint to update a user's chatbot IDs and filepaths
-app.patch('/users/:id', authenticateToken, async (req, res) => {
-  const targetId = parseInt(req.params.id);
-  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
-    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user' });
-  }
-
-  const { chatbot_ids, chatbot_filepath, monthly_payment } = req.body;
-  
-  // Validate input
-  if ((!chatbot_ids || !Array.isArray(chatbot_ids)) && 
-      (!chatbot_filepath || !Array.isArray(chatbot_filepath)) &&
-      (monthly_payment === undefined)) {
-    return res.status(400).json({ 
-      error: 'No valid data provided. At least one of chatbot_ids, chatbot_filepath, or monthly_payment must be provided.'
-    });
-  }
-  
-  // Validate monthly_payment if provided
-  if (monthly_payment !== undefined && (isNaN(monthly_payment) || monthly_payment < 0)) {
-    return res.status(400).json({ 
-      error: 'monthly_payment must be a non-negative number.'
-    });
-  }
-  
-  try {
-    // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Prepare the update query
-    let updateFields = [];
-    let queryParams = [];
-    let paramIndex = 1;
-    
-    if (chatbot_ids && Array.isArray(chatbot_ids)) {
-      updateFields.push(`chatbot_ids = $${paramIndex}`);
-      queryParams.push(chatbot_ids);
-      paramIndex++;
-    }
-    
-    if (chatbot_filepath && Array.isArray(chatbot_filepath)) {
-      updateFields.push(`chatbot_filepath = $${paramIndex}`);
-      queryParams.push(chatbot_filepath);
-      paramIndex++;
-    }
-    
-    if (monthly_payment !== undefined) {
-      updateFields.push(`monthly_payment = $${paramIndex}`);
-      queryParams.push(monthly_payment);
-      paramIndex++;
-    }
-    
-    // Always update last_modified timestamp
-    updateFields.push(`last_modified = CURRENT_TIMESTAMP`);
-    
-    // Add the ID as the last parameter
-    queryParams.push(targetId);
-    
-    // Execute the update
-    const updateQuery = `
-      UPDATE users 
-      SET ${updateFields.join(', ')}
-      WHERE id = $${paramIndex}
-      RETURNING id, username, chatbot_ids, chatbot_filepath, monthly_payment, last_modified
-    `;
-    
-    console.log('Executing user update query:', updateQuery);
-    console.log('Query params:', queryParams);
-    
-    const result = await pool.query(updateQuery, queryParams);
-    
-    console.log('User update result:', result.rows[0]);
-    
-    res.status(200).json({ 
-      message: 'User updated successfully',
-      user: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating user:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 
 
 // Add this endpoint to reset a user's password (admin only)
-app.post('/reset-password/:id', authenticateToken, async (req, res) => {
-  const targetId = parseInt(req.params.id);
-  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
-    return res.status(403).json({ error: 'Forbidden: You do not have permission to reset this user\'s password' });
-  }
-
-  const { newPassword } = req.body;
-  
-  // Validate input
-  if (!newPassword || newPassword.trim() === '') {
-    return res.status(400).json({ error: 'New password is required' });
-  }
-  
-  try {
-    // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    
-    // Update the user's password and last_modified timestamp
-    const result = await pool.query(
-      'UPDATE users SET password = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
-      [hashedPassword, targetId]
-    );
-    
-    res.status(200).json({ 
-      message: 'Password reset successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username
-      } 
-    });
-  } catch (error) {
-    console.error('Error resetting password:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Add this endpoint to archive/unarchive a user (admin only)
-app.patch('/users/:id/archive', authenticateToken, async (req, res) => {
-  const targetId = parseInt(req.params.id);
-  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
-    return res.status(403).json({ error: 'Forbidden: You do not have permission to archive this user' });
-  }
-
-  const { archived } = req.body;
-  
-  // Validate input
-  if (typeof archived !== 'boolean') {
-    return res.status(400).json({ 
-      error: 'archived field is required and must be a boolean'
-    });
-  }
-  
-  try {
-    // First check if the user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [targetId]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Update the user's archived status and last_modified timestamp
-    const result = await pool.query(
-      'UPDATE users SET archived = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username, archived',
-      [archived, targetId]
-    );
-    
-    res.status(200).json({ 
-      message: `User ${archived ? 'archived' : 'unarchived'} successfully`,
-      user: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error archiving/unarchiving user:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Get archived users (admin only)
-app.get('/users/archived', authenticateToken, async (req, res) => {
-  // Require full or limited admin
-  if (!(req.user.isAdmin || req.user.isLimitedAdmin)) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  try {
-    // If full admin, fetch all archived users, otherwise only the ones in accessibleUserIds
-    let queryText = `
-      SELECT id, username, is_admin, is_limited_admin, chatbot_ids, pinecone_api_key,
-             pinecone_indexes, chatbot_filepath, thumbs_rating, monthly_payment, last_modified, archived
-      FROM users
-      WHERE archived = TRUE`;
-    let queryParams = [];
-
-    if (req.user.isLimitedAdmin) {
-      const ids = req.user.accessibleUserIds || [];
-      if (ids.length === 0) {
-        return res.json([]);
-      }
-      queryText += ' AND id = ANY($1)';
-      queryParams.push(ids);
-    }
-
-    queryText += ' ORDER BY last_modified DESC NULLS LAST';
-
-    const result = await pool.query(queryText, queryParams);
-    const users = result.rows.map(user => {
-      return {
-        ...user,
-        chatbot_filepath: user.chatbot_filepath || [],
-        archived: user.archived || false
-      };
-    });
-    res.json(users);
-  } catch (error) {
-    console.error('Error fetching archived users:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Revenue Analytics endpoint (Admin only)
 app.get('/revenue-analytics', authenticateToken, async (req, res) => {
@@ -3483,18 +3085,18 @@ app.get('/revenue-analytics', authenticateToken, async (req, res) => {
           if (conv.ligegyldig === true) {
             ligegyldigCount += 1;
           }
-
-          // Count monthly messages (only from last 30 days)
-          const conversationDate = new Date(conv.created_at);
-          if (conversationDate >= thirtyDaysAgo) {
+            
+            // Count monthly messages (only from last 30 days)
+            const conversationDate = new Date(conv.created_at);
+            if (conversationDate >= thirtyDaysAgo) {
             monthlyMessages += userMessageCount;
-            monthlyConversations += 1;
-          }
-          
-          // Count last month messages (previous calendar month)
-          if (conversationDate >= lastMonthStart && conversationDate <= lastMonthEnd) {
+              monthlyConversations += 1;
+            }
+            
+            // Count last month messages (previous calendar month)
+            if (conversationDate >= lastMonthStart && conversationDate <= lastMonthEnd) {
             lastMonthMessages += userMessageCount;
-            lastMonthConversations += 1;
+              lastMonthConversations += 1;
           }
         });
 
@@ -3867,43 +3469,7 @@ app.put('/update-company-info', authenticateToken, async (req, res) => {
 });
 
 // Allow admins to update company info for any user
-app.put('/admin/update-company-info/:userId', authenticateToken, async (req, res) => {
-  // Check if user is admin
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  const targetUserId = req.params.userId;
-  const { company_info } = req.body;
-
-  if (company_info === undefined) {
-    return res.status(400).json({ error: 'company_info field is required' });
-  }
-
-  try {
-    // Update company_info in the users table
-    const result = await pool.query(
-      'UPDATE users SET company_info = $1 WHERE id = $2 RETURNING id, username, company_info',
-      [company_info, targetUserId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      message: 'Company information updated successfully',
-      user: {
-        id: result.rows[0].id,
-        username: result.rows[0].username,
-        company_info: result.rows[0].company_info
-      }
-    });
-  } catch (error) {
-    console.error('Error updating company information:', error);
-    return res.status(500).json({ error: 'Database error', details: error.message });
-  }
-});
+// moved to adminRoutes
 
 // Add this endpoint after the other company info endpoints
 app.get('/company-info', authenticateToken, async (req, res) => {
@@ -4045,116 +3611,16 @@ app.post('/upload-logo', authenticateToken, async (req, res) => {
    Support Status Endpoints
 ================================ */
 
-// Get support status for a specific chatbot
-app.get('/support-status/:chatbot_id', async (req, res) => {
-  const { chatbot_id } = req.params;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    // Get all users with livechat enabled for this chatbot
-    const result = await pool.query(
-      `SELECT ss.user_id, ss.is_live, u.username 
-       FROM support_status ss
-       JOIN users u ON ss.user_id = u.id
-       WHERE ss.chatbot_id = $1 AND u.livechat = true`,
-      [chatbot_id]
-    );
-
-    // Check if any support agent is live
-    const isAnyAgentLive = result.rows.some(row => row.is_live);
-
-    res.json({ 
-      support_available: isAnyAgentLive,
-      agents: result.rows
-    });
-  } catch (err) {
-    console.error('Error fetching support status:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// moved to supportRoutes
 
 /* ================================
    (Removed) Legacy Individual Livechat Messages Endpoints
    Replaced by atomic endpoints: /append-livechat-message, /conversation-messages
 ================================ */
 
-// Update support status for a user
-app.post('/support-status', authenticateToken, async (req, res) => {
-  const { chatbot_id, is_live } = req.body;
-  const user_id = req.user.userId;
+// moved to supportRoutes
 
-  if (!chatbot_id || typeof is_live !== 'boolean') {
-    return res.status(400).json({ error: 'chatbot_id and is_live (boolean) are required' });
-  }
-
-  try {
-    // Check if user has livechat enabled
-    const userCheck = await pool.query(
-      'SELECT livechat FROM users WHERE id = $1',
-      [user_id]
-    );
-
-    if (userCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (!userCheck.rows[0].livechat) {
-      return res.status(403).json({ error: 'User does not have livechat access' });
-    }
-
-    // Upsert support status
-    const result = await pool.query(
-      `INSERT INTO support_status (user_id, chatbot_id, is_live, updated_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (user_id, chatbot_id)
-       DO UPDATE SET is_live = $3, updated_at = NOW()
-       RETURNING *`,
-      [user_id, chatbot_id, is_live]
-    );
-
-    res.json({
-      message: 'Support status updated successfully',
-      status: result.rows[0]
-    });
-  } catch (err) {
-    console.error('Error updating support status:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-// Get current user's support status for all their chatbots
-app.get('/my-support-status', authenticateToken, async (req, res) => {
-  const user_id = req.user.userId;
-
-  try {
-    // Check if user has livechat enabled
-    const userCheck = await pool.query(
-      'SELECT livechat, chatbot_ids FROM users WHERE id = $1',
-      [user_id]
-    );
-
-    if (userCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (!userCheck.rows[0].livechat) {
-      return res.status(403).json({ error: 'User does not have livechat access' });
-    }
-
-    const result = await pool.query(
-      'SELECT * FROM support_status WHERE user_id = $1',
-      [user_id]
-    );
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching user support status:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// moved to supportRoutes
 
 /* ================================
    Freshdesk Ticket Creation Proxy
@@ -5144,6 +4610,8 @@ import { runGdprCleanupAllService } from './src/services/gdprService.js';
 import { registerShopifyRoutes } from './src/routes/shopifyRoutes.js';
 import { registerLivechatRoutes } from './src/routes/livechatRoutes.js';
 import { registerUserSettingsRoutes } from './src/routes/userSettingsRoutes.js';
+import { registerSupportRoutes } from './src/routes/supportRoutes.js';
+import { registerAdminRoutes } from './src/routes/adminRoutes.js';
 
 // Initialize GDPR table and routes
 ensureGdprSettingsTable(pool).catch(err => console.error('GDPR init error:', err));
@@ -5159,6 +4627,8 @@ registerBevcoRoutes(app);
 registerLivechatRoutes(app, pool, authenticateToken);
 registerUserSettingsRoutes(app, pool, authenticateToken);
 registerCommentsRoutes(app, pool, authenticateToken);
+registerSupportRoutes(app, pool, authenticateToken);
+registerAdminRoutes(app, pool, authenticateToken, getPineconeApiKeyForIndex);
 
 /* ================================
    Error Logging Endpoints
@@ -5246,125 +4716,10 @@ app.post('/api/log-error', async (req, res) => {
 });
 
 // GET /api/error-logs - Get error logs with filtering (admin only)
-app.get('/api/error-logs', authenticateToken, async (req, res) => {
-  // Only admins can view error logs
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  try {
-    const {
-      chatbot_id,
-      error_category,
-      start_date,
-      end_date,
-      page = 0,
-      page_size = 50
-    } = req.query;
-
-    let queryText = `
-      SELECT *
-      FROM error_logs
-      WHERE 1=1
-    `;
-    const queryParams = [];
-    let paramIndex = 1;
-
-    // Add filters
-    if (chatbot_id) {
-      queryText += ` AND chatbot_id = $${paramIndex++}`;
-      queryParams.push(chatbot_id);
-    }
-
-    if (error_category) {
-      queryText += ` AND error_category = $${paramIndex++}`;
-      queryParams.push(error_category);
-    }
-
-    if (start_date && end_date) {
-      queryText += ` AND created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      queryParams.push(start_date, end_date);
-    }
-
-    // Add pagination
-    queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    queryParams.push(parseInt(page_size), parseInt(page) * parseInt(page_size));
-
-    const result = await pool.query(queryText, queryParams);
-    
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching error logs:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// moved to adminRoutes
 
 // GET /api/error-statistics - Get error statistics (admin only)
-app.get('/api/error-statistics', authenticateToken, async (req, res) => {
-  // Only admins can view error statistics
-  if (!req.user.isAdmin) {
-    return res.status(403).json({ error: 'Forbidden: Admins only' });
-  }
-
-  try {
-    const { start_date, end_date } = req.query;
-
-    let dateFilter = '';
-    const queryParams = [];
-    let paramIndex = 1;
-
-    if (start_date && end_date) {
-      dateFilter = ` WHERE created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
-      queryParams.push(start_date, end_date);
-    }
-
-    // Get total error count
-    const totalResult = await pool.query(
-      `SELECT COUNT(*) as total_errors FROM error_logs${dateFilter}`,
-      queryParams
-    );
-
-    // Get errors by category
-    const categoryResult = await pool.query(
-      `SELECT error_category, COUNT(*) as count
-       FROM error_logs${dateFilter}
-       GROUP BY error_category
-       ORDER BY count DESC`,
-      queryParams
-    );
-
-    // Get errors by chatbot
-    const chatbotResult = await pool.query(
-      `SELECT chatbot_id, COUNT(*) as count
-       FROM error_logs${dateFilter}
-       GROUP BY chatbot_id
-       ORDER BY count DESC`,
-      queryParams
-    );
-
-
-
-    // Get recent error trends (last 7 days)
-    const trendResult = await pool.query(
-      `SELECT DATE(created_at) as date, COUNT(*) as count
-       FROM error_logs
-       WHERE created_at >= NOW() - INTERVAL '7 days'
-       GROUP BY DATE(created_at)
-       ORDER BY date DESC`,
-      []
-    );
-
-    res.json({
-      total_errors: parseInt(totalResult.rows[0].total_errors),
-      by_category: categoryResult.rows,
-      by_chatbot: chatbotResult.rows,
-      recent_trend: trendResult.rows
-    });
-  } catch (err) {
-    console.error('Error fetching error statistics:', err);
-    res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// moved to adminRoutes
 
 // Add this function after the existing helper functions
 async function saveContextChunks(conversationId, messageIndex, chunks) {
