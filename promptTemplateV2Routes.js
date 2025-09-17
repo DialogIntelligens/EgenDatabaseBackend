@@ -193,6 +193,54 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   /* =============================
+     CHATBOT SETTINGS
+  ============================= */
+  router.get('/chatbot-settings/:chatbot_id', async (req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT * FROM chatbot_settings WHERE chatbot_id=$1', [req.params.chatbot_id]);
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'No settings found for this chatbot' });
+      }
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('GET chatbot settings error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  router.post('/chatbot-settings', authenticateToken, async (req, res) => {
+    const { chatbot_id, image_enabled, camera_button_enabled } = req.body;
+    if (!chatbot_id) return res.status(400).json({ error: 'chatbot_id required' });
+
+    // Validate image_enabled is boolean if provided
+    if (image_enabled !== undefined && typeof image_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'image_enabled must be a boolean' });
+    }
+
+    // Validate camera_button_enabled is boolean if provided
+    if (camera_button_enabled !== undefined && typeof camera_button_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'camera_button_enabled must be a boolean' });
+    }
+
+    try {
+      await pool.query(
+        `INSERT INTO chatbot_settings (chatbot_id, image_enabled, camera_button_enabled, updated_at)
+         VALUES ($1, $2, COALESCE($3, FALSE), CURRENT_TIMESTAMP)
+         ON CONFLICT (chatbot_id)
+         DO UPDATE SET
+           image_enabled = COALESCE($2, chatbot_settings.image_enabled),
+           camera_button_enabled = COALESCE($3, chatbot_settings.camera_button_enabled),
+           updated_at = CURRENT_TIMESTAMP`,
+        [chatbot_id, image_enabled, camera_button_enabled]
+      );
+      res.json({ success: true, message: 'Chatbot settings saved successfully' });
+    } catch (err) {
+      console.error('POST chatbot settings error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  /* =============================
      CHATBOT LANGUAGE SETTINGS
   ============================= */
   router.get('/language/:chatbot_id', async (req, res) => {
@@ -533,6 +581,25 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   if (flow_key === 'statistics') {
     const stats = await pool.query('SELECT sections FROM prompt_templates WHERE is_system_template=TRUE LIMIT 1');
     templateSections = stats.rows[0]?.sections || [];
+  } else if (flow_key === 'image') {
+    // For image flow, check if there's a template assignment, otherwise use default
+    const tmpl = await pool.query(
+      `SELECT pt.sections
+       FROM flow_template_assignments fa
+       JOIN prompt_templates pt ON pt.id = fa.template_id
+       WHERE fa.chatbot_id=$1 AND fa.flow_key=$2
+       LIMIT 1`,
+      [chatbot_id, flow_key],
+    );
+    templateSections = tmpl.rows[0]?.sections || [];
+    
+    // If no template assigned for image flow, use a default image analysis prompt
+    if (templateSections.length === 0) {
+      templateSections = [{
+        key: 1,
+        content: "You are an AI assistant that analyzes images and provides detailed descriptions. When a user uploads an image, describe what you see in detail, including objects, people, text, colors, and any other relevant information. Be specific and helpful in your description."
+      }];
+    }
   } else {
     const tmpl = await pool.query(
       `SELECT pt.sections
