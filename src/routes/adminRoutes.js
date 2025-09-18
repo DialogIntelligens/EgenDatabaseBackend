@@ -1,4 +1,4 @@
-import { 
+import {
   deleteUserController,
   getUsersController,
   getUserByIdController,
@@ -10,7 +10,12 @@ import {
   getConversationUpdateJobsController,
   cancelConversationUpdateJobController,
   getErrorLogsController,
-  getErrorStatisticsController
+  getErrorStatisticsController,
+  getRevenueAnalyticsController,
+  getMonthlyConversationBreakdownController,
+  getUserTrackingStatsController,
+  updateUserPineconeApiKeyController,
+  updateUserIndexesController
 } from '../controllers/adminController.js';
 
 export function registerAdminRoutes(app, pool, authenticateToken, getPineconeApiKeyForIndex) {
@@ -31,6 +36,13 @@ export function registerAdminRoutes(app, pool, authenticateToken, getPineconeApi
   // Error Monitoring
   app.get('/api/error-logs', authenticateToken, (req, res) => getErrorLogsController(req, res, pool));
   app.get('/api/error-statistics', authenticateToken, (req, res) => getErrorStatisticsController(req, res, pool));
+
+  // Admin Extensions
+  app.get('/revenue-analytics', authenticateToken, (req, res) => getRevenueAnalyticsController(req, res, pool));
+  app.get('/monthly-conversation-breakdown', authenticateToken, (req, res) => getMonthlyConversationBreakdownController(req, res, pool));
+  app.get('/user-tracking-stats', authenticateToken, (req, res) => getUserTrackingStatsController(req, res, pool));
+  app.put('/user-pinecone-api-key/:id', authenticateToken, (req, res) => updateUserPineconeApiKeyController(req, res, pool));
+  app.put('/user-indexes/:id', authenticateToken, (req, res) => updateUserIndexesController(req, res, pool));
 }
 
 

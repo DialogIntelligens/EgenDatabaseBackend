@@ -40,4 +40,24 @@ export function hasFullAdminAccess(user) {
   return user.isAdmin === true;
 }
 
+export function validatePineconeApiKeyPayload({ pinecone_api_key }) {
+  if (!pinecone_api_key || typeof pinecone_api_key !== 'string' || pinecone_api_key.trim() === '') {
+    return 'pinecone_api_key is required and must be a non-empty string';
+  }
+  return null;
+}
+
+export function validateUserIndexesPayload({ pinecone_indexes }) {
+  if (!Array.isArray(pinecone_indexes)) {
+    return 'pinecone_indexes must be an array';
+  }
+
+  for (const index of pinecone_indexes) {
+    if (!index.namespace || !index.index_name) {
+      return 'Each index must have namespace and index_name properties';
+    }
+  }
+  return null;
+}
+
 

@@ -1,22 +1,29 @@
-import { 
-  deleteUserService, 
-  getUsersService, 
-  getUserByIdService, 
-  updateUserService, 
-  resetPasswordService, 
-  archiveUserService, 
-  getArchivedUsersService, 
+import {
+  deleteUserService,
+  getUsersService,
+  getUserByIdService,
+  updateUserService,
+  resetPasswordService,
+  archiveUserService,
+  getArchivedUsersService,
   updateCompanyInfoService,
   getConversationUpdateJobsService,
   cancelConversationUpdateJobService,
   getErrorLogsService,
-  getErrorStatisticsService
+  getErrorStatisticsService,
+  getRevenueAnalyticsService,
+  getMonthlyConversationBreakdownService,
+  getUserTrackingStatsService,
+  updateUserPineconeApiKeyService,
+  updateUserIndexesService
 } from '../services/adminService.js';
-import { 
-  validateUserUpdatePayload, 
-  validatePasswordResetPayload, 
-  validateArchivePayload, 
+import {
+  validateUserUpdatePayload,
+  validatePasswordResetPayload,
+  validateArchivePayload,
   validateCompanyInfoPayload,
+  validatePineconeApiKeyPayload,
+  validateUserIndexesPayload,
   hasAdminAccess,
   hasFullAdminAccess
 } from '../utils/adminUtils.js';
@@ -171,6 +178,84 @@ export async function getErrorStatisticsController(req, res, pool) {
     res.json(stats);
   } catch (err) {
     console.error('Error fetching error statistics:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+// Admin Extensions
+export async function getRevenueAnalyticsController(req, res, pool) {
+  if (!hasFullAdminAccess(req.user)) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  try {
+    const result = await getRevenueAnalyticsService(pool);
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching revenue analytics:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+export async function getMonthlyConversationBreakdownController(req, res, pool) {
+  if (!hasFullAdminAccess(req.user)) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  try {
+    const result = await getMonthlyConversationBreakdownService(pool);
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching monthly conversation breakdown:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+export async function getUserTrackingStatsController(req, res, pool) {
+  if (!hasFullAdminAccess(req.user)) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  try {
+    const result = await getUserTrackingStatsService(pool);
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching user tracking stats:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+export async function updateUserPineconeApiKeyController(req, res, pool) {
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user\'s Pinecone API key' });
+  }
+
+  const validation = validatePineconeApiKeyPayload(req.body);
+  if (validation) return res.status(400).json({ error: validation });
+
+  try {
+    const result = await updateUserPineconeApiKeyService(targetId, req.body.pinecone_api_key, pool);
+    res.status(200).json({
+      message: 'Pinecone API key updated successfully',
+      user: result
+    });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error('Error updating Pinecone API key:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+export async function updateUserIndexesController(req, res, pool) {
+  const targetId = parseInt(req.params.id);
+  if (!(req.user.isAdmin || (req.user.isLimitedAdmin && (req.user.accessibleUserIds || []).includes(targetId)))) {
+    return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this user\'s Pinecone indexes' });
+  }
+
+  const validation = validateUserIndexesPayload(req.body);
+  if (validation) return res.status(400).json({ error: validation });
+
+  try {
+    const result = await updateUserIndexesService(targetId, req.body.pinecone_indexes, pool);
+    res.status(200).json({
+      message: 'Pinecone indexes updated successfully',
+      user: result
+    });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error('Error updating user indexes:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 }
