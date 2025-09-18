@@ -16,7 +16,6 @@ import { createFreshdeskQueueService } from './src/services/freshdeskQueueServic
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
-import { registerShopifyCredentialsRoutes, setShopifyCredentialsPool } from './shopifyCredentialsRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
@@ -2609,135 +2608,6 @@ app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
 });
 
 
-// removed: Shopify Credentials Management
-
-app.get('/api/shopify/credentials/:chatbot_id', async (req, res) => {
-  try {
-    const { chatbot_id } = req.params;
-    
-    if (!chatbot_id) {
-      return res.status(400).json({ error: 'Chatbot ID is required' });
-    }
-    
-    console.log('🔑 SHOPIFY: Fetching credentials for chatbot:', chatbot_id);
-    
-    const result = await pool.query(
-      'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
-      [chatbot_id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shopify credentials not found for this chatbot' });
-    }
-    
-    const credentials = result.rows[0];
-    
-    res.json({
-      success: true,
-      credentials: {
-        shopifyStore: credentials.shopify_store,
-        shopifyAccessToken: credentials.shopify_access_token,
-        shopifyApiKey: credentials.shopify_api_key,
-        shopifySecretKey: credentials.shopify_secret_key,
-        shopifyApiVersion: credentials.shopify_api_version
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error fetching Shopify credentials:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/*
-  POST /api/shopify/credentials
-  Creates or updates Shopify credentials for a chatbot
-  Body: {
-    chatbot_id: string,
-    shopify_store: string,
-    shopify_access_token: string,
-    shopify_api_key?: string,
-    shopify_secret_key?: string,
-    shopify_api_version?: string
-  }
-*/
-app.post('/api/shopify/credentials', async (req, res) => {
-  try {
-    const {
-      chatbot_id,
-      shopify_store,
-      shopify_access_token,
-      shopify_api_key,
-      shopify_secret_key,
-      shopify_api_version = '2024-10'
-    } = req.body;
-    
-    if (!chatbot_id || !shopify_store || !shopify_access_token) {
-      return res.status(400).json({ 
-        error: 'chatbot_id, shopify_store, and shopify_access_token are required' 
-      });
-    }
-    
-    console.log('🔑 SHOPIFY: Saving credentials for chatbot:', chatbot_id, 'store:', shopify_store);
-    
-    // Use UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
-    const result = await pool.query(`
-      INSERT INTO shopify_credentials 
-      (chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-      ON CONFLICT (chatbot_id) 
-      DO UPDATE SET 
-        shopify_access_token = EXCLUDED.shopify_access_token,
-        shopify_api_key = EXCLUDED.shopify_api_key,
-        shopify_secret_key = EXCLUDED.shopify_secret_key,
-        shopify_store = EXCLUDED.shopify_store,
-        shopify_api_version = EXCLUDED.shopify_api_version,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING id, chatbot_id
-    `, [chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version]);
-    
-    res.json({
-      success: true,
-      message: 'Shopify credentials saved successfully',
-      id: result.rows[0].id
-    });
-    
-  } catch (error) {
-    console.error('Error saving Shopify credentials:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.delete('/api/shopify/credentials/:chatbot_id', async (req, res) => {
-  try {
-    const { chatbot_id } = req.params;
-    
-    if (!chatbot_id) {
-      return res.status(400).json({ error: 'Chatbot ID is required' });
-    }
-    
-    console.log('🔑 SHOPIFY: Deleting credentials for chatbot:', chatbot_id);
-    
-    const result = await pool.query(
-      'DELETE FROM shopify_credentials WHERE chatbot_id = $1 RETURNING id',
-      [chatbot_id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Shopify credentials not found for this chatbot' });
-    }
-    
-    res.json({
-      success: true,
-      message: 'Shopify credentials deleted successfully'
-    });
-    
-  } catch (error) {
-    console.error('Error deleting Shopify credentials:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 
 /* ================================
    Chatbot Duplication Endpoint
@@ -2983,8 +2853,6 @@ registerGdprRoutes(app, pool, authenticateToken);
 // Optional scheduler (kept equivalent behavior)
 scheduleGdprCleanup(pool, runGdprCleanupAllService);
 registerShopifyRoutes(app, pool);
-setShopifyCredentialsPool(pool);
-registerShopifyCredentialsRoutes(app);
 setMagentoCredentialsPool(pool);
 registerMagentoCredentialsRoutes(app);
 registerFreshdeskRoutes(app, pool);
