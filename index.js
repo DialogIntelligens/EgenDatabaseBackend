@@ -12,6 +12,7 @@ import { analyzeConversations } from './textAnalysis.js'; // Import text analysi
 import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { registerFreshdeskRoutes } from './src/routes/freshdeskRoutes.js';
+import { createFreshdeskQueueService } from './src/services/freshdeskQueueService.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
@@ -54,6 +55,35 @@ cron.schedule('0 2 * * *', async () => {
     console.log(`Cleaned up ${result.rowCount} old conversation update jobs`);
   } catch (error) {
     console.error('Error cleaning up old conversation update jobs:', error);
+  }
+});
+
+// Process Freshdesk ticket queue every minute
+cron.schedule('* * * * *', async () => {
+  try {
+    const queueService = createFreshdeskQueueService(pool);
+    const result = await queueService.processPendingTickets(10); // Process up to 10 tickets at once
+    
+    if (result.processed > 0) {
+      console.log(`Freshdesk queue processing: ${result.message}`);
+    }
+  } catch (error) {
+    console.error('Error processing Freshdesk queue:', error);
+  }
+});
+
+// Cleanup old Freshdesk queue entries (daily at 3 AM)
+cron.schedule('0 3 * * *', async () => {
+  try {
+    console.log('Cleaning up old Freshdesk queue entries...');
+    const queueService = createFreshdeskQueueService(pool);
+    const cleanedCount = await queueService.cleanupOldTickets();
+    
+    if (cleanedCount > 0) {
+      console.log(`Cleaned up ${cleanedCount} old Freshdesk queue entries`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up Freshdesk queue:', error);
   }
 });
 
