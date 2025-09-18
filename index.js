@@ -3848,7 +3848,7 @@ app.listen(PORT, () => {
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
 registerPopupMessageRoutes(app, pool, authenticateToken);
 registerSplitTestRoutes(app, pool, authenticateToken);
-registerReportRoutes(app, authenticateToken);
+registerReportRoutes(app, pool, authenticateToken);
 import { registerGdprRoutes } from './src/routes/gdprRoutes.js';
 import { ensureGdprSettingsTable, scheduleGdprCleanup } from './src/utils/gdprUtils.js';
 import { runGdprCleanupAllService } from './src/services/gdprService.js';
@@ -3860,6 +3860,7 @@ import { registerBodylabRoutes } from './src/routes/bodylabRoutes.js';
 import { registerAdminRoutes } from './src/routes/adminRoutes.js';
 import { registerUsersRoutes } from './src/routes/usersRoutes.js';
 import { registerPurchasesRoutes } from './src/routes/purchasesRoutes.js';
+import { registerErrorsRoutes } from './src/routes/errorsRoutes.js';
 
 // Initialize GDPR table and routes
 ensureGdprSettingsTable(pool).catch(err => console.error('GDPR init error:', err));
@@ -3881,91 +3882,13 @@ registerAdminRoutes(app, pool, authenticateToken, getPineconeApiKeyForIndex);
 registerUsersRoutes(app, pool, authenticateToken, SECRET_KEY);
 registerBodylabRoutes(app);
 registerPurchasesRoutes(app, pool, authenticateToken);
+registerErrorsRoutes(app, pool);
 
 /* ================================
    Error Logging Endpoints
 ================================ */
 
-// Helper function to categorize errors automatically
-function categorizeError(errorMessage, errorDetails) {
-  const message = errorMessage.toLowerCase();
-  
-  if (message.includes('freshdesk') || message.includes('ticket creation') || message.includes('freshdesk ticket')) {
-    return 'FRESHDESK_ERROR';
-  } else if (message.includes('api') || message.includes('fetch') || message.includes('request')) {
-    return 'API_ERROR';
-  } else if (message.includes('database') || message.includes('sql') || message.includes('query')) {
-    return 'DATABASE_ERROR';
-  } else if (message.includes('auth') || message.includes('token') || message.includes('unauthorized')) {
-    return 'AUTHENTICATION_ERROR';
-  } else if (message.includes('validation') || message.includes('invalid') || message.includes('required')) {
-    return 'VALIDATION_ERROR';
-  } else if (message.includes('network') || message.includes('connection') || message.includes('timeout')) {
-    return 'NETWORK_ERROR';
-  } else if (message.includes('parsing') || message.includes('json') || message.includes('syntax')) {
-    return 'PARSING_ERROR';
-  } else if (message.includes('openai') || message.includes('embedding') || message.includes('gpt')) {
-    return 'AI_SERVICE_ERROR';
-  } else if (message.includes('pinecone') || message.includes('vector')) {
-    return 'VECTOR_DATABASE_ERROR';
-  } else {
-    return 'UNKNOWN_ERROR';
-  }
-}
-
-// POST /api/log-error - Log an error from the chatbot
-app.post('/api/log-error', async (req, res) => {
-  try {
-    const { 
-      chatbot_id, 
-      user_id, 
-      error_message, 
-      error_details, 
-      stack_trace,
-      error_category: providedCategory
-    } = req.body;
-
-    if (!chatbot_id || !error_message) {
-      return res.status(400).json({ error: 'chatbot_id and error_message are required' });
-    }
-
-    // Use provided category if valid, otherwise automatically categorize the error
-    const validCategories = [
-      'API_ERROR', 'DATABASE_ERROR', 'AUTHENTICATION_ERROR', 'VALIDATION_ERROR',
-      'NETWORK_ERROR', 'PARSING_ERROR', 'AI_SERVICE_ERROR', 'VECTOR_DATABASE_ERROR',
-      'FRESHDESK_ERROR', 'UNKNOWN_ERROR'
-    ];
-    
-    const error_category = validCategories.includes(providedCategory) 
-      ? providedCategory 
-      : categorizeError(error_message, error_details);
-
-    // Insert error log
-    const result = await pool.query(
-      `INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
-        chatbot_id,
-        user_id || null,
-        error_category,
-        error_message,
-        error_details ? JSON.stringify(error_details) : null,
-        stack_trace || null
-      ]
-    );
-
-    console.log(`Error logged for chatbot ${chatbot_id}: ${error_category} - ${error_message}`);
-    
-    res.status(201).json({
-      message: 'Error logged successfully',
-      error_log: result.rows[0]
-    });
-  } catch (err) {
-    console.error('Error logging error to database:', err);
-    res.status(500).json({ error: 'Failed to log error', details: err.message });
-  }
-});
+// moved to errorsRoutes
 
 
 // Add this function after the existing helper functions
@@ -4412,3 +4335,4 @@ console.log('Agent typing status cleanup scheduled to run daily at midnight');
 
 // Export pool for use in utility modules
 export { pool };
+// moved to errorsRoutes
