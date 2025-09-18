@@ -4,8 +4,9 @@ import { generateReport } from '../services/reportService.js';
  * Generate report controller - handles the /generate-report endpoint
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @param {Object} pool - Database pool connection
  */
-export async function generateReportController(req, res) {
+export async function generateReportController(req, res, pool) {
   try {
     const {
       statisticsData,
@@ -44,7 +45,8 @@ export async function generateReportController(req, res) {
       maxConversations,
       language,
       selectedEmne,
-      req.user.userId
+      req.user.userId,
+      pool
     );
 
     // Set appropriate headers for PDF download

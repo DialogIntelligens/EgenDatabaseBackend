@@ -2,7 +2,6 @@ import { generateGPTAnalysis } from '../../gptAnalysis.js';
 import { generateStatisticsReportTemplate } from '../../reportGeneratorTemplate.js';
 import { processConversationsInChunks, analyzeConversationsInChunks } from '../utils/mainUtils.js';
 import { transformStatisticsForPDF } from '../utils/transformUtils.js';
-import { pool } from '../../index.js';
 
 /**
  * Generate a PDF report with optional text analysis and GPT analysis
@@ -15,6 +14,7 @@ import { pool } from '../../index.js';
  * @param {string} language - Language for the report
  * @param {string} selectedEmne - Optional topic filter
  * @param {number} userId - User ID for database queries
+ * @param {Object} pool - Database pool connection
  * @returns {Buffer} PDF buffer
  */
 export async function generateReport(
@@ -26,7 +26,8 @@ export async function generateReport(
   maxConversations,
   language,
   selectedEmne,
-  userId
+  userId,
+  pool
 ) {
   try {
     console.log('Starting modular report generation...');
