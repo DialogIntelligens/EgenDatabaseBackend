@@ -1,4 +1,5 @@
 import { createFreshdeskTicket } from '../utils/freshdeskUtils.js';
+import { logErrorService } from './errorsService.js';
 
 /**
  * Service for managing Freshdesk ticket queue operations
@@ -149,7 +150,8 @@ export class FreshdeskQueueService {
       await this.markAsProcessing(id);
 
       // Attempt to create the Freshdesk ticket
-      const ticketData = JSON.parse(ticket_data);
+      // ticket_data is already parsed from JSONB, no need to JSON.parse again
+      const ticketData = ticket_data;
       const result = await createFreshdeskTicket(ticketData);
 
       // Mark as completed
@@ -158,6 +160,35 @@ export class FreshdeskQueueService {
       return { success: true, ticket_id: result.id };
     } catch (error) {
       console.error(`Failed to process Freshdesk ticket: queue_id=${id}`, error);
+      
+      // Log to error monitoring system
+      try {
+        const errorLogData = {
+          chatbot_id: queueEntry.chatbot_id || 'queue_system',
+          user_id: queueEntry.user_id,
+          error_category: 'FRESHDESK_ERROR',
+          error_message: error.message || 'Freshdesk queue processing failed',
+          error_details: {
+            queue_id: id,
+            attempt: attempts + 1,
+            max_attempts: max_attempts,
+            ticket_data_keys: Object.keys(ticket_data || {}),
+            error_stack: error.stack,
+            error_name: error.name,
+            ticket_email: ticket_data?.email || 'unknown'
+          },
+          stack_trace: error.stack
+        };
+        
+        const logResult = await logErrorService(errorLogData, this.pool);
+        if (logResult.statusCode === 201) {
+          console.log(`Error logged to monitoring system for queue_id=${id}`);
+        } else {
+          console.warn(`Error logging returned status ${logResult.statusCode} for queue_id=${id}`);
+        }
+      } catch (logError) {
+        console.error(`Failed to log queue processing error: queue_id=${id}`, logError);
+      }
       
       // Mark as failed (with potential retry)
       await this.markAsFailed(id, error.message, attempts + 1, max_attempts);

@@ -1,13 +1,15 @@
 export const validCategories = [
   'API_ERROR', 'DATABASE_ERROR', 'AUTHENTICATION_ERROR', 'VALIDATION_ERROR',
   'NETWORK_ERROR', 'PARSING_ERROR', 'AI_SERVICE_ERROR', 'VECTOR_DATABASE_ERROR',
-  'FRESHDESK_ERROR', 'UNKNOWN_ERROR'
+  'FRESHDESK_ERROR', 'FRESHDESK_QUEUE_ERROR', 'UNKNOWN_ERROR'
 ];
 
 export function categorizeError(errorMessage = '', errorDetails = null) {
   const message = String(errorMessage || '').toLowerCase();
 
-  if (message.includes('freshdesk') || message.includes('ticket creation') || message.includes('freshdesk ticket')) {
+  if (message.includes('freshdesk queue') || message.includes('queue processing')) {
+    return 'FRESHDESK_QUEUE_ERROR';
+  } else if (message.includes('freshdesk') || message.includes('ticket creation') || message.includes('freshdesk ticket')) {
     return 'FRESHDESK_ERROR';
   } else if (message.includes('api') || message.includes('fetch') || message.includes('request')) {
     return 'API_ERROR';
