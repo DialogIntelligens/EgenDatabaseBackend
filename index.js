@@ -3051,16 +3051,9 @@ app.get('/user-tracking-stats', authenticateToken, async (req, res) => {
   }
 });
 
-// moved to freshdeskRoutes
 
-/* ================================
-   Shopify Credentials Management
-================================ */
+// removed: Shopify Credentials Management
 
-/*
-  GET /api/shopify/credentials/:chatbot_id
-  Retrieves Shopify credentials for a specific chatbot
-*/
 app.get('/api/shopify/credentials/:chatbot_id', async (req, res) => {
   try {
     const { chatbot_id } = req.params;
@@ -3158,10 +3151,6 @@ app.post('/api/shopify/credentials', async (req, res) => {
   }
 });
 
-/*
-  DELETE /api/shopify/credentials/:chatbot_id
-  Deletes Shopify credentials for a specific chatbot
-*/
 app.delete('/api/shopify/credentials/:chatbot_id', async (req, res) => {
   try {
     const { chatbot_id } = req.params;
@@ -3853,115 +3842,7 @@ app.listen(PORT, () => {
    Purchases (Chatbot conversion tracking)
 ================================ */
 
-// Simple helper to validate purchase payloads
-function validatePurchasePayload(body) {
-  const { user_id, chatbot_id, amount } = body;
-  if (!user_id || user_id.toString().trim() === "") {
-    return "user_id is required";
-  }
-  if (!chatbot_id || chatbot_id.toString().trim() === "") {
-    return "chatbot_id is required";
-  }
-  if (amount === undefined || amount === null || isNaN(parseFloat(amount))) {
-    return "amount must be a valid number";
-  }
-  return null;
-}
-
-/*
-  POST /purchases
-  Body: { user_id: string, chatbot_id: string, amount: number }
-  Creates a purchase record attributed to a chatbot conversation.
-*/
-app.post('/purchases', async (req, res) => {
-  try {
-    const validationError = validatePurchasePayload(req.body);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
-    }
-
-    const { user_id, chatbot_id, amount } = req.body;
-
-    const result = await pool.query(
-      `INSERT INTO purchases (user_id, chatbot_id, amount)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [user_id, chatbot_id, parseFloat(amount)]
-    );
-
-    return res.status(201).json({ message: 'Purchase recorded', purchase: result.rows[0] });
-  } catch (err) {
-    console.error('Error recording purchase:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-/*
-  GET /purchases/:chatbot_id
-  Optional query params: user_id (filter by user), start_date, end_date
-  Returns list of purchases for a chatbot – useful for dashboard stats.
-*/
-app.get('/purchases/:chatbot_id', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.params;
-  const { user_id, start_date, end_date } = req.query;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    let queryText = `SELECT * FROM purchases WHERE chatbot_id = $1`;
-    const queryParams = [chatbot_id];
-    let idx = 2;
-
-    if (user_id) {
-      queryText += ` AND user_id = $${idx++}`;
-      queryParams.push(user_id);
-    }
-    if (start_date && end_date) {
-      queryText += ` AND created_at BETWEEN $${idx++} AND $${idx++}`;
-      queryParams.push(start_date, end_date);
-    }
-
-    queryText += ' ORDER BY created_at DESC';
-
-    const result = await pool.query(queryText, queryParams);
-    return res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching purchases:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
-
-/*
-  GET /has-purchase-conversations
-  Returns whether the user has any conversations with purchases to conditionally show the purchase filter
-*/
-app.get('/has-purchase-conversations', authenticateToken, async (req, res) => {
-  const { chatbot_id } = req.query;
-
-  if (!chatbot_id) {
-    return res.status(400).json({ error: 'chatbot_id is required' });
-  }
-
-  try {
-    const chatbotIds = chatbot_id.split(',');
-
-    const result = await pool.query(
-      `SELECT EXISTS(
-        SELECT 1 FROM conversations c
-        JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
-        WHERE c.chatbot_id = ANY($1) AND p.amount > 0
-      ) as has_purchase_conversations`,
-      [chatbotIds]
-    );
-
-    return res.json({ has_purchase_conversations: result.rows[0].has_purchase_conversations });
-  } catch (err) {
-    console.error('Error checking purchase conversations:', err);
-    return res.status(500).json({ error: 'Database error', details: err.message });
-  }
-});
+// moved to purchasesRoutes
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
@@ -3978,6 +3859,7 @@ import { registerSupportRoutes } from './src/routes/supportRoutes.js';
 import { registerBodylabRoutes } from './src/routes/bodylabRoutes.js';
 import { registerAdminRoutes } from './src/routes/adminRoutes.js';
 import { registerUsersRoutes } from './src/routes/usersRoutes.js';
+import { registerPurchasesRoutes } from './src/routes/purchasesRoutes.js';
 
 // Initialize GDPR table and routes
 ensureGdprSettingsTable(pool).catch(err => console.error('GDPR init error:', err));
@@ -3998,6 +3880,7 @@ registerSupportRoutes(app, pool, authenticateToken);
 registerAdminRoutes(app, pool, authenticateToken, getPineconeApiKeyForIndex);
 registerUsersRoutes(app, pool, authenticateToken, SECRET_KEY);
 registerBodylabRoutes(app);
+registerPurchasesRoutes(app, pool, authenticateToken);
 
 /* ================================
    Error Logging Endpoints
