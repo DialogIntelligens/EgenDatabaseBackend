@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { getUserIndexes } from '../../pineconeChecker.js';
+import { sanitizePineconeIndexes, parseTargetUserIdFromQuery } from '../utils/usersUtils.js';
 
 export async function registerUserService(body, pool) {
   const {
@@ -179,6 +181,28 @@ export async function trackPageVisitService(userId, { page_name, session_id, dur
     [userId, page_name, session_id, duration, ip_address, user_agent]
   );
   return { message: 'Page visit tracked successfully' };
+}
+
+// Users Extensions
+export async function getPineconeIndexesService(userId, pool) {
+  const result = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
+  const indexes = result.rows[0]?.pinecone_indexes;
+  const parsed = typeof indexes === 'string' ? JSON.parse(indexes) : indexes;
+  return sanitizePineconeIndexes(parsed);
+}
+
+export async function getUserIndexesForCheckingService(requestUser, query) {
+  const targetUserId = parseTargetUserIdFromQuery(query, requestUser);
+
+  const indexes = await getUserIndexes(targetUserId);
+  const indexInfo = indexes.map(index => ({
+    namespace: index.namespace,
+    index_name: index.index_name,
+    group: index.group || 'No group',
+    has_api_key: !!index.API_key
+  }));
+
+  return { userId: targetUserId, indexes: indexInfo };
 }
 
 

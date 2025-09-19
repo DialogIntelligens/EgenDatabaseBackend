@@ -192,4 +192,494 @@ export async function getErrorStatisticsService(filters, pool) {
   };
 }
 
+// Admin Extensions
+export async function getRevenueAnalyticsService(pool) {
+  console.log('Revenue analytics service started');
+
+  // Fetch all users with their monthly payments and chatbot IDs
+  const usersQuery = `
+    SELECT
+      id,
+      username,
+      monthly_payment,
+      chatbot_ids,
+      thumbs_rating
+    FROM users
+    ORDER BY monthly_payment DESC NULLS LAST
+  `;
+
+  console.log('Executing users query...');
+  const usersResult = await pool.query(usersQuery);
+  const users = usersResult.rows;
+  console.log(`Found ${users.length} users`);
+
+  // For each user, calculate their message statistics and tracking data
+  const usersWithStats = await Promise.all(users.map(async (user) => {
+    try {
+      console.log(`Processing user: ${user.username} (ID: ${user.id})`);
+
+      // Get the user's chatbot IDs
+      let chatbotIds = user.chatbot_ids || [];
+      if (typeof chatbotIds === 'string') {
+        try {
+          chatbotIds = JSON.parse(chatbotIds);
+        } catch (e) {
+          console.error('Error parsing chatbot_ids for user:', user.username, e);
+          chatbotIds = [];
+        }
+      }
+
+      // Get user tracking data in parallel
+      const [dashboardOpensResult, pageVisitsResult] = await Promise.all([
+        pool.query(`
+          SELECT
+            COUNT(DISTINCT DATE(opened_at)) as total_dashboard_opens,
+            COUNT(DISTINCT session_id) as unique_sessions,
+            MAX(opened_at) as last_dashboard_open
+          FROM user_dashboard_opens
+          WHERE user_id = $1
+        `, [user.id]),
+        pool.query(`
+          SELECT
+            COUNT(*) as total_page_visits,
+            COUNT(DISTINCT page_name) as unique_pages_visited,
+            COUNT(DISTINCT DATE(visited_at)) as active_days,
+            array_agg(DISTINCT page_name ORDER BY page_name) as visited_pages
+          FROM user_page_visits
+          WHERE user_id = $1
+        `, [user.id])
+      ]);
+
+      const trackingData = {
+        total_dashboard_opens: parseInt(dashboardOpensResult.rows[0]?.total_dashboard_opens) || 0,
+        unique_sessions: parseInt(dashboardOpensResult.rows[0]?.unique_sessions) || 0,
+        last_dashboard_open: dashboardOpensResult.rows[0]?.last_dashboard_open || null,
+        total_page_visits: parseInt(pageVisitsResult.rows[0]?.total_page_visits) || 0,
+        unique_pages_visited: parseInt(pageVisitsResult.rows[0]?.unique_pages_visited) || 0,
+        tracking_active_days: parseInt(pageVisitsResult.rows[0]?.active_days) || 0,
+        visited_pages: pageVisitsResult.rows[0]?.visited_pages?.filter(Boolean) || []
+      };
+
+      if (!Array.isArray(chatbotIds) || chatbotIds.length === 0) {
+        console.log(`User ${user.username} has no chatbot IDs`);
+        return {
+          ...user,
+          total_messages: 0,
+          monthly_payment: parseFloat(user.monthly_payment) || 0,
+          average_monthly_messages: 0,
+          last_month_messages: 0,
+          average_monthly_conversations: 0,
+          last_month_conversations: 0,
+          csat: 'N/A',
+          conversion_rate: 'N/A',
+          fallback_rate: 'N/A',
+          ...trackingData
+        };
+      }
+
+      console.log(`User ${user.username} owns chatbots: ${chatbotIds.join(', ')}`);
+
+      // Get all conversations for chatbots owned by this user
+      const conversationsQuery = `
+        SELECT
+          conversation_data,
+          created_at,
+          chatbot_id,
+          customer_rating,
+          purchase_tracking_enabled,
+          fallback,
+          ligegyldig,
+          -- Pre-calculate message counts using PostgreSQL JSON functions
+          COALESCE((
+            SELECT COUNT(*)
+            FROM jsonb_array_elements(conversation_data::jsonb) as msg
+            WHERE (msg->>'isUser')::boolean = true
+          ), 0) as user_message_count
+        FROM conversations
+        WHERE chatbot_id = ANY($1)
+      `;
+
+      const conversationsResult = await pool.query(conversationsQuery, [chatbotIds]);
+      const conversations = conversationsResult.rows;
+      console.log(`Found ${conversations.length} conversations for user ${user.username}'s chatbots`);
+
+      // Calculate total messages and conversations for this user's chatbots
+      let totalMessages = 0;
+      let monthlyMessages = 0;
+      let lastMonthMessages = 0;
+      let totalConversations = 0;
+      let monthlyConversations = 0;
+      let lastMonthConversations = 0;
+      let totalRatingsCount = 0;
+      let thumbsUpCount = 0;
+      let satisfiedCount = 0;
+      let fallbackCount = 0;
+      let ligegyldigCount = 0;
+      let conversationsWithPurchaseTracking = 0;
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      // Calculate last month (previous calendar month)
+      const now = new Date();
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+      // Calculate user's account age in days for average calculation
+      const userCreatedAt = new Date(conversations.length > 0 ?
+        Math.min(...conversations.map(conv => new Date(conv.created_at).getTime())) : now);
+      const daysActive = Math.max(1, Math.ceil((now - userCreatedAt) / (1000 * 60 * 60 * 24))); // Days active
+
+      console.log(`User ${user.username} calculation: First conversation: ${userCreatedAt.toISOString()}, Days active: ${daysActive}`);
+
+      conversations.forEach(conv => {
+        // Count conversations
+        totalConversations += 1;
+
+        // Use pre-calculated message count from database instead of parsing JSON
+        const userMessageCount = parseInt(conv.user_message_count) || 0;
+        totalMessages += userMessageCount;
+
+        // Count metadata-based metrics
+        if (conv.purchase_tracking_enabled === true) {
+          conversationsWithPurchaseTracking += 1;
+        }
+        if (typeof conv.customer_rating === 'number') {
+          totalRatingsCount += 1;
+          if (user.thumbs_rating) {
+            if (conv.customer_rating === 5) thumbsUpCount += 1;
+          } else if (conv.customer_rating >= 4) {
+            satisfiedCount += 1;
+          }
+        }
+        if (conv.fallback === true) {
+          fallbackCount += 1;
+        }
+        if (conv.ligegyldig === true) {
+          ligegyldigCount += 1;
+        }
+
+          // Count monthly messages (only from last 30 days)
+          const conversationDate = new Date(conv.created_at);
+          if (conversationDate >= thirtyDaysAgo) {
+          monthlyMessages += userMessageCount;
+            monthlyConversations += 1;
+          }
+
+          // Count last month messages (previous calendar month)
+          if (conversationDate >= lastMonthStart && conversationDate <= lastMonthEnd) {
+          lastMonthMessages += userMessageCount;
+            lastMonthConversations += 1;
+        }
+      });
+
+      // Calculate average monthly messages: (total messages / days active) * 30
+      const averageDailyMessages = totalMessages / daysActive;
+      const averageMonthlyMessages = averageDailyMessages * 30;
+
+      // Calculate average monthly conversations: (total conversations / days active) * 30
+      const averageDailyConversations = totalConversations / daysActive;
+      const averageMonthlyConversations = averageDailyConversations * 30;
+
+      // Safely parse monthly_payment
+      let monthlyPayment = 0;
+      if (user.monthly_payment !== null && user.monthly_payment !== undefined) {
+        monthlyPayment = parseFloat(user.monthly_payment) || 0;
+      }
+
+      // Purchases count for this user's chatbots (all time)
+      const purchasesCountResult = await pool.query(
+        `SELECT COUNT(*)::int as cnt FROM purchases WHERE chatbot_id = ANY($1)`,
+        [chatbotIds]
+      );
+      const purchasesCount = purchasesCountResult.rows[0]?.cnt || 0;
+
+      // Compute per-user CSAT
+      let csat = 'N/A';
+      if (totalRatingsCount > 0) {
+        if (user.thumbs_rating) {
+          csat = `${((thumbsUpCount / totalRatingsCount) * 100).toFixed(1)}%`;
+        } else {
+          csat = `${((satisfiedCount / totalRatingsCount) * 100).toFixed(1)}%`;
+        }
+      }
+
+      // Compute per-user conversion rate: purchases / conversations with purchase tracking
+      let conversionRate = 'N/A';
+      if (conversationsWithPurchaseTracking > 0) {
+        conversionRate = `${((purchasesCount / conversationsWithPurchaseTracking) * 100).toFixed(1)}%`;
+      }
+
+      // Compute per-user fallback rate
+      let fallbackRate = 'N/A';
+      if (conversations.length > 0) {
+        fallbackRate = `${((fallbackCount / conversations.length) * 100).toFixed(1)}%`;
+      }
+
+      // Compute per-user ligegyldig rate
+      let ligegyldigRate = 'N/A';
+      if (conversations.length > 0) {
+        ligegyldigRate = `${((ligegyldigCount / conversations.length) * 100).toFixed(1)}%`;
+      }
+
+      console.log(`User ${user.username}: ${totalMessages} total msgs, ${Math.round(averageMonthlyMessages)} avg monthly msgs, purchases ${purchasesCount}, ratings ${totalRatingsCount}, csat ${csat}, convRate ${conversionRate}, fallback ${fallbackRate}, ligegyldig ${ligegyldigRate}`);
+
+      return {
+        ...user,
+        total_messages: totalMessages,
+        total_conversations: totalConversations,
+        monthly_messages: monthlyMessages, // Last 30 days
+        average_monthly_messages: Math.round(averageMonthlyMessages),
+        last_month_messages: lastMonthMessages,
+        monthly_conversations: monthlyConversations, // Last 30 days
+        average_monthly_conversations: Math.round(averageMonthlyConversations),
+        last_month_conversations: lastMonthConversations,
+        days_active: daysActive,
+        monthly_payment: monthlyPayment,
+        csat: csat,
+        conversion_rate: conversionRate,
+        fallback_rate: fallbackRate,
+        ligegyldig_rate: ligegyldigRate,
+        ...trackingData
+      };
+    } catch (error) {
+      console.error(`Error calculating stats for user ${user.username}:`, error);
+      // Return user with default stats if there's an error
+      return {
+        ...user,
+        total_messages: 0,
+        total_conversations: 0,
+        monthly_payment: parseFloat(user.monthly_payment) || 0,
+        total_dashboard_opens: 0,
+        unique_sessions: 0,
+        last_dashboard_open: null,
+        total_page_visits: 0,
+        unique_pages_visited: 0,
+        tracking_active_days: 0,
+        visited_pages: []
+      };
+    }
+  }));
+
+  console.log('Finished processing all users, calculating summary...');
+
+  // Calculate summary statistics
+  const payingUsers = usersWithStats.filter(user => user.monthly_payment > 0);
+  const totalRevenue = payingUsers.reduce((sum, user) => sum + user.monthly_payment, 0);
+  const averagePayment = payingUsers.length > 0 ? totalRevenue / payingUsers.length : 0;
+
+  console.log(`Summary: ${users.length} total users, ${payingUsers.length} paying users, ${totalRevenue} kr total revenue`);
+
+  return {
+    users: usersWithStats,
+    summary: {
+      total_users: users.length,
+      paying_users: payingUsers.length,
+      total_monthly_revenue: totalRevenue,
+      average_monthly_payment: averagePayment
+    }
+  };
+}
+
+export async function getMonthlyConversationBreakdownService(pool) {
+  console.log('Monthly conversation breakdown service started');
+
+  // Fetch all users with their monthly payments and chatbot IDs
+  const usersQuery = `
+    SELECT
+      id,
+      username,
+      monthly_payment,
+      chatbot_ids
+    FROM users
+    WHERE monthly_payment > 0
+    ORDER BY monthly_payment DESC
+  `;
+
+  const usersResult = await pool.query(usersQuery);
+  const users = usersResult.rows;
+  console.log(`Found ${users.length} paying users`);
+
+  // For each user, get monthly conversation breakdown for the last 12 months
+  const usersWithMonthlyData = await Promise.all(users.map(async (user) => {
+    try {
+      console.log(`Processing monthly data for user: ${user.username} (ID: ${user.id})`);
+
+      // Get the user's chatbot IDs
+      let chatbotIds = user.chatbot_ids || [];
+      if (typeof chatbotIds === 'string') {
+        try {
+          chatbotIds = JSON.parse(chatbotIds);
+        } catch (e) {
+          console.error('Error parsing chatbot_ids for user:', user.username, e);
+          chatbotIds = [];
+        }
+      }
+
+      if (chatbotIds.length === 0) {
+        console.log(`No chatbot IDs found for user: ${user.username}`);
+        return {
+          ...user,
+          monthly_conversations: {}
+        };
+      }
+
+      // Query to get monthly conversation counts for the last 12 months
+      const monthlyQuery = `
+        SELECT
+          DATE_TRUNC('month', created_at) as month,
+          COUNT(*) as conversation_count
+        FROM conversations
+        WHERE chatbot_id = ANY($1)
+          AND created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY month DESC
+      `;
+
+      const monthlyResult = await pool.query(monthlyQuery, [chatbotIds]);
+      console.log(`Monthly query result for ${user.username}:`, monthlyResult.rows);
+
+      // Convert results to a more usable format
+      const monthlyConversations = {};
+      monthlyResult.rows.forEach(row => {
+        const date = new Date(row.month);
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1; // JavaScript months are 0-indexed
+        const monthKey = `${year}-${month.toString().padStart(2, '0')}`;
+        monthlyConversations[monthKey] = parseInt(row.conversation_count);
+      });
+
+      console.log(`Found monthly data for ${user.username}:`, Object.keys(monthlyConversations).length, 'months');
+
+      return {
+        ...user,
+        monthly_conversations: monthlyConversations
+      };
+
+    } catch (error) {
+      console.error(`Error processing monthly data for user ${user.username}:`, error);
+      return {
+        ...user,
+        monthly_conversations: {}
+      };
+    }
+  }));
+
+  console.log('Monthly conversation breakdown service completed');
+  return {
+    users: usersWithMonthlyData
+  };
+}
+
+export async function getUserTrackingStatsService(pool) {
+  // Get dashboard opens stats for all users
+  const dashboardStats = await pool.query(`
+    SELECT
+      u.id,
+      u.username,
+      COUNT(DISTINCT DATE(udo.opened_at)) as total_dashboard_opens,
+      COUNT(DISTINCT udo.session_id) as unique_sessions,
+      MAX(udo.opened_at) as last_dashboard_open
+    FROM users u
+    LEFT JOIN user_dashboard_opens udo ON u.id = udo.user_id
+    WHERE u.monthly_payment > 0
+    GROUP BY u.id, u.username
+    ORDER BY total_dashboard_opens DESC
+  `);
+
+  // Get page visit stats for all users
+  const pageVisitStats = await pool.query(`
+    SELECT
+      u.id,
+      u.username,
+      COUNT(*) as total_page_visits,
+      COUNT(DISTINCT upv.page_name) as unique_pages_visited,
+      COUNT(DISTINCT DATE(upv.visited_at)) as active_days,
+      array_agg(DISTINCT upv.page_name) as visited_pages
+    FROM users u
+    LEFT JOIN user_page_visits upv ON u.id = upv.user_id
+    WHERE u.monthly_payment > 0
+    GROUP BY u.id, u.username
+    ORDER BY total_page_visits DESC
+  `);
+
+  // Get most popular pages
+  const popularPages = await pool.query(`
+    SELECT
+      page_name,
+      COUNT(*) as visit_count,
+      COUNT(DISTINCT user_id) as unique_users
+    FROM user_page_visits upv
+    JOIN users u ON upv.user_id = u.id
+    WHERE u.monthly_payment > 0
+    GROUP BY page_name
+    ORDER BY visit_count DESC
+  `);
+
+  // Merge the stats
+  const userStats = dashboardStats.rows.map(user => {
+    const pageStats = pageVisitStats.rows.find(p => p.id === user.id) || {
+      total_page_visits: 0,
+      unique_pages_visited: 0,
+      active_days: 0,
+      visited_pages: []
+    };
+
+    return {
+      ...user,
+      ...pageStats,
+      visited_pages: pageStats.visited_pages ? pageStats.visited_pages.filter(Boolean) : []
+    };
+  });
+
+  return {
+    users: userStats,
+    popular_pages: popularPages.rows
+  };
+}
+
+export async function updateUserPineconeApiKeyService(userId, pineconeApiKey, pool) {
+  // First check if the user exists
+  const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+  if (checkResult.rows.length === 0) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  // Update the user's Pinecone API key and last_modified timestamp
+  const result = await pool.query(
+    'UPDATE users SET pinecone_api_key = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
+    [pineconeApiKey.trim(), userId]
+  );
+
+  return {
+    id: result.rows[0].id,
+    username: result.rows[0].username
+  };
+}
+
+export async function updateUserIndexesService(userId, pineconeIndexes, pool) {
+  // First check if the user exists
+  const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+  if (checkResult.rows.length === 0) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  // Convert the array to JSON string
+  const indexesJson = JSON.stringify(pineconeIndexes);
+
+  // Update the user's indexes and last_modified timestamp
+  const result = await pool.query(
+    'UPDATE users SET pinecone_indexes = $1, last_modified = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, username',
+    [indexesJson, userId]
+  );
+
+  return {
+    id: result.rows[0].id,
+    username: result.rows[0].username
+  };
+}
+
 

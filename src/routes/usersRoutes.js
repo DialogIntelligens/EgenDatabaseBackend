@@ -3,7 +3,8 @@ import {
   updateAgentNameController, updateProfilePictureController, uploadLogoController,
   getLivechatNotificationSoundController, updateLivechatNotificationSoundController,
   getShowUserProfilePicturesController, updateShowUserProfilePicturesController,
-  trackDashboardOpenController, trackPageVisitController
+  trackDashboardOpenController, trackPageVisitController,
+  getPineconeIndexesController, getUserIndexesForCheckingController
 } from '../controllers/usersController.js';
 
 export function registerUsersRoutes(app, pool, authenticateToken, jwtSecret) {
@@ -27,6 +28,10 @@ export function registerUsersRoutes(app, pool, authenticateToken, jwtSecret) {
   // Tracking
   app.post('/track/dashboard-open', authenticateToken, (req, res) => trackDashboardOpenController(req, res, pool));
   app.post('/track/page-visit', authenticateToken, (req, res) => trackPageVisitController(req, res, pool));
+
+  // Users Extensions
+  app.get('/pinecone-indexes', authenticateToken, (req, res) => getPineconeIndexesController(req, res, pool));
+  app.get('/user-indexes-for-checking', authenticateToken, (req, res) => getUserIndexesForCheckingController(req, res));
 }
 
 

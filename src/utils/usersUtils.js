@@ -38,4 +38,23 @@ export function validateUploadLogoPayload(body) {
   return null;
 }
 
+export function sanitizePineconeIndexes(indexes) {
+  if (!Array.isArray(indexes)) return [];
+  return indexes.map(index => ({
+    namespace: index?.namespace,
+    index_name: index?.index_name,
+    has_api_key: !!index?.API_key,
+    group: index?.group
+  }));
+}
+
+export function parseTargetUserIdFromQuery(query, requestingUser) {
+  const isAdmin = requestingUser?.isAdmin === true;
+  if (isAdmin && query?.userId) {
+    const n = parseInt(query.userId);
+    return Number.isNaN(n) ? requestingUser.userId : n;
+  }
+  return requestingUser.userId;
+}
+
 

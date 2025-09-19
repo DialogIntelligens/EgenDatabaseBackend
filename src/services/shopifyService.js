@@ -170,4 +170,90 @@ export async function getShopifyOrderByIdService(params, query) {
   return await response.json();
 }
 
+export async function getShopifyCredentialsService(params, pool) {
+  const { chatbot_id } = params;
+  if (!chatbot_id) throw new Error('Chatbot ID is required');
+
+  console.log('🔑 SHOPIFY: Fetching credentials for chatbot:', chatbot_id);
+
+  const result = await pool.query(
+    'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
+    [chatbot_id]
+  );
+
+  if (result.rows.length === 0) {
+    return { statusCode: 404, payload: { error: 'Shopify credentials not found for this chatbot' } };
+  }
+
+  const credentials = result.rows[0];
+  return { statusCode: 200, payload: {
+    success: true,
+    credentials: {
+      shopifyStore: credentials.shopify_store,
+      shopifyAccessToken: credentials.shopify_access_token,
+      shopifyApiKey: credentials.shopify_api_key,
+      shopifySecretKey: credentials.shopify_secret_key,
+      shopifyApiVersion: credentials.shopify_api_version
+    }
+  }};
+}
+
+export async function upsertShopifyCredentialsService(body, pool) {
+  const {
+    chatbot_id,
+    shopify_store,
+    shopify_access_token,
+    shopify_api_key,
+    shopify_secret_key,
+    shopify_api_version = '2024-10'
+  } = body;
+
+  if (!chatbot_id || !shopify_store || !shopify_access_token) {
+    return { statusCode: 400, payload: { error: 'chatbot_id, shopify_store, and shopify_access_token are required' } };
+  }
+
+  console.log('🔑 SHOPIFY: Saving credentials for chatbot:', chatbot_id, 'store:', shopify_store);
+
+  const result = await pool.query(`
+    INSERT INTO shopify_credentials
+    (chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+    ON CONFLICT (chatbot_id)
+    DO UPDATE SET
+      shopify_access_token = EXCLUDED.shopify_access_token,
+      shopify_api_key = EXCLUDED.shopify_api_key,
+      shopify_secret_key = EXCLUDED.shopify_secret_key,
+      shopify_store = EXCLUDED.shopify_store,
+      shopify_api_version = EXCLUDED.shopify_api_version,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id, chatbot_id
+  `, [chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version]);
+
+  return { statusCode: 200, payload: {
+    success: true,
+    message: 'Shopify credentials saved successfully',
+    id: result.rows[0].id
+  }};
+}
+
+export async function deleteShopifyCredentialsService(params, pool) {
+  const { chatbot_id } = params;
+  if (!chatbot_id) throw new Error('Chatbot ID is required');
+
+  console.log('🔑 SHOPIFY: Deleting credentials for chatbot:', chatbot_id);
+
+  const result = await pool.query(
+    'DELETE FROM shopify_credentials WHERE chatbot_id = $1 RETURNING id',
+    [chatbot_id]
+  );
+
+  if (result.rows.length === 0) {
+    return { statusCode: 404, payload: { error: 'Shopify credentials not found for this chatbot' } };
+  }
+
+  return { statusCode: 200, payload: {
+    success: true,
+    message: 'Shopify credentials deleted successfully'
+  }};
+}
 
