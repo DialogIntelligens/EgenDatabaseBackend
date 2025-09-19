@@ -3,7 +3,8 @@ import {
   updateAgentNameService, updateProfilePictureService, uploadLogoService,
   getLivechatNotificationSoundService, updateLivechatNotificationSoundService,
   getShowUserProfilePicturesService, updateShowUserProfilePicturesService,
-  trackDashboardOpenService, trackPageVisitService
+  trackDashboardOpenService, trackPageVisitService,
+  getPineconeIndexesService, getUserIndexesForCheckingService
 } from '../services/usersService.js';
 import {
   validateRegisterPayload, validateLoginPayload, validateCompanyInfoPayload,
@@ -152,6 +153,27 @@ export async function trackPageVisitController(req, res, pool) {
     res.status(201).json(out);
   } catch (e) {
     res.status(500).json({ error: 'Database error', details: e.message });
+  }
+}
+
+// Users Extensions
+export async function getPineconeIndexesController(req, res, pool) {
+  try {
+    const data = await getPineconeIndexesService(req.user.userId, pool);
+    res.json(data);
+  } catch (err) {
+    console.error('Error retrieving indexes:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+}
+
+export async function getUserIndexesForCheckingController(req, res) {
+  try {
+    const data = await getUserIndexesForCheckingService(req.user, req.query);
+    res.json(data);
+  } catch (error) {
+    console.error('Error getting user indexes for checking:', error);
+    res.status(500).json({ error: 'Failed to get user indexes', details: error.message });
   }
 }
 

@@ -507,31 +507,7 @@ app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Retrieve Pinecone indexes for the user
-app.get('/pinecone-indexes', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const result = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
-    const indexes = result.rows[0].pinecone_indexes;
-    let parsedIndexes = typeof indexes === 'string' ? JSON.parse(indexes) : indexes;
-    
-    // Remove API keys from the response for security
-    if (Array.isArray(parsedIndexes)) {
-      parsedIndexes = parsedIndexes.map(index => ({
-        namespace: index.namespace,
-        index_name: index.index_name,
-        // Exclude API_key from the response
-        has_api_key: !!index.API_key, // Just indicate if it has a key
-        group: index.group // Include the group property if it exists
-      }));
-    }
-    
-    res.json(parsedIndexes);
-  } catch (err) {
-    console.error('Error retrieving indexes:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
+// Pinecone indexes endpoint moved to Users module
 
 app.get('/pinecone-data', authenticateToken, async (req, res) => {
   // Get the authenticated user's ID
@@ -774,36 +750,7 @@ app.post('/check-missing-chunks-all', authenticateToken, async (req, res) => {
   }
 });
 
-// New endpoint to get available indexes for checking
-app.get('/user-indexes-for-checking', authenticateToken, async (req, res) => {
-  const requestingUserId = req.user.userId;
-  const isAdmin = req.user.isAdmin === true;
-  const targetUserId = isAdmin && req.query.userId ? parseInt(req.query.userId) : requestingUserId;
-
-  try {
-    const indexes = await getUserIndexes(targetUserId);
-    
-    // Return indexes with useful information for the checker
-    const indexInfo = indexes.map(index => ({
-      namespace: index.namespace,
-      index_name: index.index_name,
-      group: index.group || 'No group',
-      has_api_key: !!index.API_key
-    }));
-    
-    res.json({
-      userId: targetUserId,
-      indexes: indexInfo
-    });
-    
-  } catch (error) {
-    console.error('Error getting user indexes for checking:', error);
-    res.status(500).json({ 
-      error: 'Failed to get user indexes', 
-      details: error.message 
-    });
-  }
-});
+// User indexes for checking endpoint moved to Users module
 
 
 app.delete('/conversations/:id', authenticateToken, async (req, res) => {
@@ -1558,7 +1505,7 @@ app.patch('/conversation/:id/subject', authenticateToken, async (req, res) => {
   if (!emne || typeof emne !== 'string' || emne.trim() === '') {
     return res.status(400).json({ error: 'emne is required and must be a non-empty string' });
   }
-  
+
   try {
     // Update the conversation subject and clear tags
     const result = await pool.query(
@@ -1618,7 +1565,7 @@ async function ensureConversationUpdateJobsTable() {
     }
     
     console.log('Conversation update jobs table ensured');
-  } catch (error) {
+        } catch (error) {
     console.error('Error creating conversation update jobs table:', error);
   }
 }
@@ -1744,13 +1691,13 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
     let processedCount = 0;
     let successCount = 0;
     let errorCount = 0;
-    let offset = 0;
+  let offset = 0;
 
     while (offset < totalConversations) {
       // Get a chunk of conversations
       let query = `
         SELECT id, conversation_data, user_id 
-        FROM conversations 
+      FROM conversations
         WHERE chatbot_id = $1 
         ORDER BY created_at DESC 
         LIMIT $2 OFFSET $3
@@ -1804,7 +1751,7 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
           );
 
           return { success: true, id: conversation.id };
-        } catch (error) {
+    } catch (error) {
             console.error(`Job ${jobId}: Error processing conversation ${conversation.id}:`, error);
           return { success: false, id: conversation.id, error: error.message };
         }
@@ -1817,7 +1764,7 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
         for (const result of batchResults) {
           if (result.success) {
             successCount++;
-          } else {
+      } else {
             errorCount++;
           }
         }
@@ -1864,7 +1811,7 @@ async function processConversationUpdateJob(jobId, chatbotId, userId, limit, tot
 
     console.log(`Job ${jobId} completed: ${processedCount} processed, ${successCount} successful, ${errorCount} failed`);
 
-  } catch (error) {
+                } catch (error) {
     console.error(`Job ${jobId} failed:`, error);
     
     // Mark job as failed
