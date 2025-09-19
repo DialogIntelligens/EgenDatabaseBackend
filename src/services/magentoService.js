@@ -2,7 +2,8 @@ import {
   buildMagentoAuthHeader, 
   transformMagentoOrder, 
   filterOrdersByPhone, 
-  buildMagentoSearchUrl 
+  buildMagentoSearchUrl,
+  validateMagentoTrackingFields
 } from '../utils/magentoUtils.js';
 
 /**
@@ -112,6 +113,9 @@ export async function searchMagentoOrdersService(body, pool) {
   if (!credentials.baseUrl || !credentials.consumerKey || !credentials.consumerSecret || !credentials.accessToken || !credentials.tokenSecret) {
     throw new Error('Magento credentials not available. Either provide all Magento credentials in request, or ensure chatbot_id has credentials configured in database.');
   }
+
+  // Validate tracking field combinations
+  validateMagentoTrackingFields({ email, phone, order_number });
 
   // Build API URL
   const magentoUrl = buildMagentoSearchUrl(credentials.baseUrl, { email, order_number });

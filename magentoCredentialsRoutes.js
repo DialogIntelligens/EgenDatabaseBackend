@@ -117,7 +117,14 @@ export function registerMagentoCredentialsRoutes(app) {
                 order_tracking_use_proxy: true,
                 order_tracking_proxy_url: 'https://egendatabasebackend.onrender.com/api/magento/orders',
                 order_tracking_request_method: 'POST',
-                tracking_required_fields: JSON.stringify(['email', 'phone', 'order_number'])
+                tracking_required_fields: JSON.stringify(['order_number', 'email', 'phone']),
+                tracking_validation_rules: JSON.stringify({
+                    required_fields: ['order_number'],
+                    min_fields: 2,
+                    max_fields: 3,
+                    forbidden_combinations: [['email', 'phone']],
+                    description: 'Must provide order_number plus at least one other field (email and/or phone)'
+                })
             };
 
             res.json({
@@ -185,12 +192,19 @@ export function registerMagentoCredentialsRoutes(app) {
                     orderTrackingUseProxy: true,
                     orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',
                     orderTrackingRequestMethod: 'POST',
-                    trackingRequiredFields: ['email', 'phone', 'order_number']
+                    trackingRequiredFields: ['order_number', 'email', 'phone'],
+                    trackingValidationRules: {
+                        required_fields: ['order_number'],
+                        min_fields: 2,
+                        max_fields: 3,
+                        forbidden_combinations: [['email', 'phone']],
+                        description: 'Must provide order_number plus at least one other field (email and/or phone)'
+                    }
                 });
             }
 
             const row = result.rows[0];
-            let trackingRequiredFields = ['email', 'phone', 'order_number']; // Default
+            let trackingRequiredFields = ['order_number', 'email', 'phone']; // Default - updated order
 
             if (row.tracking_required_fields) {
                 try {
@@ -211,7 +225,14 @@ export function registerMagentoCredentialsRoutes(app) {
                 orderTrackingUseProxy: true,
                 orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',
                 orderTrackingRequestMethod: 'POST',
-                trackingRequiredFields: ['email', 'phone', 'order_number']
+                trackingRequiredFields: ['order_number', 'email', 'phone'],
+                trackingValidationRules: {
+                    required_fields: ['order_number'],
+                    min_fields: 2,
+                    max_fields: 3,
+                    forbidden_combinations: [['email', 'phone']],
+                    description: 'Must provide order_number plus at least one other field (email and/or phone)'
+                }
             });
         } catch (error) {
             console.error('Error fetching Magento settings:', error);

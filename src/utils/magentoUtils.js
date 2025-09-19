@@ -154,6 +154,43 @@ export function filterOrdersByPhone(orders, phone) {
 }
 
 /**
+ * Validate Magento tracking field combinations
+ * Requirements: 
+ * - order_number must always be present
+ * - Must have at least 2 fields total
+ * - Cannot use email + phone combination without order_number
+ */
+export function validateMagentoTrackingFields(searchParams) {
+  const { email, phone, order_number } = searchParams;
+  
+  // Count non-empty fields
+  const providedFields = [];
+  if (email && email.trim()) providedFields.push('email');
+  if (phone && phone.trim()) providedFields.push('phone');
+  if (order_number && order_number.trim()) providedFields.push('order_number');
+  
+  console.log('🔍 MAGENTO VALIDATION: Provided fields:', providedFields);
+  
+  // Must have at least 2 fields
+  if (providedFields.length < 2) {
+    throw new Error(`Magento tracking requires at least 2 fields, but ${providedFields.length} were provided: ${providedFields.join(', ')}`);
+  }
+  
+  // order_number must be one of the fields
+  if (!providedFields.includes('order_number')) {
+    throw new Error('Magento tracking requires order_number to be provided along with at least one other field (email or phone)');
+  }
+  
+  // Cannot be email + phone combination without order_number
+  if (providedFields.includes('email') && providedFields.includes('phone') && !providedFields.includes('order_number')) {
+    throw new Error('Email + phone combination is not allowed for Magento tracking. Please provide order_number with either email or phone.');
+  }
+  
+  console.log('✅ MAGENTO VALIDATION: Field combination is valid:', providedFields);
+  return true;
+}
+
+/**
  * Build Magento API search URL with query parameters
  */
 export function buildMagentoSearchUrl(baseUrl, searchParams) {
