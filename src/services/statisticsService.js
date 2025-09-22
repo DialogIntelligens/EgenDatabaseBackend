@@ -88,24 +88,26 @@ export async function getConsolidatedStatisticsService(query, pool) {
     const greetingRatePromise = (async () => {
       try {
         let greetingDateFilter = '';
+        let conversationDateFilter = '';
         let greetingParams = [chatbotIds];
         let greetingParamIndex = 2;
-        
+
         if (start_date && end_date) {
           greetingDateFilter = ` AND opened_at BETWEEN $${greetingParamIndex++} AND $${greetingParamIndex++}`;
-          greetingParams.push(start_date, end_date);
+          conversationDateFilter = ` AND created_at BETWEEN $${greetingParamIndex++} AND $${greetingParamIndex++}`;
+          greetingParams.push(start_date, end_date, start_date, end_date);
         }
-        
+
         const greetingQuery = `
-          SELECT 
+          SELECT
             (SELECT COUNT(DISTINCT user_id) FROM chatbot_opens WHERE chatbot_id = ANY($1) ${greetingDateFilter}) as total_opens,
-            (SELECT COUNT(DISTINCT user_id) FROM conversations WHERE chatbot_id = ANY($1) ${dateFilter}) as total_conversations
+            (SELECT COUNT(DISTINCT user_id) FROM conversations WHERE chatbot_id = ANY($1) ${conversationDateFilter}) as total_conversations
         `;
-        
+
         const result = await pool.query(greetingQuery, greetingParams);
         const totalOpens = parseInt(result.rows[0].total_opens) || 0;
         const totalConversations = parseInt(result.rows[0].total_conversations) || 0;
-        
+
         return {
           totalOpens,
           greetingRate: totalOpens > 0 ? Math.round((totalConversations / totalOpens) * 100) : 0,
@@ -119,13 +121,22 @@ export async function getConsolidatedStatisticsService(query, pool) {
 
     const leadsPromise = (async () => {
       try {
+        let leadsDateFilter = '';
+        let leadsParams = [chatbotIds];
+        let leadsParamIndex = 2;
+
+        if (start_date && end_date) {
+          leadsDateFilter = ` AND created_at BETWEEN $${leadsParamIndex++} AND $${leadsParamIndex++}`;
+          leadsParams.push(start_date, end_date);
+        }
+
         const leadsQuery = `
           SELECT COUNT(*) as leads_count
-          FROM conversations 
-          WHERE chatbot_id = ANY($1) ${dateFilter}
+          FROM conversations
+          WHERE chatbot_id = ANY($1) ${leadsDateFilter}
           AND form_data->>'type' IN ('kontaktformular', 'kundeservice_formular')
         `;
-        const result = await pool.query(leadsQuery, queryParams);
+        const result = await pool.query(leadsQuery, leadsParams);
         return parseInt(result.rows[0].leads_count) || 0;
       } catch (error) {
         console.error('Error fetching leads count:', error);
@@ -167,8 +178,9 @@ export async function getConsolidatedStatisticsService(query, pool) {
       totalChatbotOpens: greetingRateData.totalOpens,
       greetingRate: greetingRateData.hasData ? `${greetingRateData.greetingRate}%` : 'N/A',
       hasGreetingRateData: greetingRateData.hasData,
-      totalLeads: leadsCount,
-      hasLeadsData: leadsCount > 0
+      totalContactFormulas: leadsCount,
+      hasContactFormulaData: leadsCount > 0,
+      contactFormulaConversionRate: stats.total_conversations > 0 ? `${((leadsCount / stats.total_conversations) * 100).toFixed(1)}%` : 'N/A'
     };
 
     return { statusCode: 200, payload: response };
