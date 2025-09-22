@@ -75,7 +75,11 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
       aiInsightsTranslated: translations.aiInsights,
       keyInsightsTranslated: translations.keyInsights,
       performanceAnalyticsTranslated: translations.performanceAnalytics,
-      performanceMetricsTranslated: translations.performanceMetrics
+      performanceMetricsTranslated: translations.performanceMetrics,
+      // FAQ specific translations
+      askedByCustomersText: translations.askedByCustomers,
+      timesText: translations.timesText,
+      numberOfVariationsText: translations.numberOfVariations
     };
 
     const html = template(templateData);
