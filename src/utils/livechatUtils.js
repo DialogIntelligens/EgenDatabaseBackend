@@ -1,12 +1,20 @@
 export function enhanceMetadata({ metadata, file_name, file_mime, file_size }) {
-  return {
+  const enhanced = {
     ...metadata,
     fileName: file_name,
     fileMime: file_mime,
     fileSize: file_size,
     isFile: Boolean(file_name && !(file_mime || '').startsWith('image/'))
   };
+
+  // KONKRET ÆNDRING:
+  if (enhanced.email && typeof enhanced.email === 'string') {
+    enhanced.email = [enhanced.email]; // konverter string til array
+  }
+
+  return enhanced;
 }
+
 
 export function mapDbMessagesToFrontend(rows) {
   return rows.map(row => ({
