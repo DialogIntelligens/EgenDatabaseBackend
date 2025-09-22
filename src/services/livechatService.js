@@ -121,6 +121,12 @@ export async function migrateConversationWithMessagesService(body, pool) {
 
   for (let i = 0; i < conversation_data.length; i++) {
     const msg = conversation_data[i];
+  
+    // KONKRET ÆNDRING:
+    if (msg.metadata?.email && typeof msg.metadata.email === 'string') {
+      msg.metadata.email = [msg.metadata.email];
+    }
+  
     await pool.query(`
       INSERT INTO conversation_messages (
         conversation_id, user_id, chatbot_id, message_text, is_user,
@@ -147,6 +153,8 @@ export async function migrateConversationWithMessagesService(body, pool) {
       })
     ]);
   }
+  
+  
 
   await pool.query(`
     UPDATE conversations 
