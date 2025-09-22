@@ -1104,9 +1104,14 @@
             {{#each textAnalysis.frequentlyAskedQuestions}}
             <li class="faq-item">
               <div class="faq-question">{{this.question}}</div>
+              <div class="faq-stats">
+                {{translations.askedText}}: {{this.count}} {{translations.timesText}} <br>
+                {{translations.numberOfVariations}} {{this.variations}}
+              </div>
             </li>
             {{/each}}
           </ul>
+          
         </div>
         {{/if}}
       </div>

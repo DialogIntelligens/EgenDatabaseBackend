@@ -167,14 +167,6 @@ function authenticateToken(req, res, next) {
 }
 
 
-
-// Pinecone endpoints moved to Pinecone module
-
-
-// Pinecone indexes endpoint moved to Users module
-
-
-
 // New endpoint to check for missing chunks in Pinecone vs database
 app.post('/check-missing-chunks', authenticateToken, async (req, res) => {
   const { userId, indexName, namespace } = req.body;
@@ -485,15 +477,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-
-// Revenue Analytics endpoint moved to Admin module
-
-// Monthly Conversation Breakdown endpoint moved to Admin module
-
-// User Tracking Statistics endpoint moved to Admin module
-
-
-
 /* ================================
    Chatbot Duplication Endpoint
 ================================ */
@@ -762,10 +745,6 @@ registerPineconeRoutes(app, pool, authenticateToken);
    GDPR Compliance Functions
 ================================ */
 
-// Create GDPR settings table
-
-// Context chunks endpoints moved to Conversations module
-
 // Modify the sendMessage function to save context chunks
 // Find the sendMessage function and modify the part where it calls streamAnswer
 const sendMessage = async (question = null) => {
@@ -790,8 +769,6 @@ const sendMessage = async (question = null) => {
       ...updatedConversation,
       { text: finalAITextWithMarkers, isUser: false },
     ];
-
-    // ... existing code for conversation processing ...
 
     // Run database operations in the background
     (async () => {
