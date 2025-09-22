@@ -809,7 +809,6 @@ const sendMessage = async (question = null) => {
   }
 };
 
-// Modify the saveConversationToDatabase function to return the conversation ID
 async function saveConversationToDatabase(
   conversationData,
   emne,
@@ -823,6 +822,20 @@ async function saveConversationToDatabase(
   ligegyldig = null
 ) {
   try {
+    // KONKRET ÆNDRING: Sørg for at email altid er array
+    const safeConversationData = conversationData.map(msg => {
+      try {
+        if (msg.metadata?.email && typeof msg.metadata.email === 'string') {
+          msg.metadata.email = [msg.metadata.email];
+        }
+        return msg;
+      } catch (err) {
+        console.warn('Error processing message metadata:', err, msg);
+        return msg; // fortsæt med den originale besked, selvom metadata fejler
+      }
+    });
+
+    // Send til backend
     const response = await fetch(
       "https://egendatabasebackend.onrender.com/conversations",
       {
@@ -831,31 +844,34 @@ async function saveConversationToDatabase(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          conversation_data: conversationData,
+          conversation_data: safeConversationData,
           user_id: userId,
           chatbot_id: chatbotID,
-          emne: emne,
-          score: score,
+          emne,
+          score,
           ...(customerRating !== null && { customer_rating: customerRating }),
           lacking_info: lackingInfo,
           ...(bugStatus && { bug_status: bugStatus }),
           form_data: formData,
           purchase_tracking_enabled: purchaseTrackingEnabled,
-          is_livechat: isLivechat,
-          fallback: fallback,
-          ligegyldig: ligegyldig,
+          is_livechat,
+          fallback,
+          ligegyldig,
         }),
       }
     );
+
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(
         `Failed to save conversation: ${errorData.error}. Details: ${errorData.details}`
       );
     }
+
     const savedConversation = await response.json();
     console.log("Conversation saved successfully:", savedConversation);
-    return savedConversation; // Return the saved conversation object
+    return savedConversation;
+
   } catch (error) {
     console.error("Error saving conversation to the database:", error);
     logError(error);
