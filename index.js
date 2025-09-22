@@ -1,11 +1,9 @@
-import { Pinecone } from '@pinecone-database/pinecone';
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import OpenAI from 'openai';
 import cron from 'node-cron'; // For scheduled clean-ups
 import { generateStatisticsReportTemplate } from './reportGeneratorTemplate.js'; // Import template-based generator
 import { analyzeConversations } from './textAnalysis.js'; // Import text analysis
@@ -21,6 +19,8 @@ import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
 import { getEmneAndScore } from './src/utils/mainUtils.js';
 import { registerBevcoRoutes } from './src/routes/bevcoRoutes.js';
+import { registerPineconeRoutes } from './src/routes/pineconeRoutes.js';
+import { getPineconeApiKeyForIndex, initializePineconeClient } from './src/utils/pineconeUtils.js';
 
 const { Pool } = pg;
 
@@ -91,11 +91,6 @@ if (!process.env.OPENAI_API_KEY) {
   console.error('ERROR: OPENAI_API_KEY environment variable is required');
   process.exit(1);
 }
-
-// Initialize OpenAI client once
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 // Initialize Express
 const app = express();
@@ -171,523 +166,14 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// OpenAI embedding helper
-async function generateEmbedding(text) {
-  try {
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-3-large',
-      input: text,
-    });
-    return response.data[0].embedding;
-  } catch (error) {
-    console.error('Error generating embedding:', error);
-    throw new Error('Failed to generate embedding: ' + error.message);
-  }
-}
-
-// Helper function to get the API key for a specific index or fallback to user's default key
-async function getPineconeApiKeyForIndex(userId, indexName, namespace) {
-  try {
-    // Get user data
-    const userResult = await pool.query('SELECT pinecone_api_key, pinecone_indexes FROM users WHERE id = $1', [userId]);
-    if (userResult.rows.length === 0) {
-      throw new Error('User not found');
-    }
-    
-    const user = userResult.rows[0];
-    let pineconeIndexes = user.pinecone_indexes;
-    
-    // Parse indexes if it's a string
-    if (typeof pineconeIndexes === 'string') {
-      pineconeIndexes = JSON.parse(pineconeIndexes);
-    }
-    
-    // Check if pineconeIndexes is an array
-    if (Array.isArray(pineconeIndexes)) {
-      // Look for the matching index with the specified namespace and index_name
-      const matchedIndex = pineconeIndexes.find(index => 
-        index.namespace === namespace && 
-        index.index_name === indexName && 
-        index.API_key
-      );
-      
-      // If found a matching index with API_key, return that key
-      if (matchedIndex && matchedIndex.API_key) {
-        console.log(`Using index-specific API key for index: ${indexName}, namespace: ${namespace}`);
-        return matchedIndex.API_key;
-      }
-    }
-    
-    // Fallback to user's default API key
-    if (user.pinecone_api_key) {
-      console.log(`Using default user API key for index: ${indexName}, namespace: ${namespace}`);
-      return user.pinecone_api_key;
-    }
-    
-    throw new Error('No Pinecone API key found for this index or user');
-  } catch (error) {
-    console.error('Error getting Pinecone API key:', error);
-    throw error;
-  }
-}
 
 
-/* ================================
-   Pinecone Data Endpoints
-================================ */
-app.post('/pinecone-data', authenticateToken, async (req, res) => {
-  const { title, text, indexName, namespace, expirationTime, group } = req.body;
-  const authenticatedUserId = req.user.userId;
-  
-  // Check if user is admin and if a userId parameter was provided
-  const isAdmin = req.user.isAdmin === true;
-  const targetUserId = isAdmin && req.body.userId ? parseInt(req.body.userId) : authenticatedUserId;
+// Pinecone endpoints moved to Pinecone module
 
-  if (!title || !text || !indexName || !namespace) {
-    return res
-      .status(400)
-      .json({ error: 'Title, text, indexName, and namespace are required' });
-  }
-
-  try {
-    // If admin is creating data for another user, verify the user exists
-    if (isAdmin && targetUserId !== authenticatedUserId) {
-      const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [targetUserId]);
-      if (userCheck.rows.length === 0) {
-        return res.status(404).json({ error: 'Target user not found' });
-      }
-    }
-    
-    // Get the appropriate Pinecone API key for this index
-    try {
-      const pineconeApiKey = await getPineconeApiKeyForIndex(targetUserId, indexName, namespace);
-      
-      // Generate embedding
-      const embedding = await generateEmbedding(text);
-
-      // Initialize Pinecone
-      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      
-      const index = pineconeClient.index(namespace);
-
-      // Create unique vector ID
-      const vectorId = `vector-${Date.now()}`;
-
-      // Prepare vector metadata
-      const vectorMetadata = {
-        userId: targetUserId.toString(),
-        text,
-        title,
-        metadata: 'true'
-      };
-      
-      // Only add group to metadata if it's defined
-      if (group !== undefined && group !== null) {
-        vectorMetadata.group = group;
-      }
-
-      // Prepare vector
-      const vector = {
-        id: vectorId,
-        values: embedding,
-        metadata: vectorMetadata
-      };
-
-      // Upsert into Pineconex½
-      await index.upsert([vector], { namespace });
-
-      // Convert expirationTime -> Date or set null
-      let expirationDateTime = null;
-      if (expirationTime) {
-        expirationDateTime = new Date(expirationTime);
-        if (isNaN(expirationDateTime.getTime())) {
-          return res.status(400).json({ error: 'Invalid expirationTime format' });
-        }
-      }
-
-      // Add group to the metadata field in the database
-      const metadata = group ? { group } : {};
-
-      try {
-        // Try with metadata column
-        const result = await pool.query(
-          `INSERT INTO pinecone_data 
-            (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING *`,
-          [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, JSON.stringify(metadata)]
-        );
-        // Mark as viewed by the uploader
-        const newPineconeDataId = result.rows[0].id;
-        await pool.query(
-          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
-           VALUES ($1, $2)
-           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
-          [targetUserId, newPineconeDataId]
-        );
-        res.status(201).json(result.rows[0]);
-      } catch (dbError) {
-        // If metadata column doesn't exist, try without it
-        console.error('Error with metadata column, trying without it:', dbError);
-        const fallbackResult = await pool.query(
-          `INSERT INTO pinecone_data 
-            (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING *`,
-          [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
-        );
-        // Mark as viewed by the uploader (fallback)
-        const newPineconeDataIdFallback = fallbackResult.rows[0].id;
-        await pool.query(
-          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
-           VALUES ($1, $2)
-           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
-          [targetUserId, newPineconeDataIdFallback]
-        );
-        res.status(201).json(fallbackResult.rows[0]);
-      }
-    } catch (error) {
-      console.error('API key error:', error);
-      return res.status(400).json({ error: error.message });
-    }
-  } catch (err) {
-    console.error('Error upserting data:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
-
-app.put('/pinecone-data-update/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { title, text, group } = req.body;
-  const userId = req.user.userId;
-  const isAdmin = req.user.isAdmin === true;
-
-  if (!title || !text) {
-    return res.status(400).json({ error: 'Title and text are required' });
-  }
-
-  try {
-    // Get the user's namespaces from their profile
-    const userResult = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Extract namespaces from the user's pinecone_indexes
-    let pineconeIndexes = userResult.rows[0].pinecone_indexes;
-    
-    // Parse indexes if it's a string
-    if (typeof pineconeIndexes === 'string') {
-      pineconeIndexes = JSON.parse(pineconeIndexes);
-    }
-    
-    // Extract all namespaces the user has access to
-    const userNamespaces = Array.isArray(pineconeIndexes) 
-      ? pineconeIndexes.map(index => index.namespace).filter(Boolean)
-      : [];
-    
-    // Retrieve existing record - for admins or based on namespace access
-    const queryText = isAdmin 
-      ? 'SELECT * FROM pinecone_data WHERE id = $1'
-      : 'SELECT * FROM pinecone_data WHERE id = $1 AND namespace = ANY($2)';
-    
-    const queryParams = isAdmin ? [id] : [id, userNamespaces];
-    
-    const dataResult = await pool.query(queryText, queryParams);
-    
-    if (dataResult.rows.length === 0) {
-      return res.status(404).json({ 
-        error: 'Data not found or you do not have permission to modify it. Ensure you have access to the namespace.' 
-      });
-    }
-
-    const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId, metadata: existingMetadata } = dataResult.rows[0];
-
-    // Get the appropriate Pinecone API key for this index
-    try {
-      const pineconeApiKey = await getPineconeApiKeyForIndex(dataOwnerId, pinecone_index_name, namespace);
-      
-      // Generate new embedding
-      const embedding = await generateEmbedding(text);
-      
-      // Parse existing metadata or create new object
-      let metadata = {};
-      if (existingMetadata) {
-        try {
-          if (typeof existingMetadata === 'string') {
-            metadata = JSON.parse(existingMetadata);
-          } else {
-            metadata = existingMetadata;
-          }
-        } catch (e) {
-          console.error('Error parsing existing metadata:', e);
-        }
-      }
-      
-      // Update group info in metadata
-      if (group !== undefined) {
-        metadata.group = group;
-      }
-
-      // Prepare vector metadata
-      const vectorMetadata = {
-        userId: dataOwnerId.toString(),
-        text,
-        title,
-        metadata: 'true'
-      };
-      
-      // Only add group to metadata if it's defined
-      if (group !== undefined && group !== null) {
-        vectorMetadata.group = group;
-      } else if (metadata.group) {
-        // If there's an existing group in the metadata, use it
-        vectorMetadata.group = metadata.group;
-      }
-
-      // Update in Pinecone
-      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-
-      const index = pineconeClient.index(namespace);
-      
-      await index.upsert([
-        {
-          id: pinecone_vector_id,
-          values: embedding,
-          metadata: vectorMetadata
-        },
-      ], { namespace });
-
-      try {
-        // Try to update with metadata
-        const result = await pool.query(
-          'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3 WHERE id = $4 RETURNING *',
-          [title, text, JSON.stringify(metadata), id]
-        );
-
-        // Reset viewed status for all users for this chunk, then mark as viewed for the updater
-        const updatedPineconeDataId = result.rows[0].id;
-        await pool.query('DELETE FROM pinecone_data_views WHERE pinecone_data_id = $1', [updatedPineconeDataId]);
-        await pool.query(
-          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
-           VALUES ($1, $2)
-           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
-          [userId, updatedPineconeDataId] // userId is req.user.userId (the updater)
-        );
-
-        res.json(result.rows[0]);
-      } catch (dbError) {
-        // If metadata column doesn't exist, try without it
-        console.error('Error with metadata column, trying without it:', dbError);
-        const fallbackResult = await pool.query(
-          'UPDATE pinecone_data SET title = $1, text = $2 WHERE id = $3 RETURNING *',
-          [title, text, id]
-        );
-
-        // Reset viewed status for all users (fallback), then mark as viewed for the updater
-        const updatedPineconeDataIdFallback = fallbackResult.rows[0].id;
-        await pool.query('DELETE FROM pinecone_data_views WHERE pinecone_data_id = $1', [updatedPineconeDataIdFallback]);
-        await pool.query(
-          `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
-           VALUES ($1, $2)
-           ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
-          [userId, updatedPineconeDataIdFallback] // userId is req.user.userId (the updater)
-        );
-
-        res.json(fallbackResult.rows[0]);
-      }
-    } catch (error) {
-      console.error('API key error:', error);
-      return res.status(400).json({ error: error.message });
-    }
-  } catch (err) {
-    console.error('Error updating data:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
 
 // Pinecone indexes endpoint moved to Users module
 
-app.get('/pinecone-data', authenticateToken, async (req, res) => {
-  // Get the authenticated user's ID
-  const authenticatedUserId = req.user.userId;
-  
-  // Check if user is admin and if a userId parameter was provided
-  const isAdmin = req.user.isAdmin === true;
-  const requestedUserId = isAdmin && req.query.userId ? parseInt(req.query.userId) : authenticatedUserId;
-  
-  try {
-    // Get the user record to extract their associated namespaces
-    const userQuery = isAdmin && requestedUserId !== authenticatedUserId
-      ? 'SELECT id, pinecone_indexes FROM users WHERE id = $1'
-      : 'SELECT id, pinecone_indexes FROM users WHERE id = $1';
-    
-    const userResult = await pool.query(userQuery, [requestedUserId]);
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Requested user not found' });
-    }
-    
-    // Extract namespaces from the user's pinecone_indexes
-    const user = userResult.rows[0];
-    let pineconeIndexes = user.pinecone_indexes;
-    
-    // Parse indexes if it's a string
-    if (typeof pineconeIndexes === 'string') {
-      pineconeIndexes = JSON.parse(pineconeIndexes);
-    }
-    
-    // Extract all namespaces
-    const userNamespaces = Array.isArray(pineconeIndexes) 
-      ? pineconeIndexes.map(index => index.namespace).filter(Boolean)
-      : [];
-    
-    if (userNamespaces.length === 0) {
-      // If no namespaces found, return empty array
-      return res.json([]);
-    }
-    
-    // Query pinecone_data where namespace matches any of the user's namespaces
-    // Also, join with pinecone_data_views to check if the authenticated user has viewed the data
-    const result = await pool.query(
-      `SELECT 
-         pd.*, 
-         CASE WHEN pdv.user_id IS NOT NULL THEN TRUE ELSE FALSE END AS has_viewed
-       FROM pinecone_data pd
-       LEFT JOIN pinecone_data_views pdv ON pd.id = pdv.pinecone_data_id AND pdv.user_id = $1
-       WHERE pd.namespace = ANY($2) 
-       ORDER BY pd.created_at DESC`,
-      [authenticatedUserId, userNamespaces] // Use authenticatedUserId for the view check
-    );
-    
-    res.json(
-      result.rows.map((row) => {
-        // Extract group from metadata if available
-        let group = null;
-        if (row.metadata) {
-          try {
-            const metadata = typeof row.metadata === 'string'
-              ? JSON.parse(row.metadata)
-              : row.metadata;
-            group = metadata.group;
-          } catch (e) {
-            console.error('Error parsing metadata:', e);
-          }
-        }
-        
-        return {
-          title: row.title,
-          text: row.text,
-          id: row.id,
-          pinecone_index_name: row.pinecone_index_name,
-          namespace: row.namespace,
-          expiration_time: row.expiration_time,
-          group: group, // Include group information
-          has_viewed: row.has_viewed // Include the has_viewed status
-        };
-      })
-    );
-  } catch (err) {
-    console.error('Error retrieving data:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
 
-app.delete('/pinecone-data/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.userId;
-  const isAdmin = req.user.isAdmin === true;
-
-  try {
-    // Get the user's namespaces from their profile
-    const userResult = await pool.query('SELECT pinecone_indexes FROM users WHERE id = $1', [userId]);
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Extract namespaces from the user's pinecone_indexes
-    let pineconeIndexes = userResult.rows[0].pinecone_indexes;
-    
-    // Parse indexes if it's a string
-    if (typeof pineconeIndexes === 'string') {
-      pineconeIndexes = JSON.parse(pineconeIndexes);
-    }
-    
-    // Extract all namespaces the user has access to
-    const userNamespaces = Array.isArray(pineconeIndexes) 
-      ? pineconeIndexes.map(index => index.namespace).filter(Boolean)
-      : [];
-
-    // Retrieve the record - for admins or based on namespace access
-    const queryText = isAdmin 
-      ? 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1'
-      : 'SELECT pinecone_vector_id, pinecone_index_name, namespace, user_id FROM pinecone_data WHERE id = $1 AND namespace = ANY($2)';
-    
-    const queryParams = isAdmin ? [id] : [id, userNamespaces];
-    
-    const dataResult = await pool.query(queryText, queryParams);
-    
-    if (dataResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Data not found or you do not have permission to delete it. Ensure you have access to the namespace.' });
-    }
-
-    const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId } = dataResult.rows[0];
-
-    // Get the appropriate Pinecone API key for this index
-    try {
-      const pineconeApiKey = await getPineconeApiKeyForIndex(dataOwnerId, pinecone_index_name, namespace);
-      
-      // Delete from Pinecone
-      const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
-      const index = pineconeClient.index(namespace);
-      await index.deleteOne(pinecone_vector_id, { namespace: namespace });
-
-      // Delete from DB
-      await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);
-
-      res.json({ message: 'Data deleted successfully' });
-    } catch (error) {
-      console.error('API key error:', error);
-      return res.status(400).json({ error: error.message });
-    }
-  } catch (err) {
-    console.error('Error deleting data:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
-
-// New endpoint to mark Pinecone data as viewed
-app.post('/pinecone-data/:data_id/mark-viewed', authenticateToken, async (req, res) => {
-  const { data_id } = req.params;
-  const userId = req.user.userId;
-
-  if (!data_id) {
-    return res.status(400).json({ error: 'data_id is required' });
-  }
-
-  try {
-    // Check if the pinecone_data entry exists
-    const dataCheck = await pool.query('SELECT id FROM pinecone_data WHERE id = $1', [data_id]);
-    if (dataCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Pinecone data not found' });
-    }
-
-    // Insert a record into pinecone_data_views, or do nothing if it already exists
-    await pool.query(
-      `INSERT INTO pinecone_data_views (user_id, pinecone_data_id)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id, pinecone_data_id) DO NOTHING`,
-      [userId, data_id]
-    );
-
-    res.status(200).json({ message: 'Data marked as viewed successfully' });
-  } catch (err) {
-    console.error('Error marking data as viewed:', err);
-    res.status(500).json({ error: 'Server error', details: err.message });
-  }
-});
 
 // New endpoint to check for missing chunks in Pinecone vs database
 app.post('/check-missing-chunks', authenticateToken, async (req, res) => {
@@ -771,9 +257,9 @@ cron.schedule('0 * * * *', async () => {
 
       // Get the appropriate Pinecone API key for this index
       try {
-        const pineconeApiKey = await getPineconeApiKeyForIndex(user_id, pinecone_index_name, namespace);
+        const pineconeApiKey = await getPineconeApiKeyForIndex(pool, user_id, pinecone_index_name, namespace);
         
-        const pineconeClient = new Pinecone({ apiKey: pineconeApiKey });
+        const pineconeClient = initializePineconeClient(pineconeApiKey);
         const index = pineconeClient.index(namespace);
         await index.deleteOne(pinecone_vector_id, { namespace: namespace });
 
@@ -1270,6 +756,7 @@ registerErrorsRoutes(app, pool);
 registerMagentoRoutes(app, pool);
 registerStatisticsRoutes(app, pool, authenticateToken);
 registerConversationsRoutes(app, pool, authenticateToken, SECRET_KEY);
+registerPineconeRoutes(app, pool, authenticateToken);
 
 /* ================================
    GDPR Compliance Functions
@@ -1277,32 +764,7 @@ registerConversationsRoutes(app, pool, authenticateToken, SECRET_KEY);
 
 // Create GDPR settings table
 
-// Add this endpoint after the existing conversation endpoints
-app.get('/conversation/:id/context-chunks/:messageIndex', authenticateToken, async (req, res) => {
-  const { id: conversationId, messageIndex } = req.params;
-  
-  try {
-    const chunks = await getContextChunks(conversationId, parseInt(messageIndex));
-    res.json(chunks);
-  } catch (error) {
-    console.error('Error retrieving context chunks:', error);
-    res.status(500).json({ error: 'Failed to retrieve context chunks' });
-  }
-});
-
-// POST endpoint to save context chunks
-app.post('/conversation/:id/context-chunks/:messageIndex', async (req, res) => {
-  const { id: conversationId, messageIndex } = req.params;
-  const { chunks } = req.body;
-  
-  try {
-    await saveContextChunks(conversationId, parseInt(messageIndex), chunks);
-    res.json({ message: 'Context chunks saved successfully' });
-  } catch (error) {
-    console.error('Error saving context chunks:', error);
-    res.status(500).json({ error: 'Failed to save context chunks' });
-  }
-});
+// Context chunks endpoints moved to Conversations module
 
 // Modify the sendMessage function to save context chunks
 // Find the sendMessage function and modify the part where it calls streamAnswer
@@ -1357,11 +819,7 @@ const sendMessage = async (question = null) => {
           fallback
         );
 
-        // Save context chunks if we have them and a conversation ID
-        if (contextChunks.length > 0 && savedConversation?.id) {
-          const messageIndex = updatedConversationForDB.length - 1; // Index of the AI response
-          await saveContextChunks(savedConversation.id, messageIndex, contextChunks);
-        }
+        // Context chunks saving is now handled by the conversations module
 
       } catch (error) {
         console.error("Error in background database operations:", error);
