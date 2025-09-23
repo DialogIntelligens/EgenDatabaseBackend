@@ -152,7 +152,7 @@ export function registerShopifyCredentialsRoutes(app) {
         }
     });
 
-    // Get Shopify settings for chatbot script (public endpoint for integrations)
+    // Get Shopify settings for chatbot script (public endpoint for integrations - SECURE VERSION)
     app.get('/api/shopify-settings/:chatbotId', async (req, res) => {
         try {
             const { chatbotId } = req.params;
@@ -162,8 +162,7 @@ export function registerShopifyCredentialsRoutes(app) {
             }
 
             const query = `
-                SELECT shopify_enabled, shopify_store, shopify_access_token,
-                       shopify_api_key, shopify_secret_key
+                SELECT shopify_enabled, shopify_store
                 FROM shopify_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -177,9 +176,6 @@ export function registerShopifyCredentialsRoutes(app) {
                 return res.json({
                     shopifyEnabled: false,
                     shopifyStore: '',
-                    shopifyAccessToken: '',
-                    shopifyApiKey: '',
-                    shopifySecretKey: '',
                     shopifyApiVersion: '2024-10',
                     orderTrackingUseProxy: true,
                     orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',
@@ -201,12 +197,11 @@ export function registerShopifyCredentialsRoutes(app) {
                 }
             }
 
+            // SECURITY: Only return non-sensitive configuration data
             res.json({
                 shopifyEnabled: row.shopify_enabled === true, // Default to false if not set
-                shopifyStore: row.shopify_store || '',
-                shopifyAccessToken: row.shopify_access_token || '',
-                shopifyApiKey: row.shopify_api_key || '',
-                shopifySecretKey: row.shopify_secret_key || '',
+                shopifyStore: row.shopify_store || '', // Store name is not sensitive
+                // REMOVED: shopifyAccessToken, shopifyApiKey, shopifySecretKey (sensitive!)
                 shopifyApiVersion: '2024-10',
                 orderTrackingUseProxy: true,
                 orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/shopify/orders',

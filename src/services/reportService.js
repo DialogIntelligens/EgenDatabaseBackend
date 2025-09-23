@@ -1,6 +1,7 @@
 import { generateGPTAnalysis } from '../../gptAnalysis.js';
 import { generateStatisticsReportTemplate } from '../../reportGeneratorTemplate.js';
-import { transformStatisticsForPDF, processConversationsInChunks, analyzeConversationsInChunks } from '../utils/mainUtils.js';
+import { processConversationsInChunks, analyzeConversationsInChunks } from '../utils/mainUtils.js';
+import { transformStatisticsForPDF } from '../utils/transformUtils.js';
 
 /**
  * Generate a PDF report with optional text analysis and GPT analysis
@@ -13,7 +14,7 @@ import { transformStatisticsForPDF, processConversationsInChunks, analyzeConvers
  * @param {string} language - Language for the report
  * @param {string} selectedEmne - Optional topic filter
  * @param {number} userId - User ID for database queries
- * @param {Object} pool - Database connection pool
+ * @param {Object} pool - Database pool connection
  * @returns {Buffer} PDF buffer
  */
 export async function generateReport(

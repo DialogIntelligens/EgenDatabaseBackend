@@ -117,7 +117,14 @@ export function registerMagentoCredentialsRoutes(app) {
                 order_tracking_use_proxy: true,
                 order_tracking_proxy_url: 'https://egendatabasebackend.onrender.com/api/magento/orders',
                 order_tracking_request_method: 'POST',
-                tracking_required_fields: JSON.stringify(['email', 'phone', 'order_number'])
+                tracking_required_fields: JSON.stringify(['order_number', 'email', 'phone']),
+                tracking_validation_rules: JSON.stringify({
+                    required_fields: ['order_number'],
+                    min_fields: 2,
+                    max_fields: 3,
+                    forbidden_combinations: [['email', 'phone']],
+                    description: 'Must provide order_number plus at least one other field (email and/or phone)'
+                })
             };
 
             res.json({
@@ -157,7 +164,7 @@ export function registerMagentoCredentialsRoutes(app) {
         }
     });
 
-    // Get Magento settings for chatbot script (public endpoint for integrations)
+    // Get Magento settings for chatbot script (public endpoint for integrations - SECURE VERSION)
     app.get('/api/magento-settings/:chatbotId', async (req, res) => {
         try {
             const { chatbotId } = req.params;
@@ -167,8 +174,7 @@ export function registerMagentoCredentialsRoutes(app) {
             }
 
             const query = `
-                SELECT magento_enabled, magento_base_url, magento_access_token,
-                       magento_consumer_key, magento_consumer_secret, magento_token_secret
+                SELECT magento_enabled, magento_base_url
                 FROM magento_credentials
                 WHERE chatbot_id = $1
                 ORDER BY created_at DESC
@@ -182,20 +188,23 @@ export function registerMagentoCredentialsRoutes(app) {
                 return res.json({
                     magentoEnabled: false,
                     magentoBaseUrl: '',
-                    magentoAccessToken: '',
-                    magentoConsumerKey: '',
-                    magentoConsumerSecret: '',
-                    magentoTokenSecret: '',
                     magentoApiVersion: 'V1',
                     orderTrackingUseProxy: true,
                     orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',
                     orderTrackingRequestMethod: 'POST',
-                    trackingRequiredFields: ['email', 'phone', 'order_number']
+                    trackingRequiredFields: ['order_number', 'email', 'phone'],
+                    trackingValidationRules: {
+                        required_fields: ['order_number'],
+                        min_fields: 2,
+                        max_fields: 3,
+                        forbidden_combinations: [['email', 'phone']],
+                        description: 'Must provide order_number plus at least one other field (email and/or phone)'
+                    }
                 });
             }
 
             const row = result.rows[0];
-            let trackingRequiredFields = ['email', 'phone', 'order_number']; // Default
+            let trackingRequiredFields = ['order_number', 'email', 'phone']; // Default - updated order
 
             if (row.tracking_required_fields) {
                 try {
@@ -207,18 +216,23 @@ export function registerMagentoCredentialsRoutes(app) {
                 }
             }
 
+            // SECURITY: Only return non-sensitive configuration data
             res.json({
                 magentoEnabled: row.magento_enabled === true, // Default to false if not set
-                magentoBaseUrl: row.magento_base_url || '',
-                magentoAccessToken: row.magento_access_token || '',
-                magentoConsumerKey: row.magento_consumer_key || '',
-                magentoConsumerSecret: row.magento_consumer_secret || '',
-                magentoTokenSecret: row.magento_token_secret || '',
+                magentoBaseUrl: row.magento_base_url || '', // Base URL is not sensitive (it's public)
+                // REMOVED: magentoAccessToken, magentoConsumerKey, magentoConsumerSecret, magentoTokenSecret (all sensitive!)
                 magentoApiVersion: 'V1',
                 orderTrackingUseProxy: true,
                 orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',
                 orderTrackingRequestMethod: 'POST',
-                trackingRequiredFields: ['email', 'phone', 'order_number']
+                trackingRequiredFields: ['order_number', 'email', 'phone'],
+                trackingValidationRules: {
+                    required_fields: ['order_number'],
+                    min_fields: 2,
+                    max_fields: 3,
+                    forbidden_combinations: [['email', 'phone']],
+                    description: 'Must provide order_number plus at least one other field (email and/or phone)'
+                }
             });
         } catch (error) {
             console.error('Error fetching Magento settings:', error);
