@@ -18,6 +18,13 @@ import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerShopifyCredentialsRoutes, setShopifyCredentialsPool } from './shopifyCredentialsRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerMainRoutes } from './src/routes/mainRoutes.js';
+import emailjs from '@emailjs/nodejs';
+
+// Initialize EmailJS with your keys (Node.js format)
+emailjs.init({
+  publicKey: 'CIcxIuT6fMzBr5cTm',
+  privateKey: 'WUW-nxSkm2bsJ4ZJgExNT',
+});
 
 const { Pool } = pg;
 
@@ -5204,6 +5211,481 @@ app.post('/duplicate-chatbot-settings', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
+/* ================================
+   NOTIFICATION SETTINGS ENDPOINTS
+================================ */
+
+// GET all notification settings for a user
+app.get('/notification-settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    const result = await pool.query(`
+      SELECT ns.*
+      FROM notification_settings ns
+      WHERE ns.user_id = $1 AND ns.is_active = true
+      ORDER BY ns.created_at DESC
+    `, [userId]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching notification settings:', error);
+    res.status(500).json({ error: 'Failed to fetch notification settings' });
+  }
+});
+
+// POST create new notification setting
+app.post('/notification-settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { emne, procent_stigning, tidsperiode, email, chatbot_id } = req.body;
+
+    console.log('📧 Notification settings request:', {
+      userId,
+      body: req.body,
+      emne,
+      procent_stigning,
+      tidsperiode,
+      email,
+      chatbot_id
+    });
+
+    // Validation
+    if (!emne || !procent_stigning || !tidsperiode || !email) {
+      console.log('❌ Validation failed - missing fields:', {
+        emne: !!emne,
+        procent_stigning: !!procent_stigning,
+        tidsperiode: !!tidsperiode,
+        email: !!email
+      });
+      return res.status(400).json({ 
+        error: 'Missing required fields: emne, procent_stigning, tidsperiode, and email are required' 
+      });
+    }
+
+    // Validate percentage values
+    const validPercentages = [250, 500, 750, 1000];
+    if (!validPercentages.includes(parseInt(procent_stigning))) {
+      return res.status(400).json({ 
+        error: 'Invalid percentage. Must be one of: 250, 500, 750, 1000' 
+      });
+    }
+
+    // Validate time periods
+    const validPeriods = ['6timer', '12timer', '24timer', '3dage', '7dage'];
+    if (!validPeriods.includes(tidsperiode)) {
+      return res.status(400).json({ 
+        error: 'Invalid time period. Must be one of: 6timer, 12timer, 24timer, 3dage, 7dage' 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    console.log('💾 Inserting into database with values:', [userId, chatbot_id || null, emne, parseInt(procent_stigning), tidsperiode, email]);
+
+    const result = await pool.query(`
+      INSERT INTO notification_settings 
+      (user_id, chatbot_id, emne, procent_stigning, tidsperiode, email)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [userId, chatbot_id || null, emne, parseInt(procent_stigning), tidsperiode, email]);
+
+    console.log('✅ Successfully created notification setting:', result.rows[0]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Error creating notification setting:', error);
+    console.error('Database error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      constraint: error.constraint
+    });
+    res.status(500).json({ error: 'Failed to create notification setting: ' + error.message });
+  }
+});
+
+// DELETE notification setting (soft delete)
+app.delete('/notification-settings/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    const result = await pool.query(`
+      UPDATE notification_settings 
+      SET is_active = false
+      WHERE id = $1 AND user_id = $2
+      RETURNING *
+    `, [id, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification setting not found' });
+    }
+
+    res.json({ message: 'Notification setting deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting notification setting:', error);
+    res.status(500).json({ error: 'Failed to delete notification setting' });
+  }
+});
+
+// TEST endpoint to manually trigger notification check
+app.post('/test-notifications', authenticateToken, async (req, res) => {
+  try {
+    console.log('🧪 Manual notification test triggered by user:', req.user.userId);
+    await checkNotificationTriggers();
+    res.json({ message: 'Notification check completed. Check server logs for details.' });
+  } catch (error) {
+    console.error('❌ Error in manual notification test:', error);
+    res.status(500).json({ error: 'Failed to run notification test' });
+  }
+});
+
+// DEBUG endpoint without authentication
+app.get('/debug-notifications', async (req, res) => {
+  try {
+    console.log('🔧 DEBUG: Manual notification check triggered');
+    await checkNotificationTriggers();
+    res.json({ message: 'Debug notification check completed. Check server logs for details.' });
+  } catch (error) {
+    console.error('❌ Error in debug notification test:', error);
+    res.status(500).json({ error: 'Failed to run debug notification test' });
+  }
+});
+
+// DIRECT EMAIL TEST endpoint - sends test email immediately
+app.post('/test-email', authenticateToken, async (req, res) => {
+  try {
+    console.log('📧 Direct email test triggered by user:', req.user.userId);
+    
+    const testSetting = {
+      emne: 'Test Notification',
+      email: 'thorkilsen@outlook.com',
+      tidsperiode: '6timer',
+      procent_stigning: 250
+    };
+    
+    console.log('🚀 Sending test email...');
+    await sendNotificationEmail(testSetting, 5, 2, 150);
+    
+    res.json({ message: 'Test email sent successfully! Check your inbox.' });
+  } catch (error) {
+    console.error('❌ Error sending test email:', error);
+    res.status(500).json({ error: 'Failed to send test email: ' + error.message });
+  }
+});
+
+/* ================================
+   NOTIFICATION MONITORING SYSTEM
+================================ */
+
+// Function to check if email cooldown period has passed
+async function checkEmailCooldown(setting, timeHours) {
+  const { id, last_email_sent, tidsperiode } = setting;
+  
+  // If no email has been sent yet, cooldown has passed
+  if (!last_email_sent) {
+    console.log(`✅ No previous email sent for notification ${id}, cooldown passed`);
+    return true;
+  }
+  
+  // Calculate cooldown period (double the monitoring time period)
+  const cooldownHours = timeHours * 2;
+  const cooldownMs = cooldownHours * 60 * 60 * 1000;
+  
+  const lastEmailTime = new Date(last_email_sent);
+  const now = new Date();
+  const timeSinceLastEmail = now - lastEmailTime;
+  
+  const cooldownPassed = timeSinceLastEmail >= cooldownMs;
+  
+  console.log(`⏰ Cooldown check for notification ${id}:`, {
+    tidsperiode,
+    timeHours,
+    cooldownHours,
+    lastEmailSent: lastEmailTime.toISOString(),
+    timeSinceLastEmail: Math.round(timeSinceLastEmail / (60 * 60 * 1000) * 10) / 10 + ' hours',
+    cooldownPassed
+  });
+  
+  return cooldownPassed;
+}
+
+// Function to send notification email and update last_email_sent
+async function sendNotificationEmailWithCooldown(setting, currentCount, avgCount, percentageIncrease) {
+  try {
+    // Send the email
+    await sendNotificationEmail(setting, currentCount, avgCount, percentageIncrease);
+    
+    // Update last_email_sent timestamp
+    await pool.query(`
+      UPDATE notification_settings 
+      SET last_email_sent = CURRENT_TIMESTAMP 
+      WHERE id = $1
+    `, [setting.id]);
+    
+    console.log(`📧 Updated last_email_sent for notification ${setting.id}`);
+    
+  } catch (error) {
+    console.error('❌ Error in sendNotificationEmailWithCooldown:', error);
+  }
+}
+
+// Function to send notification email using your existing EmailJS setup
+async function sendNotificationEmail(setting, currentCount, avgCount, percentageIncrease) {
+  try {
+    const { emne, email, tidsperiode, procent_stigning } = setting;
+    
+    const subject = `🚨 Usædvanlig aktivitet opdaget: ${emne}`;
+    const message = `
+Hej,
+
+Vi har opdaget usædvanlig aktivitet på din chatbot:
+
+📊 Aktivitetsrapport
+• Emne: ${emne}
+• Tidsperiode: ${tidsperiode}
+• Nuværende aktivitet: ${currentCount} samtaler
+• Normal aktivitet: ${Math.round(avgCount)} samtaler
+• Stigning: ${Math.round(percentageIncrease)}% (tærskel: ${procent_stigning}%)
+
+Dette kan indikere øget interesse i dette emne eller potentielle problemer der kræver opmærksomhed.
+
+Log ind på dit dashboard for at se detaljerede statistikker og samtaler.
+
+Med venlig hilsen,
+Dit Chatbot Team
+    `;
+
+    const templateParams = {
+      to_email: email,
+      message: message,
+      emne: subject,
+    };
+
+    // Use your existing EmailJS configuration (Node.js format)
+    await emailjs.send(
+      'service_n5qoy4e',      // Your service ID
+      'template_sbtj6jv',     // Your template ID  
+      templateParams,
+      {
+        publicKey: 'CIcxIuT6fMzBr5cTm',
+        privateKey: 'WUW-nxSkm2bsJ4ZJgExNT',
+      }
+    );
+    
+    console.log(`✅ Notification email sent to ${email}: ${subject}`);
+    
+  } catch (error) {
+    console.error('❌ Error sending notification email:', error);
+  }
+}
+
+// Function to check a single notification setting
+async function checkSingleNotificationSetting(setting) {
+  try {
+    const { user_id, chatbot_id, emne, procent_stigning, tidsperiode } = setting;
+    
+    // Convert time period to hours for calculation
+    const timeHours = {
+      '6timer': 6,
+      '12timer': 12,
+      '24timer': 24,
+      '3dage': 72,
+      '7dage': 168
+    }[tidsperiode];
+
+    // Get current period activity
+    const currentPeriodStart = new Date(Date.now() - (timeHours * 60 * 60 * 1000));
+    
+    let chatbotFilter = '';
+    let queryParams = [user_id, emne, currentPeriodStart];
+    
+    if (chatbot_id) {
+      chatbotFilter = 'AND c.chatbot_id = $4';
+      queryParams.push(chatbot_id);
+    }
+
+    // DEBUG: Check what emne values exist for this user
+    const debugEmneResult = await pool.query(`
+      SELECT DISTINCT c.emne, COUNT(*) as count, c.user_id
+      FROM conversations c
+      WHERE c.user_id = $1 
+        AND c.created_at >= $2
+      GROUP BY c.emne, c.user_id
+      ORDER BY count DESC
+    `, [user_id, currentPeriodStart]);
+    
+    // DEBUG: Also check ALL recent conversations to see what's available
+    const debugAllResult = await pool.query(`
+      SELECT DISTINCT c.emne, COUNT(*) as count, c.user_id, 
+             MAX(c.created_at) as latest_conversation
+      FROM conversations c
+      WHERE c.created_at >= $1
+      GROUP BY c.emne, c.user_id
+      ORDER BY latest_conversation DESC
+      LIMIT 10
+    `, [currentPeriodStart]);
+    
+    console.log(`🔍 DEBUG: Available emne values for user ${user_id}:`, debugEmneResult.rows);
+    console.log(`🔍 DEBUG: ALL recent conversations (any user):`, debugAllResult.rows);
+    console.log(`🔍 DEBUG: Looking for emne: "${emne}" for user_id: ${user_id}`);
+    
+    // FIXED: Look for conversations with the correct chatbot_id and emne
+    console.log(`🔍 DEBUG: Searching for conversations with chatbot_id: ${chatbot_id}, emne: "${emne}"`);
+    
+    let conversationQuery;
+    let conversationQueryParams;
+    
+    if (chatbot_id) {
+      // Search by specific chatbot_id
+      conversationQuery = `
+        SELECT COUNT(*) as count
+        FROM conversations c
+        WHERE c.chatbot_id = $1 
+          AND c.emne = $2
+          AND c.created_at >= $3
+      `;
+      conversationQueryParams = [chatbot_id, emne, currentPeriodStart];
+    } else {
+      // If no chatbot_id, search across all conversations for this user's accessible chatbots
+      conversationQuery = `
+        SELECT COUNT(*) as count
+        FROM conversations c
+        WHERE c.emne = $1
+          AND c.created_at >= $2
+      `;
+      conversationQueryParams = [emne, currentPeriodStart];
+    }
+    
+    const chatbotConversationResult = await pool.query(conversationQuery, conversationQueryParams);
+    
+    const currentCount = parseInt(chatbotConversationResult.rows[0].count);
+    console.log(`🔍 DEBUG: Found ${currentCount} conversations for chatbot_id: ${chatbot_id}, emne: "${emne}"`);
+    
+    // Now get the current activity result using the chatbot-based approach
+    const currentActivityResult = { rows: [{ current_count: currentCount }] };
+
+    // Get historical average for the same time period using chatbot_id
+    const historicalStart = new Date(Date.now() - (timeHours * 60 * 60 * 1000 * 3)); // Last 3 periods (reduced for testing)
+    
+    let historicalQuery;
+    let historicalQueryParams;
+    
+    if (chatbot_id) {
+      historicalQuery = `
+        SELECT AVG(daily_count) as avg_count
+        FROM (
+          SELECT DATE_TRUNC('hour', c.created_at) as hour_bucket, COUNT(*) as daily_count
+          FROM conversations c
+          WHERE c.chatbot_id = $1 
+            AND c.emne = $2 
+            AND c.created_at >= $3
+            AND c.created_at < $4
+          GROUP BY DATE_TRUNC('hour', c.created_at)
+        ) hourly_counts
+      `;
+      historicalQueryParams = [chatbot_id, emne, historicalStart, currentPeriodStart];
+    } else {
+      historicalQuery = `
+        SELECT AVG(daily_count) as avg_count
+        FROM (
+          SELECT DATE_TRUNC('hour', c.created_at) as hour_bucket, COUNT(*) as daily_count
+          FROM conversations c
+          WHERE c.emne = $1 
+            AND c.created_at >= $2
+            AND c.created_at < $3
+          GROUP BY DATE_TRUNC('hour', c.created_at)
+        ) hourly_counts
+      `;
+      historicalQueryParams = [emne, historicalStart, currentPeriodStart];
+    }
+    
+    const historicalActivityResult = await pool.query(historicalQuery, historicalQueryParams);
+
+    // currentCount is already defined above
+    const avgCount = parseFloat(historicalActivityResult.rows[0].avg_count) || 0;
+    
+    console.log(`🔍 Detailed analysis for ${emne}:`, {
+      currentPeriodStart: currentPeriodStart.toISOString(),
+      historicalStart: historicalStart.toISOString(),
+      currentCount,
+      avgCount,
+      timeHours,
+      user_id,
+      chatbot_id
+    });
+    
+    // Check if enough time has passed since last email (cooldown system)
+    const cooldownPassed = await checkEmailCooldown(setting, timeHours);
+    
+    // Calculate percentage increase
+    if (avgCount > 0) {
+      const percentageIncrease = ((currentCount - avgCount) / avgCount) * 100;
+      
+      console.log(`📊 Checking ${emne}: Current=${currentCount}, Avg=${avgCount.toFixed(1)}, Increase=${percentageIncrease.toFixed(1)}%, Threshold=${procent_stigning}%`);
+      
+      if (percentageIncrease >= procent_stigning) {
+        if (cooldownPassed) {
+          console.log(`🚨 Threshold exceeded! Sending notification for ${emne}`);
+          await sendNotificationEmailWithCooldown(setting, currentCount, avgCount, percentageIncrease);
+        } else {
+          console.log(`⏰ Threshold exceeded for ${emne}, but cooldown period not yet passed. Skipping email.`);
+        }
+      }
+    } else if (currentCount > 0) {
+      // Send notification if there's current activity but no historical data
+      if (cooldownPassed) {
+        console.log(`🧪 Current activity (${currentCount}) detected with no historical baseline - sending notification`);
+        await sendNotificationEmailWithCooldown(setting, currentCount, 0, 100);
+      } else {
+        console.log(`⏰ Current activity detected for ${emne}, but cooldown period not yet passed. Skipping email.`);
+      }
+    } else {
+      console.log(`📊 No current activity found for ${emne} with chatbot_id: ${chatbot_id}, skipping notification check`);
+    }
+  } catch (error) {
+    console.error('Error checking single notification setting:', error);
+  }
+}
+
+// Function to check for unusual activity and send notifications
+async function checkNotificationTriggers() {
+  try {
+    console.log('🔍 Checking notification triggers...');
+    
+    // Get all active notification settings
+    const settingsResult = await pool.query(`
+      SELECT ns.*
+      FROM notification_settings ns
+      WHERE ns.is_active = true
+    `);
+
+    console.log(`📋 Found ${settingsResult.rows.length} active notification settings`);
+
+    for (const setting of settingsResult.rows) {
+      await checkSingleNotificationSetting(setting);
+    }
+    
+    console.log('✅ Notification check completed');
+  } catch (error) {
+    console.error('❌ Error checking notification triggers:', error);
+  }
+}
+
+// Set up periodic checking (every 30 minutes)
+setInterval(checkNotificationTriggers, 30 * 60 * 1000);
+
+// Also check on startup (after 30 seconds to let server fully initialize)
+setTimeout(checkNotificationTriggers, 30000);
+
+// Production ready - using 30-minute interval only
+
+console.log('📧 Notification monitoring system initialized');
 
 // Start the server
 app.listen(PORT, () => {
