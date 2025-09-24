@@ -9,7 +9,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-conversation": "node scripts/test-conversation-processing.js",
     "setup-conversation": "node scripts/setup-conversation-processing.js",
-    "fix-streaming-constraint": "node scripts/fix-streaming-sessions-constraint.js"
+    "fix-streaming-constraint": "node scripts/fix-streaming-sessions-constraint.js",
+    "extract-pinecone-local": "node scripts/extract-pinecone-config-local.js",
+    "extract-pinecone-github": "node scripts/extract-pinecone-config-from-github.js",
+    "extract-pinecone-public": "node scripts/extract-pinecone-config-from-public-github.js"
   },
   "keywords": [],
   "author": "",

@@ -25,8 +25,7 @@ export class ConfigurationService {
         shopifySettings,
         magentoSettings,
         templateAssignments,
-        promptOverrides,
-        pineconeSettings
+        promptOverrides
       ] = await Promise.all([
         this.getBasicSettings(chatbotId),
         this.getLanguageSettings(chatbotId),
@@ -35,16 +34,14 @@ export class ConfigurationService {
         this.getShopifySettings(chatbotId),
         this.getMagentoSettings(chatbotId),
         this.getTemplateAssignments(chatbotId),
-        this.getPromptOverrides(chatbotId),
-        this.getPineconeSettings(chatbotId)
+        this.getPromptOverrides(chatbotId)
       ]);
 
       // Merge all configuration
       const configuration = {
         chatbot_id: chatbotId,
-        ...basicSettings,
+        ...basicSettings, // This now includes Pinecone settings
         ...languageSettings,
-        ...pineconeSettings,
         topKSettings,
         flowApiKeys,
         ...shopifySettings,
@@ -69,25 +66,48 @@ export class ConfigurationService {
   }
 
   /**
-   * Get basic chatbot settings
+   * Get basic chatbot settings including Pinecone configuration
    */
   async getBasicSettings(chatbotId) {
     try {
       const result = await this.pool.query(`
-        SELECT image_enabled, camera_button_enabled
+        SELECT 
+          image_enabled, 
+          camera_button_enabled,
+          pinecone_api_key,
+          knowledgebase_index_endpoint,
+          flow2_knowledgebase_index,
+          flow3_knowledgebase_index,
+          flow4_knowledgebase_index,
+          apiflow_knowledgebase_index
         FROM chatbot_settings 
         WHERE chatbot_id = $1
       `, [chatbotId]);
 
-      return result.rows[0] || {
-        image_enabled: false,
-        camera_button_enabled: false
+      const settings = result.rows[0] || {};
+      
+      return {
+        image_enabled: settings.image_enabled || false,
+        camera_button_enabled: settings.camera_button_enabled || false,
+        // Pinecone configuration from integration scripts
+        pineconeApiKey: settings.pinecone_api_key || null,
+        knowledgebaseIndexApiEndpoint: settings.knowledgebase_index_endpoint || null,
+        flow2KnowledgebaseIndex: settings.flow2_knowledgebase_index || null,
+        flow3KnowledgebaseIndex: settings.flow3_knowledgebase_index || null,
+        flow4KnowledgebaseIndex: settings.flow4_knowledgebase_index || null,
+        apiFlowKnowledgebaseIndex: settings.apiflow_knowledgebase_index || null
       };
     } catch (error) {
       console.error('Error getting basic settings:', error);
       return {
         image_enabled: false,
-        camera_button_enabled: false
+        camera_button_enabled: false,
+        pineconeApiKey: null,
+        knowledgebaseIndexApiEndpoint: null,
+        flow2KnowledgebaseIndex: null,
+        flow3KnowledgebaseIndex: null,
+        flow4KnowledgebaseIndex: null,
+        apiFlowKnowledgebaseIndex: null
       };
     }
   }
@@ -224,51 +244,6 @@ export class ConfigurationService {
     }
   }
 
-  /**
-   * Get Pinecone settings (API key and indexes)
-   */
-  async getPineconeSettings(chatbotId) {
-    try {
-      // Get the user who owns this chatbot to get their Pinecone API key
-      const userResult = await this.pool.query(`
-        SELECT pinecone_api_key, pinecone_indexes 
-        FROM users 
-        WHERE $1 = ANY(chatbot_ids)
-      `, [chatbotId]);
-
-      if (userResult.rows.length > 0) {
-        const user = userResult.rows[0];
-        let pineconeIndexes = user.pinecone_indexes;
-        
-        // Parse indexes if it's a string
-        if (typeof pineconeIndexes === 'string') {
-          try {
-            pineconeIndexes = JSON.parse(pineconeIndexes);
-          } catch (e) {
-            console.error('Error parsing pinecone_indexes:', e);
-            pineconeIndexes = [];
-          }
-        }
-
-        return {
-          pineconeApiKey: user.pinecone_api_key,
-          pineconeIndexes: pineconeIndexes || []
-        };
-      }
-
-      console.warn(`No user found for chatbot ${chatbotId}, Pinecone settings unavailable`);
-      return {
-        pineconeApiKey: null,
-        pineconeIndexes: []
-      };
-    } catch (error) {
-      console.error('Error getting Pinecone settings:', error);
-      return {
-        pineconeApiKey: null,
-        pineconeIndexes: []
-      };
-    }
-  }
 
   /**
    * Get template assignments
