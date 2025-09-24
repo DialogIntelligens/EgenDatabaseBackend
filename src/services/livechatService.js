@@ -22,13 +22,14 @@ export async function appendLivechatMessageService(body, pool) {
     throw new Error('Missing required fields: user_id, chatbot_id, message_text, is_user');
   }
 
+  // Brug enhanceMetadata for at sikre email er en string
   const enhancedMetadata = enhanceMetadata({ metadata, file_name, file_mime, file_size });
 
   const result = await pool.query(`
     SELECT * FROM append_message_atomic($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
   `, [
     user_id,
-    chatbot_id, 
+    chatbot_id,
     message_text,
     is_user,
     agent_name,
@@ -45,7 +46,7 @@ export async function appendLivechatMessageService(body, pool) {
     throw new Error(messageResult?.error_message || 'Failed to append message');
   }
 
-  // Mark conversation as using message system and livechat
+  // Marker samtalen som livechat og med message system
   await pool.query(`
     UPDATE conversations 
     SET uses_message_system = true,
@@ -53,7 +54,7 @@ export async function appendLivechatMessageService(body, pool) {
     WHERE id = $1
   `, [messageResult.conversation_id]);
 
-  // Compute response time when agent replies
+  // Beregn responstid hvis agent svarer
   if (!is_user && agent_name) {
     try {
       const userMessageResult = await pool.query(`
@@ -68,6 +69,7 @@ export async function appendLivechatMessageService(body, pool) {
         const userMessageTime = new Date(userMessageResult.rows[0].created_at);
         const agentMessageTime = new Date();
         const responseTimeSeconds = Math.round((agentMessageTime - userMessageTime) / 1000);
+
         await pool.query(`
           UPDATE conversation_messages 
           SET response_time_seconds = $1 
@@ -86,6 +88,7 @@ export async function appendLivechatMessageService(body, pool) {
     sequence_number: messageResult.sequence_number
   };
 }
+
 
 export async function getConversationMessagesService(query, pool) {
   const { user_id, chatbot_id } = query;
@@ -121,18 +124,38 @@ export async function migrateConversationWithMessagesService(body, pool) {
 
   for (let i = 0; i < conversation_data.length; i++) {
     const msg = conversation_data[i];
-  
-    // KONKRET ÆNDRING:
-    if (msg.metadata?.email && typeof msg.metadata.email === 'string') {
-      msg.metadata.email = [msg.metadata.email];
+
+    // Ensure email is always a string in metadata
+    const safeMetadata = {
+      textWithMarkers: msg.textWithMarkers,
+      isError: msg.isError,
+      ...(msg.metadata || {})
+    };
+
+    // Convert email arrays to strings
+    if (safeMetadata.email) {
+      if (Array.isArray(safeMetadata.email)) {
+        // Take first email from array
+        safeMetadata.email = safeMetadata.email.find(email => 
+          typeof email === 'string' && email.includes('@')
+        ) || null;
+      } else if (typeof safeMetadata.email !== 'string') {
+        // Convert other types to string
+        safeMetadata.email = String(safeMetadata.email);
+      }
+
+      // Remove email if invalid
+      if (!safeMetadata.email || !safeMetadata.email.includes('@')) {
+        delete safeMetadata.email;
+      }
     }
-  
+
     await pool.query(`
       INSERT INTO conversation_messages (
         conversation_id, user_id, chatbot_id, message_text, is_user,
         agent_name, profile_picture, image_data, sequence_number,
         message_type, is_system, is_form, metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     `, [
       conversationId,
       user_id,
@@ -149,12 +172,10 @@ export async function migrateConversationWithMessagesService(body, pool) {
       JSON.stringify({
         textWithMarkers: msg.textWithMarkers,
         isError: msg.isError,
-        ...(msg.metadata || {})
+        ...safeMetadata
       })
     ]);
   }
-  
-  
 
   await pool.query(`
     UPDATE conversations 

@@ -1319,8 +1319,8 @@ const sendMessage = async (question = null) => {
     // ... existing error handling ...
   }
 };
-
-// Modify the saveConversationToDatabase function to return the conversation ID
+// Modify the saveConversationToDatabase function to ensure emails are arrays
+// utils/saveConversationToDatabase.js
 async function saveConversationToDatabase(
   conversationData,
   emne,
@@ -1373,6 +1373,7 @@ async function saveConversationToDatabase(
     return null;
   }
 }
+
 
 /* ================================
    Agent Typing Status Cleanup

@@ -7,9 +7,20 @@ export function enhanceMetadata({ metadata, file_name, file_mime, file_size }) {
     isFile: Boolean(file_name && !(file_mime || '').startsWith('image/'))
   };
 
-  // KONKRET ÆNDRING:
-  if (enhanced.email && typeof enhanced.email === 'string') {
-    enhanced.email = [enhanced.email]; // konverter string til array
+  // Ensure email is always a string, never an array
+  if (enhanced.email) {
+    if (Array.isArray(enhanced.email)) {
+      // Convert array to string (take first email if multiple)
+      enhanced.email = enhanced.email[0] || null;
+    } else if (typeof enhanced.email !== 'string') {
+      // Convert any other type to string
+      enhanced.email = String(enhanced.email);
+    }
+    
+    // Remove email if it's empty or invalid
+    if (!enhanced.email || !enhanced.email.includes('@')) {
+      delete enhanced.email;
+    }
   }
 
   return enhanced;
