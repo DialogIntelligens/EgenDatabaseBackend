@@ -37,6 +37,7 @@ import { registerErrorsRoutes } from './src/routes/errorsRoutes.js';
 import { registerMagentoRoutes } from './src/routes/magentoRoutes.js';
 import { registerStatisticsRoutes } from './src/routes/statisticsRoutes.js';
 import { registerConversationsRoutes } from './src/routes/conversationsRoutes.js';
+import { registerConversationProcessingRoutes } from './src/routes/conversationProcessingRoutes.js';
 import { ensureConversationUpdateJobsTable } from './src/utils/conversationsUtils.js';
 import axios from 'axios';
 
@@ -107,6 +108,18 @@ cron.schedule('0 3 * * *', async () => {
     }
   } catch (error) {
     console.error('Error cleaning up Freshdesk queue:', error);
+  }
+});
+
+// Cleanup old streaming sessions and events (every hour)
+cron.schedule('0 * * * *', async () => {
+  try {
+    console.log('Cleaning up old streaming sessions...');
+    const { createAiStreamingService } = await import('./src/services/aiStreamingService.js');
+    const streamingService = createAiStreamingService(pool);
+    await streamingService.cleanupOldSessions();
+  } catch (error) {
+    console.error('Error cleaning up streaming sessions:', error);
   }
 });
 
@@ -1250,6 +1263,7 @@ registerErrorsRoutes(app, pool);
 registerMagentoRoutes(app, pool);
 registerStatisticsRoutes(app, pool, authenticateToken);
 registerConversationsRoutes(app, pool, authenticateToken, SECRET_KEY);
+registerConversationProcessingRoutes(app, pool, authenticateToken);
 registerPineconeRoutes(app, pool, authenticateToken);
 
 /* ================================

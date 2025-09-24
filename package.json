@@ -6,7 +6,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test-conversation": "node scripts/test-conversation-processing.js",
+    "setup-conversation": "node scripts/setup-conversation-processing.js",
+    "fix-streaming-constraint": "node scripts/fix-streaming-sessions-constraint.js"
   },
   "keywords": [],
   "author": "",
