@@ -66,6 +66,11 @@ export class AiStreamingService {
   async processStream(apiUrl, requestBody, streamingSessionId, configuration, retryCount = 0) {
     try {
       console.log('🔄 Backend: Starting AI stream processing for session:', streamingSessionId);
+      
+      // Start performance tracking for streaming
+      const { createPerformanceTrackingService } = await import('./performanceTrackingService.js');
+      const performanceService = createPerformanceTrackingService(this.pool);
+      const perfTracker = performanceService.startTracking(streamingSessionId, 'streaming');
 
       // Prepare fetch options for streaming
       const fetchOptions = {
@@ -81,9 +86,11 @@ export class AiStreamingService {
       };
 
       // Make streaming request with retry logic
+      perfTracker.startPhase('api_connection');
       let response;
       try {
         response = await fetch(apiUrl, fetchOptions);
+        perfTracker.endPhase('api_connection', { status: response.status, ok: response.ok });
         
         if (!response.ok) {
           const errorText = await response.text();
@@ -108,7 +115,9 @@ export class AiStreamingService {
       }
 
       // Process the stream
-      await this.handleStreamResponse(response, streamingSessionId, configuration, retryCount);
+      perfTracker.startPhase('stream_processing');
+      await this.handleStreamResponse(response, streamingSessionId, configuration, retryCount, perfTracker);
+      perfTracker.endPhase('stream_processing');
 
     } catch (error) {
       console.error('🚨 Backend: Error in stream processing:', error);
@@ -125,7 +134,7 @@ export class AiStreamingService {
    * Handle streaming response and emit SSE events
    * Migrated from frontend streamAnswer function
    */
-  async handleStreamResponse(response, streamingSessionId, configuration, retryCount = 0) {
+  async handleStreamResponse(response, streamingSessionId, configuration, retryCount = 0, perfTracker = null) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let done = false;
@@ -181,6 +190,11 @@ export class AiStreamingService {
               contextChunks = json.data || [];
               await this.emitSSE(streamingSessionId, 'context', { chunks: contextChunks });
             } else if (json.event === "token") {
+              // Record token for performance tracking
+              if (perfTracker) {
+                perfTracker.recordToken();
+              }
+
               const processedToken = await this.processToken(
                 json.data, 
                 { lastChunk, lastFreshChunk, lastHumanAgentChunk, lastImageChunk },
@@ -222,6 +236,13 @@ export class AiStreamingService {
                 finalTextWithMarkers: currentAiTextWithMarkers,
                 contextChunks
               });
+
+              // Save conversation to database with analytics (background task)
+              this.saveConversationInBackground(streamingSessionId, {
+                finalText: currentAiText,
+                finalTextWithMarkers: currentAiTextWithMarkers,
+                contextChunks
+              }, configuration);
 
               await this.emitSSE(streamingSessionId, 'end', { 
                 finalText: currentAiText,
@@ -523,6 +544,173 @@ export class AiStreamingService {
     } catch (error) {
       console.error('Error getting streaming session status:', error);
       return { status: 'error', error: error.message };
+    }
+  }
+
+  /**
+   * Save conversation in background after streaming completes
+   * Migrated from frontend background conversation saving
+   */
+  async saveConversationInBackground(streamingSessionId, streamingResult, configuration) {
+    try {
+      // This runs in background - don't block the streaming response
+      setTimeout(async () => {
+        try {
+          console.log('💾 Backend: Starting background conversation save for session:', streamingSessionId);
+          
+          // Get session information
+          const sessionInfo = await this.getSessionInfo(streamingSessionId);
+          if (!sessionInfo) {
+            console.error('💾 Backend: Session info not found for conversation save');
+            return;
+          }
+          
+          // Get existing conversation to build complete message history
+          const existingConversation = await this.getExistingConversation(sessionInfo.user_id, sessionInfo.chatbot_id);
+          
+          // Get chatbot start message from database
+          const startMessage = await this.getChatbotStartMessage(sessionInfo.chatbot_id);
+          
+          // Build complete conversation data (like the old system)
+          let allMessages = [];
+          
+          // Start with existing messages if any
+          if (existingConversation && existingConversation.conversation_data) {
+            try {
+              const existingMessages = typeof existingConversation.conversation_data === 'string' 
+                ? JSON.parse(existingConversation.conversation_data)
+                : existingConversation.conversation_data;
+              
+              if (Array.isArray(existingMessages)) {
+                allMessages = [...existingMessages];
+              }
+            } catch (e) {
+              console.error('Error parsing existing conversation data:', e);
+              allMessages = [];
+            }
+          } else {
+            // If no existing conversation, start with the chatbot's first message (like the old system)
+            if (startMessage) {
+              allMessages.push({
+                text: startMessage,
+                textWithMarkers: startMessage,
+                isUser: false,
+                timestamp: sessionInfo.created_at
+              });
+              console.log('💾 Backend: Added start message to new conversation');
+            }
+          }
+          
+          // Add new user message
+          allMessages.push({
+            text: sessionInfo.user_message || '',
+            isUser: true,
+            timestamp: sessionInfo.created_at
+          });
+          
+          // Add AI response
+          allMessages.push({
+            text: streamingResult.finalText,
+            textWithMarkers: streamingResult.finalTextWithMarkers,
+            isUser: false,
+            timestamp: new Date().toISOString()
+          });
+
+          const conversationData = {
+            user_id: sessionInfo.user_id,
+            chatbot_id: sessionInfo.chatbot_id,
+            messages: allMessages,
+            split_test_id: configuration.currentSplitTestId || null
+          };
+          
+          // Use analytics service to save with analysis
+          const { createConversationAnalyticsService } = await import('./conversationAnalyticsService.js');
+          const analyticsService = createConversationAnalyticsService(this.pool);
+          
+          await analyticsService.saveConversationWithAnalytics(
+            conversationData,
+            configuration,
+            streamingResult.contextChunks || []
+          );
+          
+          console.log('💾 Backend: Background conversation save completed');
+          
+        } catch (error) {
+          console.error('💾 Backend: Error in background conversation save:', error);
+        }
+      }, 100); // Small delay to ensure streaming response is sent first
+      
+    } catch (error) {
+      console.error('Error setting up background conversation save:', error);
+    }
+  }
+
+  /**
+   * Get session information for conversation saving
+   */
+  async getSessionInfo(streamingSessionId) {
+    try {
+      const result = await this.pool.query(`
+        SELECT 
+          ss.conversation_session_id,
+          cs.user_id,
+          cs.chatbot_id,
+          cs.created_at,
+          cs.configuration->>'user_message' as user_message
+        FROM streaming_sessions ss
+        JOIN conversation_sessions cs ON ss.conversation_session_id = cs.session_id
+        WHERE ss.streaming_session_id = $1
+      `, [streamingSessionId]);
+
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Error getting session info:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get existing conversation for a user and chatbot
+   */
+  async getExistingConversation(userId, chatbotId) {
+    try {
+      const result = await this.pool.query(`
+        SELECT id, conversation_data, emne, score, customer_rating
+        FROM conversations 
+        WHERE user_id = $1 AND chatbot_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [userId, chatbotId]);
+
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Error getting existing conversation:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get chatbot start message from database
+   * Loads the firstMessage from chatbot_settings table
+   */
+  async getChatbotStartMessage(chatbotId) {
+    try {
+      const result = await this.pool.query(`
+        SELECT first_message
+        FROM chatbot_settings 
+        WHERE chatbot_id = $1
+      `, [chatbotId]);
+
+      if (result.rows.length > 0 && result.rows[0].first_message) {
+        console.log(`💾 Backend: Loaded start message for ${chatbotId}: ${result.rows[0].first_message.substring(0, 50)}...`);
+        return result.rows[0].first_message;
+      }
+
+      console.log(`💾 Backend: No start message found for ${chatbotId}`);
+      return null;
+    } catch (error) {
+      console.error('Error getting chatbot start message:', error);
+      return null;
     }
   }
 

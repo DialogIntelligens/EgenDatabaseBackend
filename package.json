@@ -12,7 +12,13 @@
     "fix-streaming-constraint": "node scripts/fix-streaming-sessions-constraint.js",
     "extract-pinecone-local": "node scripts/extract-pinecone-config-local.js",
     "extract-pinecone-github": "node scripts/extract-pinecone-config-from-github.js",
-    "extract-pinecone-public": "node scripts/extract-pinecone-config-from-public-github.js"
+    "extract-pinecone-public": "node scripts/extract-pinecone-config-from-public-github.js",
+    "extract-start-messages": "node scripts/extract-start-messages-from-github.js",
+    "extract-flow-keys": "node scripts/extract-flow-keys-from-github.js",
+    "extract-all-integration-options": "node scripts/extract-all-integration-options-from-github.js",
+    "generate-integration-sql": "node scripts/generate-integration-options-sql.js",
+    "generate-clean-integration-sql": "node scripts/generate-clean-integration-sql.js",
+    "generate-corrected-integration-sql": "node scripts/generate-corrected-integration-sql.js"
   },
   "keywords": [],
   "author": "",

@@ -72,14 +72,51 @@ export class ConfigurationService {
     try {
       const result = await this.pool.query(`
         SELECT 
-          image_enabled, 
-          camera_button_enabled,
-          pinecone_api_key,
-          knowledgebase_index_endpoint,
-          flow2_knowledgebase_index,
-          flow3_knowledgebase_index,
-          flow4_knowledgebase_index,
-          apiflow_knowledgebase_index
+          -- Basic settings
+          image_enabled, camera_button_enabled,
+          -- Pinecone configuration
+          pinecone_api_key, knowledgebase_index_endpoint,
+          flow2_knowledgebase_index, flow3_knowledgebase_index, 
+          flow4_knowledgebase_index, apiflow_knowledgebase_index,
+          -- Start message and titles
+          first_message, title, header_title,
+          -- Flow keys
+          flow2_key, flow3_key, flow4_key, apiflow_key, metadata_key, metadata2_key,
+          -- UI and styling
+          header_logo_url, message_icon_url, theme_color, ai_message_color, ai_message_text_color,
+          font_family, product_button_text, product_button_color, product_button_padding,
+          product_image_height_multiplier, product_box_height_multiplier,
+          -- Feature flags
+          enable_livechat, use_thumbs_rating, replace_exclamation_with_period,
+          purchase_tracking_enabled, show_powered_by,
+          -- Timer and tracking
+          rating_timer_duration,
+          -- Override variables
+          website_override, language_override, valuta_override,
+          dilling_products_kat_override, dilling_colors, custom_var1,
+          -- Order tracking
+          order_tracking_enabled, order_tracking_url, tracking_use_proxy,
+          tracking_proxy_url, tracking_request_method, tracking_needs_auth,
+          -- Form and UI text
+          input_placeholder, rating_message, subtitle_link_text, subtitle_link_url,
+          -- Freshdesk configuration
+          freshdesk_email_label, freshdesk_message_label, freshdesk_image_label,
+          freshdesk_choose_file_text, freshdesk_no_file_text, freshdesk_sending_text,
+          freshdesk_submit_text, freshdesk_subject_text, freshdesk_name_label,
+          -- Freshdesk error messages
+          freshdesk_email_required_error, freshdesk_email_invalid_error, freshdesk_form_error_text,
+          freshdesk_message_required_error, freshdesk_name_required_error, freshdesk_submit_error_text,
+          -- Confirmation messages
+          contact_confirmation_text, freshdesk_confirmation_text,
+          -- Human agent request
+          human_agent_question_text, human_agent_yes_button_text, human_agent_no_button_text,
+          -- Lead generation
+          lead_mail, lead_field1, lead_field2,
+          -- Other options
+          privacy_link, image_api, preloaded_message, statestik_api,
+          default_header_title, default_header_subtitle,
+          -- Freshdesk IDs
+          freshdesk_group_id, freshdesk_product_id
         FROM chatbot_settings 
         WHERE chatbot_id = $1
       `, [chatbotId]);
@@ -87,27 +124,139 @@ export class ConfigurationService {
       const settings = result.rows[0] || {};
       
       return {
+        // Basic settings
         image_enabled: settings.image_enabled || false,
         camera_button_enabled: settings.camera_button_enabled || false,
-        // Pinecone configuration from integration scripts
+        
+        // Pinecone configuration
         pineconeApiKey: settings.pinecone_api_key || null,
         knowledgebaseIndexApiEndpoint: settings.knowledgebase_index_endpoint || null,
         flow2KnowledgebaseIndex: settings.flow2_knowledgebase_index || null,
         flow3KnowledgebaseIndex: settings.flow3_knowledgebase_index || null,
         flow4KnowledgebaseIndex: settings.flow4_knowledgebase_index || null,
-        apiFlowKnowledgebaseIndex: settings.apiflow_knowledgebase_index || null
+        apiFlowKnowledgebaseIndex: settings.apiflow_knowledgebase_index || null,
+        
+        // Start message and titles
+        firstMessage: settings.first_message || null,
+        title: settings.title || null,
+        headerTitle: settings.header_title || null,
+        
+        // Flow keys
+        flow2Key: settings.flow2_key || null,
+        flow3Key: settings.flow3_key || null,
+        flow4Key: settings.flow4_key || null,
+        apiFlowKey: settings.apiflow_key || null,
+        metaDataKey: settings.metadata_key || null,
+        metaData2Key: settings.metadata2_key || null,
+        
+        // UI and styling
+        headerLogoG: settings.header_logo_url || null,
+        messageIcon: settings.message_icon_url || null,
+        themeColor: settings.theme_color || null,
+        aiMessageColor: settings.ai_message_color || null,
+        aiMessageTextColor: settings.ai_message_text_color || null,
+        fontFamily: settings.font_family || null,
+        productButtonText: settings.product_button_text || 'SE PRODUKT',
+        productButtonColor: settings.product_button_color || null,
+        productButtonPadding: settings.product_button_padding || null,
+        productImageHeightMultiplier: settings.product_image_height_multiplier || 1,
+        productBoxHeightMultiplier: settings.product_box_height_multiplier || 1,
+        
+        // Feature flags
+        enableLivechat: settings.enable_livechat || false,
+        useThumbsRating: settings.use_thumbs_rating || false,
+        replaceExclamationWithPeriod: settings.replace_exclamation_with_period || false,
+        purchaseTrackingEnabled: settings.purchase_tracking_enabled || false,
+        showPoweredBy: settings.show_powered_by !== false, // Default to true
+        
+        // Timer and tracking
+        ratingTimerDuration: settings.rating_timer_duration || 18000,
+        
+        // Override variables
+        websiteOverride: settings.website_override || null,
+        languageOverride: settings.language_override || null,
+        valutaOverride: settings.valuta_override || null,
+        dillingProductsKatOverride: settings.dilling_products_kat_override || null,
+        dillingColors: settings.dilling_colors || null,
+        customVar1: settings.custom_var1 || null,
+        
+        // Order tracking
+        orderTrackingEnabled: settings.order_tracking_enabled || false,
+        orderTrackingUrl: settings.order_tracking_url || null,
+        trackingUseProxy: settings.tracking_use_proxy || false,
+        trackingProxyUrl: settings.tracking_proxy_url || null,
+        trackingRequestMethod: settings.tracking_request_method || 'GET',
+        trackingNeedsAuth: settings.tracking_needs_auth !== false, // Default to true
+        
+        // Form and UI text
+        inputPlaceholder: settings.input_placeholder || 'Skriv dit spørgsmål her...',
+        ratingMessage: settings.rating_message || 'Fik du besvaret dit spørgsmål?',
+        subtitleLinkText: settings.subtitle_link_text || null,
+        subtitleLinkUrl: settings.subtitle_link_url || null,
+        
+        // Freshdesk configuration
+        freshdeskEmailLabel: settings.freshdesk_email_label || 'Din email:',
+        freshdeskMessageLabel: settings.freshdesk_message_label || 'Besked til kundeservice:',
+        freshdeskImageLabel: settings.freshdesk_image_label || 'Upload billede (valgfrit):',
+        freshdeskChooseFileText: settings.freshdesk_choose_file_text || 'Vælg fil',
+        freshdeskNoFileText: settings.freshdesk_no_file_text || 'Ingen fil valgt',
+        freshdeskSendingText: settings.freshdesk_sending_text || 'Sender...',
+        freshdeskSubmitText: settings.freshdesk_submit_text || 'Send henvendelse',
+        freshdeskSubjectText: settings.freshdesk_subject_text || 'Din henvendelse',
+        freshdeskNameLabel: settings.freshdesk_name_label || 'Dit navn:',
+        
+        // Freshdesk error messages
+        freshdeskEmailRequiredError: settings.freshdesk_email_required_error || 'Email er påkrævet',
+        freshdeskEmailInvalidError: settings.freshdesk_email_invalid_error || 'Indtast venligst en gyldig email adresse',
+        freshdeskFormErrorText: settings.freshdesk_form_error_text || 'Ret venligst fejlene i formularen',
+        freshdeskMessageRequiredError: settings.freshdesk_message_required_error || 'Besked er påkrævet',
+        freshdeskNameRequiredError: settings.freshdesk_name_required_error || 'Navn er påkrævet',
+        freshdeskSubmitErrorText: settings.freshdesk_submit_error_text || 'Der opstod en fejl ved afsendelse af henvendelsen. Prøv venligst igen.',
+        
+        // Confirmation messages
+        contactConfirmationText: settings.contact_confirmation_text || 'Tak for din henvendelse, vi vender tilbage hurtigst muligt.',
+        freshdeskConfirmationText: settings.freshdesk_confirmation_text || 'Tak for din henvendelse, vi vender tilbage hurtigst muligt.',
+        
+        // Human agent request
+        humanAgentQuestionText: settings.human_agent_question_text || 'Vil du gerne tale med en medarbejder?',
+        humanAgentYesButtonText: settings.human_agent_yes_button_text || 'Ja tak',
+        humanAgentNoButtonText: settings.human_agent_no_button_text || 'Nej tak',
+        
+        // Lead generation
+        leadMail: settings.lead_mail || null,
+        leadField1: settings.lead_field1 || null,
+        leadField2: settings.lead_field2 || null,
+        
+        // Other options
+        privacyLink: settings.privacy_link || null,
+        imageAPI: settings.image_api || null,
+        preloadedMessage: settings.preloaded_message || null,
+        statestikAPI: settings.statestik_api || null,
+        defaultHeaderTitle: settings.default_header_title || null,
+        defaultHeaderSubtitle: settings.default_header_subtitle || 'Vores virtuelle assistent er her for at hjælpe dig.',
+        
+        // Freshdesk IDs
+        freshdeskGroupId: settings.freshdesk_group_id || null,
+        freshdeskProductId: settings.freshdesk_product_id || null
       };
     } catch (error) {
       console.error('Error getting basic settings:', error);
       return {
+        // Return minimal defaults on error
         image_enabled: false,
         camera_button_enabled: false,
         pineconeApiKey: null,
         knowledgebaseIndexApiEndpoint: null,
-        flow2KnowledgebaseIndex: null,
-        flow3KnowledgebaseIndex: null,
-        flow4KnowledgebaseIndex: null,
-        apiFlowKnowledgebaseIndex: null
+        firstMessage: null,
+        // All other fields default to null/false
+        ...Object.fromEntries(
+          ['flow2Key', 'flow3Key', 'flow4Key', 'apiFlowKey', 'metaDataKey', 'metaData2Key',
+           'headerLogoG', 'messageIcon', 'themeColor', 'fontFamily', 'privacyLink'].map(key => [key, null])
+        ),
+        useThumbsRating: false,
+        purchaseTrackingEnabled: false,
+        showPoweredBy: true,
+        ratingTimerDuration: 18000
       };
     }
   }

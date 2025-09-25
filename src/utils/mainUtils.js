@@ -37,8 +37,8 @@ export const getEmneAndScore = async (conversationText, userId, chatbotId, pool)
 
       // Get topK setting for statistics flow
       const topKResult = await pool.query(
-        'SELECT top_k FROM flow_top_k_settings WHERE user_id = $1 AND flow_key = $2',
-        [userId, 'statistics']
+        'SELECT top_k FROM flow_topk_settings WHERE chatbot_id = $1 AND flow_key = $2',
+        [chatbotId, 'statistics']
       );
 
       if (topKResult.rows.length > 0) {
@@ -50,8 +50,8 @@ export const getEmneAndScore = async (conversationText, userId, chatbotId, pool)
 
       // Get flow-specific Pinecone API key for statistics flow
       const apiKeyResult = await pool.query(
-        'SELECT pinecone_api_key FROM flow_pinecone_api_keys WHERE user_id = $1 AND flow_key = $2',
-        [userId, 'statistics']
+        'SELECT pinecone_api_key FROM flow_pinecone_api_keys WHERE chatbot_id = $1 AND flow_key = $2',
+        [chatbotId, 'statistics']
       );
 
       if (apiKeyResult.rows.length > 0) {

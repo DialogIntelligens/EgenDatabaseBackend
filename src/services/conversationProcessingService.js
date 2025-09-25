@@ -2,6 +2,9 @@ import { createFlowRoutingService } from './flowRoutingService.js';
 import { createAiStreamingService } from './aiStreamingService.js';
 import { createOrderTrackingService } from './orderTrackingService.js';
 import { createConfigurationService } from './configurationService.js';
+import { createImageProcessingService } from './imageProcessingService.js';
+import { createConversationAnalyticsService } from './conversationAnalyticsService.js';
+import { createPerformanceTrackingService } from './performanceTrackingService.js';
 import { getEmneAndScore } from '../utils/mainUtils.js';
 import { buildPrompt } from '../../promptTemplateV2Routes.js';
 
@@ -16,6 +19,9 @@ export class ConversationProcessingService {
     this.aiStreaming = createAiStreamingService(pool);
     this.orderTracking = createOrderTrackingService(pool);
     this.configuration = createConfigurationService(pool);
+    this.imageProcessing = createImageProcessingService(pool);
+    this.analytics = createConversationAnalyticsService(pool);
+    this.performance = createPerformanceTrackingService(pool);
   }
 
   /**
@@ -42,24 +48,39 @@ export class ConversationProcessingService {
     });
 
     try {
+      // Start performance tracking (migrated from frontend)
+      const perfTracker = this.performance.startTracking(session_id || user_id, 'conversation');
+      perfTracker.startPhase('total_processing');
+
       // Step 1: Create session for tracking
-      const session = await this.createSession(user_id, chatbot_id, session_id);
+      perfTracker.startPhase('session_creation');
+      const session = await this.createSession(user_id, chatbot_id, session_id, message_text);
+      perfTracker.endPhase('session_creation');
 
       // Step 2: Process image if provided
       let imageDescription = '';
-      if (image_data && configuration.imageEnabled) {
-        imageDescription = await this.processImage(image_data, message_text, configuration);
+      if (image_data && (configuration.imageEnabled || configuration.imageAPI)) {
+        perfTracker.startPhase('image_processing');
+        imageDescription = await this.imageProcessing.processImage(image_data, message_text, configuration);
+        perfTracker.endPhase('image_processing', { has_image: true, description_length: imageDescription.length });
       }
 
       // Step 3: Determine conversation flow type
+      perfTracker.startPhase('flow_determination');
       const flowResult = await this.flowRouting.determineFlow(
         message_text,
         conversation_history,
         configuration,
         imageDescription
       );
+      perfTracker.endPhase('flow_determination', { 
+        flow_type: flowResult.questionType, 
+        execution_method: flowResult.method,
+        execution_time: flowResult.executionTime 
+      });
 
       // Step 4: Execute the determined flow
+      perfTracker.startPhase('flow_execution');
       const processingResult = await this.executeFlow(
         flowResult,
         message_text,
@@ -68,21 +89,32 @@ export class ConversationProcessingService {
         configuration,
         session.id
       );
+      perfTracker.endPhase('flow_execution', { 
+        has_order_details: !!processingResult.orderDetails,
+        api_url: processingResult.apiUrl
+      });
 
       // Step 5: Start streaming response
+      perfTracker.startPhase('streaming_start');
       const streamingSession = await this.aiStreaming.startStreaming(
         processingResult.apiUrl,
         processingResult.requestBody,
         session.session_id, // Pass the session_id string, not the database ID
         configuration
       );
+      perfTracker.endPhase('streaming_start');
+      perfTracker.endPhase('total_processing');
+
+      // Save performance metrics to database
+      perfTracker.saveToDB();
 
       return {
         success: true,
         session_id: session.session_id, // Return the session_id string
         streaming_session_id: streamingSession.id,
         flow_type: flowResult.questionType,
-        order_details: processingResult.orderDetails || null
+        order_details: processingResult.orderDetails || null,
+        performance_summary: perfTracker.getSummary()
       };
 
     } catch (error) {
@@ -95,22 +127,29 @@ export class ConversationProcessingService {
   /**
    * Create or update conversation session
    */
-  async createSession(userId, chatbotId, sessionId = null) {
+  async createSession(userId, chatbotId, sessionId = null, messageText = '') {
     try {
       const result = await this.pool.query(`
         INSERT INTO conversation_sessions (
           user_id, 
           chatbot_id, 
           session_id, 
+          configuration,
           created_at, 
           last_activity
-        ) VALUES ($1, $2, $3, NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4, NOW(), NOW())
         ON CONFLICT (user_id, chatbot_id) 
         DO UPDATE SET 
           session_id = EXCLUDED.session_id,
+          configuration = EXCLUDED.configuration,
           last_activity = NOW()
         RETURNING id, session_id
-      `, [userId, chatbotId, sessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`]);
+      `, [
+        userId, 
+        chatbotId, 
+        sessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        JSON.stringify({ user_message: messageText, timestamp: new Date().toISOString() })
+      ]);
 
       return result.rows[0];
     } catch (error) {
@@ -119,57 +158,6 @@ export class ConversationProcessingService {
     }
   }
 
-  /**
-   * Process image upload and generate description
-   */
-  async processImage(imageData, messageText, configuration) {
-    try {
-      const { imageAPI, imageEnabled, imagePromptEnabled } = configuration;
-      
-      if (!imageAPI && !imageEnabled) {
-        return '';
-      }
-
-      let apiUrl = imageAPI;
-      let requestBody = {
-        question: messageText,
-        uploads: [{
-          type: "file",
-          name: imageData.name,
-          data: imageData.data,
-          mime: imageData.mime,
-        }]
-      };
-
-      // Use template system if no specific imageAPI
-      if (!imageAPI && imageEnabled && imagePromptEnabled) {
-        apiUrl = "https://den-utrolige-snebold.onrender.com/api/v1/prediction/eed6c6d2-16ee-40ae-be9f-3cc39f91dc2c";
-        
-        // Get image prompt template
-        const imagePrompt = await buildPrompt(this.pool, configuration.chatbot_id, 'image');
-        requestBody.overrideConfig = {
-          vars: { masterPrompt: imagePrompt }
-        };
-      }
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Image API request failed: ${response.status}`);
-      }
-
-      const result = await response.json();
-      return result.text || "No description available";
-
-    } catch (error) {
-      console.error('Error processing image:', error);
-      return "Error processing image";
-    }
-  }
 
   /**
    * Execute the determined conversation flow

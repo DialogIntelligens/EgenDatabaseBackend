@@ -3,6 +3,7 @@ import {
   processMessageController,
   getStreamingEventsController,
   getConversationConfigController,
+  getIntegrationOptionsController,
   uploadImageController,
   conversationHealthController
 } from '../controllers/conversationProcessingController.js';
@@ -30,6 +31,12 @@ export function registerConversationProcessingRoutes(app, pool, authenticateToke
   // Provides all the configuration needed for conversation processing
   router.get('/conversation-config/:chatbotId', async (req, res) => {
     await getConversationConfigController(req, res, pool);
+  });
+
+  // Get complete integration options for a chatbot (replaces old integration system)
+  // Provides all integration options from database instead of integration scripts
+  router.get('/integration-options/:chatbotId', async (req, res) => {
+    await getIntegrationOptionsController(req, res, pool);
   });
 
   // Image upload and processing endpoint

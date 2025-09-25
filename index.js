@@ -123,6 +123,18 @@ cron.schedule('0 * * * *', async () => {
   }
 });
 
+// Cleanup old performance metrics (daily at 4 AM)
+cron.schedule('0 4 * * *', async () => {
+  try {
+    console.log('Cleaning up old performance metrics...');
+    const { createPerformanceTrackingService } = await import('./src/services/performanceTrackingService.js');
+    const performanceService = createPerformanceTrackingService(pool);
+    await performanceService.cleanupOldMetrics();
+  } catch (error) {
+    console.error('Error cleaning up performance metrics:', error);
+  }
+});
+
 // Check for required environment variables
 if (!process.env.OPENAI_API_KEY) {
   console.error('ERROR: OPENAI_API_KEY environment variable is required');
