@@ -14,7 +14,7 @@ import {
  * Create Pinecone data entry
  */
 export async function createPineconeDataService(body, user, pool) {
-  const { title, text, indexName, namespace, expirationTime, group } = body;
+  const { title, text, indexName, namespace, expirationTime, group, scheduleTime, isScheduled } = body;
   const authenticatedUserId = user.userId;
   
   // Check if user is admin and if a userId parameter was provided
@@ -32,32 +32,45 @@ export async function createPineconeDataService(body, user, pool) {
       throw new Error('Target user not found');
     }
   }
+
+  // Convert scheduleTime -> Date or set null
+  let scheduledDateTime = null;
+  if (isScheduled && scheduleTime) {
+    scheduledDateTime = new Date(scheduleTime);
+    if (isNaN(scheduledDateTime.getTime())) {
+      throw new Error('Invalid scheduleTime format');
+    }
+  }
   
-  // Get the appropriate Pinecone API key for this index
-  const pineconeApiKey = await getPineconeApiKeyForIndex(pool, targetUserId, indexName, namespace);
-  
-  // Generate embedding
-  const embedding = await generateEmbedding(text);
+  // Only generate embedding and store in Pinecone if not scheduled
+  let vectorId = null;
+  if (!isScheduled) {
+    // Get the appropriate Pinecone API key for this index
+    const pineconeApiKey = await getPineconeApiKeyForIndex(pool, targetUserId, indexName, namespace);
 
-  // Initialize Pinecone
-  const pineconeClient = initializePineconeClient(pineconeApiKey);
-  const index = pineconeClient.index(namespace);
+    // Generate embedding
+    const embedding = await generateEmbedding(text);
 
-  // Create unique vector ID
-  const vectorId = createVectorId();
+    // Initialize Pinecone
+    const pineconeClient = initializePineconeClient(pineconeApiKey);
+    const index = pineconeClient.index(namespace);
 
-  // Prepare vector metadata
-  const vectorMetadata = prepareVectorMetadata(targetUserId, text, title, group);
+    // Create unique vector ID
+    vectorId = createVectorId();
 
-  // Prepare vector
-  const vector = {
-    id: vectorId,
-    values: embedding,
-    metadata: vectorMetadata
-  };
+    // Prepare vector metadata
+    const vectorMetadata = prepareVectorMetadata(targetUserId, text, title, group);
 
-  // Upsert into Pinecone
-  await index.upsert([vector], { namespace });
+    // Prepare vector
+    const vector = {
+      id: vectorId,
+      values: embedding,
+      metadata: vectorMetadata
+    };
+
+    // Upsert into Pinecone
+    await index.upsert([vector], { namespace });
+  }
 
   // Convert expirationTime -> Date or set null
   let expirationDateTime = null;
@@ -74,11 +87,11 @@ export async function createPineconeDataService(body, user, pool) {
   try {
     // Try with metadata column
     const result = await pool.query(
-      `INSERT INTO pinecone_data 
-        (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO pinecone_data
+        (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, scheduled_time, is_scheduled, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, JSON.stringify(metadata)]
+      [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, scheduledDateTime, isScheduled, JSON.stringify(metadata)]
     );
     
     // Mark as viewed by the uploader
@@ -95,11 +108,11 @@ export async function createPineconeDataService(body, user, pool) {
     // If metadata column doesn't exist, try without it
     console.error('Error with metadata column, trying without it:', dbError);
     const fallbackResult = await pool.query(
-      `INSERT INTO pinecone_data 
-        (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO pinecone_data
+        (user_id, title, text, pinecone_vector_id, pinecone_index_name, namespace, expiration_time, scheduled_time, is_scheduled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime]
+      [targetUserId, title, text, vectorId, indexName, namespace, expirationDateTime, scheduledDateTime, isScheduled]
     );
     
     // Mark as viewed by the uploader (fallback)
@@ -119,7 +132,7 @@ export async function createPineconeDataService(body, user, pool) {
  * Update Pinecone data entry
  */
 export async function updatePineconeDataService(id, body, user, pool) {
-  const { title, text, group } = body;
+  const { title, text, group, scheduleTime, isScheduled } = body;
   const userId = user.userId;
   const isAdmin = user.isAdmin === true;
 
@@ -150,14 +163,17 @@ export async function updatePineconeDataService(id, body, user, pool) {
     throw new Error('Data not found or you do not have permission to modify it. Ensure you have access to the namespace.');
   }
 
-  const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId, metadata: existingMetadata } = dataResult.rows[0];
+  const { pinecone_vector_id, pinecone_index_name, namespace, user_id: dataOwnerId, metadata: existingMetadata, is_scheduled: currentlyScheduled } = dataResult.rows[0];
 
-  // Get the appropriate Pinecone API key for this index
-  const pineconeApiKey = await getPineconeApiKeyForIndex(pool, dataOwnerId, pinecone_index_name, namespace);
-  
-  // Generate new embedding
-  const embedding = await generateEmbedding(text);
-  
+  // Convert scheduleTime -> Date or set null
+  let scheduledDateTime = null;
+  if (isScheduled && scheduleTime) {
+    scheduledDateTime = new Date(scheduleTime);
+    if (isNaN(scheduledDateTime.getTime())) {
+      throw new Error('Invalid scheduleTime format');
+    }
+  }
+
   // Parse existing metadata or create new object
   let metadata = parseExistingMetadata(existingMetadata);
   
@@ -166,26 +182,72 @@ export async function updatePineconeDataService(id, body, user, pool) {
     metadata.group = group;
   }
 
-  // Prepare vector metadata
-  const vectorMetadata = prepareVectorMetadata(dataOwnerId, text, title, group !== undefined ? group : metadata.group);
+  // Handle Pinecone operations based on scheduling status
+  if (!isScheduled) {
+    // User wants immediate upload
+    if (pinecone_vector_id) {
+      // Update existing vector in Pinecone
+      const pineconeApiKey = await getPineconeApiKeyForIndex(pool, dataOwnerId, pinecone_index_name, namespace);
+      const embedding = await generateEmbedding(text);
+      const vectorMetadata = prepareVectorMetadata(dataOwnerId, text, title, group !== undefined ? group : metadata.group);
 
-  // Update in Pinecone
-  const pineconeClient = initializePineconeClient(pineconeApiKey);
-  const index = pineconeClient.index(namespace);
-  
-  await index.upsert([
-    {
-      id: pinecone_vector_id,
-      values: embedding,
-      metadata: vectorMetadata
-    },
-  ], { namespace });
+      const pineconeClient = initializePineconeClient(pineconeApiKey);
+      const index = pineconeClient.index(namespace);
+      
+      await index.upsert([
+        {
+          id: pinecone_vector_id,
+          values: embedding,
+          metadata: vectorMetadata
+        },
+      ], { namespace });
+    } else {
+      // This was a scheduled upload, now make it immediate - create new vector
+      const pineconeApiKey = await getPineconeApiKeyForIndex(pool, dataOwnerId, pinecone_index_name, namespace);
+      const embedding = await generateEmbedding(text);
+      const vectorMetadata = prepareVectorMetadata(dataOwnerId, text, title, group !== undefined ? group : metadata.group);
+      
+      const pineconeClient = initializePineconeClient(pineconeApiKey);
+      const index = pineconeClient.index(namespace);
+      
+      // Create new vector ID for immediate upload
+      const newVectorId = createVectorId();
+      
+      await index.upsert([
+        {
+          id: newVectorId,
+          values: embedding,
+          metadata: vectorMetadata
+        },
+      ], { namespace });
+      
+      // Update the vector ID in the database record
+      await pool.query(
+        'UPDATE pinecone_data SET pinecone_vector_id = $1 WHERE id = $2',
+        [newVectorId, id]
+      );
+    }
+  } else if (currentlyScheduled === false && pinecone_vector_id) {
+    // User wants to schedule an existing immediate upload - delete from Pinecone
+    const pineconeApiKey = await getPineconeApiKeyForIndex(pool, dataOwnerId, pinecone_index_name, namespace);
+    const pineconeClient = initializePineconeClient(pineconeApiKey);
+    const index = pineconeClient.index(namespace);
+    
+    await index.deleteOne(pinecone_vector_id, { namespace: namespace });
+    
+    // Clear the vector ID since it's now scheduled
+    await pool.query(
+      'UPDATE pinecone_data SET pinecone_vector_id = NULL WHERE id = $1',
+      [id]
+    );
+  }
+  // If isScheduled && !pinecone_vector_id, it's already scheduled - no Pinecone operation needed
 
   try {
-    // Try to update with metadata
+    // Try to update with metadata and scheduling fields
     const result = await pool.query(
-      'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3 WHERE id = $4 RETURNING *',
-      [title, text, JSON.stringify(metadata), id]
+      'UPDATE pinecone_data SET title = $1, text = $2, metadata = $3, scheduled_time = $4, is_scheduled = $5 WHERE id = $6 RETURNING *',
+      [title, text, JSON.stringify(metadata), scheduledDateTime, isScheduled || false, id]
     );
 
     // Reset viewed status for all users for this chunk, then mark as viewed for the updater
@@ -302,10 +364,12 @@ export async function deletePineconeDataService(id, user, pool) {
   // Get the appropriate Pinecone API key for this index
   const pineconeApiKey = await getPineconeApiKeyForIndex(pool, dataOwnerId, pinecone_index_name, namespace);
   
-  // Delete from Pinecone
-  const pineconeClient = initializePineconeClient(pineconeApiKey);
-  const index = pineconeClient.index(namespace);
-  await index.deleteOne(pinecone_vector_id, { namespace: namespace });
+  // Only delete from Pinecone if the vector ID exists (not scheduled or already processed)
+  if (pinecone_vector_id) {
+    const pineconeClient = initializePineconeClient(pineconeApiKey);
+    const index = pineconeClient.index(namespace);
+    await index.deleteOne(pinecone_vector_id, { namespace: namespace });
+  }
 
   // Delete from DB
   await pool.query('DELETE FROM pinecone_data WHERE id = $1', [id]);

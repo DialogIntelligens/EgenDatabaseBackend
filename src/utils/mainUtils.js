@@ -1,4 +1,6 @@
 import { analyzeConversations } from '../../textAnalysis.js';
+import { processScheduledUploads } from '../services/scheduledUploadsService.js';
+
 
 /**
  * Get emne and score analysis for conversation text
@@ -352,4 +354,31 @@ export async function analyzeConversationsInChunks(conversations, chunkSize = 10
   console.log(`Chunked text analysis completed. Combined results: ${combinedResults.frequentlyAskedQuestions.length} FAQs, ${combinedResults.avgRatingPerTopic.length} rating topics, ${combinedResults.avgScorePerTopic.length} score topics`);
 
   return combinedResults;
+}
+
+/**
+ * Initialize scheduled uploads processor
+ * @param {Object} pool - Database connection pool
+ */
+export function initializeScheduledUploadsProcessor(pool) {
+  // Process scheduled uploads every minute
+  setInterval(async () => {
+    try {
+      const result = await processScheduledUploads(pool);
+      if (result.processed > 0) {
+        console.log(`Scheduled uploads processor: processed ${result.processed} uploads`);
+        result.uploads.forEach(upload => {
+          if (upload.success) {
+            console.log(`✓ Successfully processed: "${upload.title}" (ID: ${upload.id})`);
+          } else {
+            console.log(`✗ Failed to process: "${upload.title}" (ID: ${upload.id}) - ${upload.error}`);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error in scheduled uploads processor:', error);
+    }
+  }, 60000);
+
+  console.log('Scheduled uploads processor initialized');
 }

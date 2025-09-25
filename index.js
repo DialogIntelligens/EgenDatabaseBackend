@@ -17,7 +17,7 @@ import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
-import { getEmneAndScore } from './src/utils/mainUtils.js';
+import { getEmneAndScore, initializeScheduledUploadsProcessor } from './src/utils/mainUtils.js';
 import { registerBevcoRoutes } from './src/routes/bevcoRoutes.js';
 import { registerPineconeRoutes } from './src/routes/pineconeRoutes.js';
 import { getPineconeApiKeyForIndex, initializePineconeClient } from './src/utils/pineconeUtils.js';
@@ -2124,6 +2124,9 @@ app.put('/admin/commerce-tools-credentials/:chatbot_id', authenticateToken, asyn
     });
   }
 });
+
+// Initialize scheduled uploads processor
+initializeScheduledUploadsProcessor(pool);
 
 // Start the server
 app.listen(PORT, () => {
