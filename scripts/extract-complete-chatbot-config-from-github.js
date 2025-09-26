@@ -1,5 +1,7 @@
 import pg from 'pg';
 import fetch from 'node-fetch';
+import fs from 'fs';
+import path from 'path';
 
 const { Pool } = pg;
 
@@ -17,7 +19,7 @@ const GITHUB_BRANCH = 'main';
 
 /**
  * Extract complete chatbot configuration from public GitHub repository
- * Extracts all configuration values needed for the chatbot_settings table
+ * This will extract all configuration values needed for the chatbot_settings table
  */
 
 async function extractCompleteChatbotConfigFromGitHub() {
@@ -61,7 +63,7 @@ async function extractCompleteChatbotConfigFromGitHub() {
         const config = extractConfigFromScript(content, file.name);
         if (config) {
           extractedConfigs.push(config);
-          console.log(`✅ Extracted config for chatbot: ${config.chatbotId}`);
+          console.log(`✅ Extracted config for chatbot: ${config.chatbot_id}`);
         } else {
           console.log(`⚠️ No chatbot config found in ${file.name}`);
         }
@@ -73,9 +75,32 @@ async function extractCompleteChatbotConfigFromGitHub() {
 
     console.log(`\n📊 Successfully extracted ${extractedConfigs.length} configurations`);
 
-    // Step 3: Generate SQL statements for manual execution
-    if (extractedConfigs.length > 0) {
-      generateCompleteSQLStatements(extractedConfigs);
+    // Step 2.5: Deduplicate by chatbot_id preferring the most complete config
+    const byId = new Map();
+    function score(cfg) {
+      let s = 0;
+      const keys = [
+        'flow2_key','flow3_key','flow4_key','apiflow_key',
+        'metadata_key','metadata2_key',
+        'pinecone_api_key','knowledgebase_index_endpoint',
+        'flow2_knowledgebase_index','flow3_knowledgebase_index','flow4_knowledgebase_index','apiflow_knowledgebase_index',
+        'first_message','image_enabled','camera_button_enabled'
+      ];
+      for (const k of keys) if (cfg[k] !== undefined) s++;
+      return s;
+    }
+    for (const cfg of extractedConfigs) {
+      const existing = byId.get(cfg.chatbot_id);
+      if (!existing || score(cfg) > score(existing)) {
+        byId.set(cfg.chatbot_id, cfg);
+      }
+    }
+    const uniqueConfigs = Array.from(byId.values());
+    console.log(`\n🧹 After deduplication: ${uniqueConfigs.length} unique chatbot IDs`);
+
+    // Step 3: Generate SQL file for complete table refresh
+    if (uniqueConfigs.length > 0) {
+      await generateSQLFile(uniqueConfigs);
     } else {
       console.log('⚠️ No configurations found to process');
     }
@@ -96,114 +121,123 @@ async function extractCompleteChatbotConfigFromGitHub() {
 function extractConfigFromScript(content, filename) {
   try {
     const config = {};
+
+    // Helper: strict anchored property matcher
+    const prop = (name) => new RegExp(`^\\s*${name}\\s*:\\s*["']([^"']+)["']`, 'm');
+    const propBool = (name) => new RegExp(`^\\s*${name}\\s*:\\s*(true|false)\\b`, 'm');
     
     // Extract chatbot ID - this is required
-    const chatbotIdMatch = content.match(/chatbotID:\s*["']([^"']+)["']/);
+    const chatbotIdMatch = content.match(prop('chatbotID'));
     if (!chatbotIdMatch) {
-      return null; // Skip files without chatbotID
+      return null; // Skip files without chatbot ID
     }
-    config.chatbotId = chatbotIdMatch[1];
+    config.chatbot_id = chatbotIdMatch[1];
+
+    // Validate chatbot_id to avoid garbage matches
+    if (!/^[A-Za-z0-9_-]+$/.test(config.chatbot_id)) {
+      console.warn(`⚠️ Skipping invalid chatbot_id extracted from ${filename}: ${config.chatbot_id}`);
+      return null;
+    }
 
     // Extract flow keys
-    const flow2KeyMatch = content.match(/flow2Key:\s*["']([^"']+)["']/);
+    const flow2KeyMatch = content.match(prop('flow2Key'));
     if (flow2KeyMatch) {
-      config.flow2Key = flow2KeyMatch[1];
+      config.flow2_key = flow2KeyMatch[1];
     }
 
-    const flow3KeyMatch = content.match(/flow3Key:\s*["']([^"']+)["']/);
+    const flow3KeyMatch = content.match(prop('flow3Key'));
     if (flow3KeyMatch) {
-      config.flow3Key = flow3KeyMatch[1];
+      config.flow3_key = flow3KeyMatch[1];
     }
 
-    const flow4KeyMatch = content.match(/flow4Key:\s*["']([^"']+)["']/);
+    const flow4KeyMatch = content.match(prop('flow4Key'));
     if (flow4KeyMatch) {
-      config.flow4Key = flow4KeyMatch[1];
+      config.flow4_key = flow4KeyMatch[1];
     }
 
-    const apiFlowKeyMatch = content.match(/apiFlowKey:\s*["']([^"']+)["']/);
+    const apiFlowKeyMatch = content.match(prop('apiFlowKey'));
     if (apiFlowKeyMatch) {
-      config.apiFlowKey = apiFlowKeyMatch[1];
+      config.apiflow_key = apiFlowKeyMatch[1];
     }
 
     // Extract metadata keys
-    const metaDataKeyMatch = content.match(/metaDataKey:\s*["']([^"']+)["']/);
+    const metaDataKeyMatch = content.match(prop('metaDataKey'));
     if (metaDataKeyMatch) {
-      config.metadataKey = metaDataKeyMatch[1];
+      config.metadata_key = metaDataKeyMatch[1];
     }
 
-    // Look for metadata2Key if it exists
-    const metaData2KeyMatch = content.match(/metaData2Key:\s*["']([^"']+)["']/);
+    // Look for metadata2Key (might not exist in all scripts)
+    const metaData2KeyMatch = content.match(prop('metaData2Key'));
     if (metaData2KeyMatch) {
-      config.metadata2Key = metaData2KeyMatch[1];
+      config.metadata2_key = metaData2KeyMatch[1];
     }
 
-    // Extract Pinecone API key
-    const apiKeyMatch = content.match(/pineconeApiKey:\s*["']([^"']+)["']/);
-    if (apiKeyMatch) {
-      config.pineconeApiKey = apiKeyMatch[1];
+    // Extract Pinecone configuration
+    const pineconeApiKeyMatch = content.match(prop('pineconeApiKey'));
+    if (pineconeApiKeyMatch) {
+      config.pinecone_api_key = pineconeApiKeyMatch[1];
     }
 
-    // Extract knowledgebase index endpoint
-    const knowledgebaseMatch = content.match(/knowledgebaseIndexApiEndpoint:\s*["']([^"']+)["']/);
+    const knowledgebaseMatch = content.match(prop('knowledgebaseIndexApiEndpoint'));
     if (knowledgebaseMatch) {
-      config.knowledgebaseIndexEndpoint = knowledgebaseMatch[1];
+      config.knowledgebase_index_endpoint = knowledgebaseMatch[1];
     }
 
-    // Extract flow-specific indexes
-    const flow2IndexMatch = content.match(/flow2KnowledgebaseIndex:\s*["']([^"']+)["']/);
-    if (flow2IndexMatch) {
-      config.flow2KnowledgebaseIndex = flow2IndexMatch[1];
+    // Extract flow-specific knowledgebase indexes
+    const flow2KnowledgebaseMatch = content.match(prop('flow2KnowledgebaseIndex'));
+    if (flow2KnowledgebaseMatch) {
+      config.flow2_knowledgebase_index = flow2KnowledgebaseMatch[1];
     }
 
-    const flow3IndexMatch = content.match(/flow3KnowledgebaseIndex:\s*["']([^"']+)["']/);
-    if (flow3IndexMatch) {
-      config.flow3KnowledgebaseIndex = flow3IndexMatch[1];
+    const flow3KnowledgebaseMatch = content.match(prop('flow3KnowledgebaseIndex'));
+    if (flow3KnowledgebaseMatch) {
+      config.flow3_knowledgebase_index = flow3KnowledgebaseMatch[1];
     }
 
-    const flow4IndexMatch = content.match(/flow4KnowledgebaseIndex:\s*["']([^"']+)["']/);
-    if (flow4IndexMatch) {
-      config.flow4KnowledgebaseIndex = flow4IndexMatch[1];
+    const flow4KnowledgebaseMatch = content.match(prop('flow4KnowledgebaseIndex'));
+    if (flow4KnowledgebaseMatch) {
+      config.flow4_knowledgebase_index = flow4KnowledgebaseMatch[1];
     }
 
-    const apiFlowIndexMatch = content.match(/apiFlowKnowledgebaseIndex:\s*["']([^"']+)["']/);
-    if (apiFlowIndexMatch) {
-      config.apiFlowKnowledgebaseIndex = apiFlowIndexMatch[1];
+    const apiFlowKnowledgebaseMatch = content.match(prop('apiFlowKnowledgebaseIndex'));
+    if (apiFlowKnowledgebaseMatch) {
+      config.apiflow_knowledgebase_index = apiFlowKnowledgebaseMatch[1];
     }
 
     // Extract first message
-    const firstMessageMatch = content.match(/firstMessage:\s*["']([^"']+)["']/);
+    const firstMessageMatch = content.match(prop('firstMessage'));
     if (firstMessageMatch) {
-      config.firstMessage = firstMessageMatch[1];
+      config.first_message = firstMessageMatch[1];
     }
 
-    // Extract boolean flags if they exist
-    const imageEnabledMatch = content.match(/imageEnabled:\s*(true|false)/);
+    // Extract boolean flags (look for true/false values)
+    const imageEnabledMatch = content.match(propBool('imageEnabled'));
     if (imageEnabledMatch) {
-      config.imageEnabled = imageEnabledMatch[1] === 'true';
+      config.image_enabled = imageEnabledMatch[1] === 'true';
     }
 
-    const cameraButtonEnabledMatch = content.match(/cameraButtonEnabled:\s*(true|false)/);
+    const cameraButtonEnabledMatch = content.match(propBool('cameraButtonEnabled'));
     if (cameraButtonEnabledMatch) {
-      config.cameraButtonEnabled = cameraButtonEnabledMatch[1] === 'true';
+      config.camera_button_enabled = cameraButtonEnabledMatch[1] === 'true';
     }
 
     // Log what we found
-    console.log(`📋 Found configuration for ${config.chatbotId}:`);
-    console.log(`  Flow2 Key: ${config.flow2Key || 'Not found'}`);
-    console.log(`  Flow3 Key: ${config.flow3Key || 'Not found'}`);
-    console.log(`  Flow4 Key: ${config.flow4Key || 'Not found'}`);
-    console.log(`  API Flow Key: ${config.apiFlowKey || 'Not found'}`);
-    console.log(`  Metadata Key: ${config.metadataKey || 'Not found'}`);
-    console.log(`  Metadata2 Key: ${config.metadata2Key || 'Not found'}`);
-    console.log(`  API Key: ${config.pineconeApiKey ? config.pineconeApiKey.substring(0, 20) + '...' : 'Not found'}`);
-    console.log(`  Default Index: ${config.knowledgebaseIndexEndpoint || 'Not found'}`);
-    console.log(`  Flow2 Index: ${config.flow2KnowledgebaseIndex || 'Not found'}`);
-    console.log(`  Flow3 Index: ${config.flow3KnowledgebaseIndex || 'Not found'}`);
-    console.log(`  Flow4 Index: ${config.flow4KnowledgebaseIndex || 'Not found'}`);
-    console.log(`  API Flow Index: ${config.apiFlowKnowledgebaseIndex || 'Not found'}`);
-    console.log(`  First Message: ${config.firstMessage ? config.firstMessage.substring(0, 50) + '...' : 'Not found'}`);
-    console.log(`  Image Enabled: ${config.imageEnabled !== undefined ? config.imageEnabled : 'Not found'}`);
-    console.log(`  Camera Button Enabled: ${config.cameraButtonEnabled !== undefined ? config.cameraButtonEnabled : 'Not found'}`);
+    console.log(`📋 Configuration extracted for ${config.chatbot_id}:`);
+    console.log(`  Flow2 Key: ${config.flow2_key || 'Not found'}`);
+    console.log(`  Flow3 Key: ${config.flow3_key || 'Not found'}`);
+    console.log(`  Flow4 Key: ${config.flow4_key || 'Not found'}`);
+    console.log(`  API Flow Key: ${config.apiflow_key || 'Not found'}`);
+    console.log(`  Metadata Key: ${config.metadata_key || 'Not found'}`);
+    console.log(`  Metadata2 Key: ${config.metadata2_key || 'Not found'}`);
+    console.log(`  Pinecone API Key: ${config.pinecone_api_key ? config.pinecone_api_key.substring(0, 20) + '...' : 'Not found'}`);
+    console.log(`  Default Index: ${config.knowledgebase_index_endpoint || 'Not found'}`);
+    console.log(`  Flow2 Index: ${config.flow2_knowledgebase_index || 'Not found'}`);
+    console.log(`  Flow3 Index: ${config.flow3_knowledgebase_index || 'Not found'}`);
+    console.log(`  Flow4 Index: ${config.flow4_knowledgebase_index || 'Not found'}`);
+    console.log(`  API Flow Index: ${config.apiflow_knowledgebase_index || 'Not found'}`);
+    console.log(`  First Message: ${config.first_message ? config.first_message.substring(0, 50) + '...' : 'Not found'}`);
+    console.log(`  Image Enabled: ${config.image_enabled !== undefined ? config.image_enabled : 'Not found'}`);
+    console.log(`  Camera Button Enabled: ${config.camera_button_enabled !== undefined ? config.camera_button_enabled : 'Not found'}`);
 
     return config;
 
@@ -214,76 +248,135 @@ function extractConfigFromScript(content, filename) {
 }
 
 /**
- * Generate complete SQL statements for manual execution in pgAdmin
+ * Generate SQL file for complete table refresh
  */
-function generateCompleteSQLStatements(configs) {
-  console.log('\n📝 Generated SQL statements for pgAdmin:');
-  console.log('-- Copy and paste these statements into pgAdmin --');
-  console.log('-- This will completely recreate the chatbot_settings table with fresh data --');
-  console.log('');
+async function generateSQLFile(configs) {
+  const sqlContent = [];
   
-  // Step 1: Delete all existing rows to start fresh
-  console.log('-- 1. Clear existing data');
-  console.log('DELETE FROM chatbot_settings;');
-  console.log('');
+  // Helper to escape SQL string values safely
+  const esc = (val) => String(val).replace(/'/g, "''");
   
-  // Step 2: Insert all configurations
-  console.log('-- 2. Insert all chatbot configurations');
+  // Header comment
+  sqlContent.push('-- Complete Chatbot Settings Table Refresh');
+  sqlContent.push('-- Generated automatically from GitHub integration scripts');
+  sqlContent.push(`-- Generated on: ${new Date().toISOString()}`);
+  sqlContent.push(`-- Found ${configs.length} chatbot configurations`);
+  sqlContent.push('');
+  
+  // Step 1: Delete all existing records
+  sqlContent.push('-- Step 1: Clear existing chatbot settings');
+  sqlContent.push('DELETE FROM chatbot_settings;');
+  sqlContent.push('');
+  
+  // Step 2: Reset the sequence if using auto-increment ID
+  sqlContent.push('-- Step 2: Reset the ID sequence');
+  sqlContent.push('ALTER SEQUENCE chatbot_settings_id_seq RESTART WITH 1;');
+  sqlContent.push('');
+  
+  // Step 3: Insert all configurations
+  sqlContent.push('-- Step 3: Insert all chatbot configurations');
+  sqlContent.push('');
   
   configs.forEach((config, index) => {
-    console.log(`-- Configuration ${index + 1}: ${config.chatbotId}`);
+    sqlContent.push(`-- Configuration ${index + 1}: ${config.chatbot_id}`);
     
-    // Escape single quotes in strings
-    const escapeString = (str) => {
-      if (!str) return '';
-      return str.replace(/'/g, "''");
-    };
+    // Build the INSERT statement
+    const fields = [];
+    const values = [];
     
-    console.log(`INSERT INTO chatbot_settings (
-  chatbot_id,
-  flow2_key,
-  flow3_key,
-  flow4_key,
-  apiflow_key,
-  metadata_key,
-  metadata2_key,
-  pinecone_api_key,
-  knowledgebase_index_endpoint,
-  flow2_knowledgebase_index,
-  flow3_knowledgebase_index,
-  flow4_knowledgebase_index,
-  apiflow_knowledgebase_index,
-  first_message,
-  image_enabled,
-  camera_button_enabled,
-  created_at,
-  updated_at
-) VALUES (
-  '${escapeString(config.chatbotId)}',
-  '${escapeString(config.flow2Key)}',
-  '${escapeString(config.flow3Key)}',
-  '${escapeString(config.flow4Key)}',
-  '${escapeString(config.apiFlowKey)}',
-  '${escapeString(config.metadataKey)}',
-  '${escapeString(config.metadata2Key)}',
-  '${escapeString(config.pineconeApiKey)}',
-  '${escapeString(config.knowledgebaseIndexEndpoint)}',
-  '${escapeString(config.flow2KnowledgebaseIndex)}',
-  '${escapeString(config.flow3KnowledgebaseIndex)}',
-  '${escapeString(config.flow4KnowledgebaseIndex)}',
-  '${escapeString(config.apiFlowKnowledgebaseIndex)}',
-  '${escapeString(config.firstMessage)}',
-  ${config.imageEnabled !== undefined ? config.imageEnabled : 'NULL'},
-  ${config.cameraButtonEnabled !== undefined ? config.cameraButtonEnabled : 'NULL'},
-  NOW(),
-  NOW()
-);`);
-    console.log('');
+    // Always include chatbot_id
+    fields.push('chatbot_id');
+    values.push(`'${esc(config.chatbot_id)}'`);
+    
+    // Add other fields if they exist
+    if (config.flow2_key) {
+      fields.push('flow2_key');
+      values.push(`'${esc(config.flow2_key)}'`);
+    }
+    
+    if (config.flow3_key) {
+      fields.push('flow3_key');
+      values.push(`'${esc(config.flow3_key)}'`);
+    }
+    
+    if (config.flow4_key) {
+      fields.push('flow4_key');
+      values.push(`'${esc(config.flow4_key)}'`);
+    }
+    
+    if (config.apiflow_key) {
+      fields.push('apiflow_key');
+      values.push(`'${esc(config.apiflow_key)}'`);
+    }
+    
+    if (config.metadata_key) {
+      fields.push('metadata_key');
+      values.push(`'${esc(config.metadata_key)}'`);
+    }
+    
+    if (config.metadata2_key) {
+      fields.push('metadata2_key');
+      values.push(`'${esc(config.metadata2_key)}'`);
+    }
+    
+    if (config.pinecone_api_key) {
+      fields.push('pinecone_api_key');
+      values.push(`'${esc(config.pinecone_api_key)}'`);
+    }
+    
+    if (config.knowledgebase_index_endpoint) {
+      fields.push('knowledgebase_index_endpoint');
+      values.push(`'${esc(config.knowledgebase_index_endpoint)}'`);
+    }
+    
+    if (config.flow2_knowledgebase_index) {
+      fields.push('flow2_knowledgebase_index');
+      values.push(`'${esc(config.flow2_knowledgebase_index)}'`);
+    }
+    
+    if (config.flow3_knowledgebase_index) {
+      fields.push('flow3_knowledgebase_index');
+      values.push(`'${esc(config.flow3_knowledgebase_index)}'`);
+    }
+    
+    if (config.flow4_knowledgebase_index) {
+      fields.push('flow4_knowledgebase_index');
+      values.push(`'${esc(config.flow4_knowledgebase_index)}'`);
+    }
+    
+    if (config.apiflow_knowledgebase_index) {
+      fields.push('apiflow_knowledgebase_index');
+      values.push(`'${esc(config.apiflow_knowledgebase_index)}'`);
+    }
+    
+    if (config.first_message) {
+      fields.push('first_message');
+      values.push(`'${esc(config.first_message)}'`);
+    }
+    
+    if (config.image_enabled !== undefined) {
+      fields.push('image_enabled');
+      values.push(config.image_enabled ? 'true' : 'false');
+    }
+    
+    if (config.camera_button_enabled !== undefined) {
+      fields.push('camera_button_enabled');
+      values.push(config.camera_button_enabled ? 'true' : 'false');
+    }
+    
+    // Always add timestamps
+    fields.push('created_at', 'updated_at');
+    values.push('NOW()', 'NOW()');
+    
+    // Build the complete INSERT statement
+    sqlContent.push(`INSERT INTO chatbot_settings (${fields.join(', ')})`);
+    sqlContent.push(`VALUES (${values.join(', ')});`);
+    sqlContent.push('');
   });
   
-  // Step 3: Add verification query
-  console.log('-- 3. Verify the configuration');
-  console.log(`SELECT 
+  // Step 4: Verification query
+  sqlContent.push('-- Step 4: Verify the inserted data');
+  sqlContent.push(`SELECT 
   chatbot_id,
   flow2_key,
   flow3_key,
@@ -291,13 +384,13 @@ function generateCompleteSQLStatements(configs) {
   apiflow_key,
   metadata_key,
   metadata2_key,
-  pinecone_api_key IS NOT NULL as has_api_key,
+  pinecone_api_key IS NOT NULL as has_pinecone_key,
   knowledgebase_index_endpoint,
   flow2_knowledgebase_index,
   flow3_knowledgebase_index,
   flow4_knowledgebase_index,
   apiflow_knowledgebase_index,
-  LENGTH(first_message) as first_message_length,
+  first_message IS NOT NULL as has_first_message,
   image_enabled,
   camera_button_enabled,
   created_at,
@@ -305,18 +398,17 @@ function generateCompleteSQLStatements(configs) {
 FROM chatbot_settings 
 ORDER BY chatbot_id;`);
   
-  console.log('');
-  console.log('-- 4. Summary statistics');
-  console.log(`SELECT 
-  COUNT(*) as total_chatbots,
-  COUNT(pinecone_api_key) as chatbots_with_api_key,
-  COUNT(first_message) as chatbots_with_first_message,
-  COUNT(CASE WHEN image_enabled = true THEN 1 END) as chatbots_with_image_enabled,
-  COUNT(CASE WHEN camera_button_enabled = true THEN 1 END) as chatbots_with_camera_enabled
-FROM chatbot_settings;`);
+  // Write to file
+  const sqlFilePath = path.join(process.cwd(), 'chatbot_settings_refresh.sql');
+  fs.writeFileSync(sqlFilePath, sqlContent.join('\n'));
   
-  console.log('\n-- End of SQL statements --');
-  console.log(`-- Total configurations processed: ${configs.length}`);
+  console.log(`\n📝 SQL file generated: ${sqlFilePath}`);
+  console.log('\n📋 Summary of SQL operations:');
+  console.log(`  - DELETE all existing records`);
+  console.log(`  - RESET ID sequence`);
+  console.log(`  - INSERT ${configs.length} new configurations`);
+  console.log(`  - VERIFY inserted data`);
+  console.log('\n✅ You can now run this SQL file in pgAdmin to refresh the chatbot_settings table');
 }
 
 // Run the extraction
