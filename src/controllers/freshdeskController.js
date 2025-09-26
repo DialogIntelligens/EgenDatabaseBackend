@@ -1,7 +1,8 @@
 import { createTicketService, queueTicketService } from '../services/freshdeskService.js';
 
 export async function createTicketController(req, res, pool) {
-  console.log('Backend: Received Freshdesk ticket creation request');
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log(`Backend: Received Freshdesk ticket creation request${isDevelopment ? ' (DEVELOPMENT MODE)' : ''}`);
   
   // Extract chatbot_id and user_id from request for better tracking
   const chatbotId = req.body.chatbot_id || req.headers['x-chatbot-id'] || null;
@@ -11,11 +12,11 @@ export async function createTicketController(req, res, pool) {
   const useQueue = req.query.async !== 'false'; // Allow opt-out with ?async=false
   
   if (useQueue) {
-    console.log('Backend: Processing Freshdesk ticket via queue');
+    console.log(`Backend: Processing Freshdesk ticket via queue${isDevelopment ? ' (will be skipped in development)' : ''}`);
     const { statusCode, payload } = await queueTicketService(req.body, pool, chatbotId, userId);
     return res.status(statusCode).json(payload);
   } else {
-    console.log('Backend: Processing Freshdesk ticket directly (legacy mode)');
+    console.log(`Backend: Processing Freshdesk ticket directly (legacy mode)${isDevelopment ? ' (will be skipped in development)' : ''}`);
     const { statusCode, payload } = await createTicketService(req.body, pool);
     return res.status(statusCode).json(payload);
   }
@@ -25,7 +26,8 @@ export async function createTicketController(req, res, pool) {
  * New endpoint for direct ticket creation (for admin/testing purposes)
  */
 export async function createTicketDirectController(req, res, pool) {
-  console.log('Backend: Received direct Freshdesk ticket creation request');
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log(`Backend: Received direct Freshdesk ticket creation request${isDevelopment ? ' (DEVELOPMENT MODE - will be skipped)' : ''}`);
   const { statusCode, payload } = await createTicketService(req.body, pool);
   return res.status(statusCode).json(payload);
 }

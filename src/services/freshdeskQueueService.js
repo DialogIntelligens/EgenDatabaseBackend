@@ -149,6 +149,20 @@ export class FreshdeskQueueService {
       // Mark as processing
       await this.markAsProcessing(id);
 
+      // Skip actual Freshdesk processing in development environment
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Development mode: Simulating Freshdesk ticket processing for queue_id=${id}, email=${ticket_data?.email || 'unknown'}`);
+        
+        // Simulate processing delay
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Mark as completed with a fake ticket ID
+        const fakeTicketId = `dev-ticket-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        await this.markAsCompleted(id, fakeTicketId);
+        
+        return { success: true, ticket_id: fakeTicketId, development_mode: true };
+      }
+
       // Attempt to create the Freshdesk ticket
       // ticket_data is already parsed from JSONB, no need to JSON.parse again
       const ticketData = ticket_data;
