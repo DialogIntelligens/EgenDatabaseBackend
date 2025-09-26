@@ -244,9 +244,14 @@ export class ConversationProcessingService {
     // Determine API URL based on actual flow type (not metadata flow)
     const apiUrl = this.getApiUrlForFlow(actualQuestionType, configuration);
 
-    // Log complete override configuration being sent to AI API
+    // Log complete override configuration being sent to AI API (without prompt text)
     console.log(`🔍 Backend: Final streaming will use questionType: ${actualQuestionType}, API: ${apiUrl}`);
-    console.log(`📋 Backend: COMPLETE OVERRIDE CONFIG:`, JSON.stringify(requestBody.overrideConfig || {}, null, 2));
+    
+    const configToLog = { ...requestBody.overrideConfig };
+    if (configToLog.vars && configToLog.vars.masterPrompt) {
+      configToLog.vars.masterPrompt = `[PROMPT: ${configToLog.vars.masterPrompt.length} chars]`;
+    }
+    console.log(`📋 Backend: COMPLETE OVERRIDE CONFIG:`, JSON.stringify(configToLog || {}, null, 2));
 
     return {
       apiUrl,
