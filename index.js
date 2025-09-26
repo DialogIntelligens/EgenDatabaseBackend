@@ -17,7 +17,7 @@ import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
-import { getEmneAndScore, initializeScheduledUploadsProcessor } from './src/utils/mainUtils.js';
+import { getEmneAndScore } from './src/utils/mainUtils.js';
 import { registerBevcoRoutes } from './src/routes/bevcoRoutes.js';
 import { registerPineconeRoutes } from './src/routes/pineconeRoutes.js';
 import { getPineconeApiKeyForIndex, initializePineconeClient } from './src/utils/pineconeUtils.js';
@@ -939,57 +939,6 @@ app.post('/test-email', authenticateToken, async (req, res) => {
   }
 });
 
-// TEST endpoint to manually trigger error alert check
-app.post('/test-error-alerts', authenticateToken, async (req, res) => {
-  try {
-    const isAdmin = req.user.isAdmin === true;
-    
-    if (!isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    console.log('🧪 Manual error alert test triggered by admin:', req.user.userId);
-    await checkErrorAlerts();
-    res.json({ message: 'Error alert check completed. Check server logs for details.' });
-  } catch (error) {
-    console.error('❌ Error in manual error alert test:', error);
-    res.status(500).json({ error: 'Failed to run error alert test' });
-  }
-});
-
-// DIRECT ERROR ALERT TEST endpoint - sends test error alert immediately
-app.post('/test-error-alert-email', authenticateToken, async (req, res) => {
-  try {
-    const isAdmin = req.user.isAdmin === true;
-    
-    if (!isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    console.log('📧 Direct error alert test triggered by admin:', req.user.userId);
-    
-    // Mock data for testing
-    const mockCategoryBreakdown = [
-      { error_category: 'API_ERROR', count: 8 },
-      { error_category: 'DATABASE_ERROR', count: 3 },
-      { error_category: 'VALIDATION_ERROR', count: 2 }
-    ];
-    
-    const mockChatbotBreakdown = [
-      { chatbot_id: 'test-chatbot-1', count: 7 },
-      { chatbot_id: 'test-chatbot-2', count: 6 }
-    ];
-    
-    console.log('🚀 Sending test error alert email...');
-    await sendErrorAlert(13, mockCategoryBreakdown, mockChatbotBreakdown);
-    
-    res.json({ message: 'Test error alert email sent successfully! Check team@dialogintelligens.dk inbox.' });
-  } catch (error) {
-    console.error('❌ Error sending test error alert email:', error);
-    res.status(500).json({ error: 'Failed to send test error alert email: ' + error.message });
-  }
-});
-
 /* ================================
    NOTIFICATION MONITORING SYSTEM
 ================================ */
@@ -1297,187 +1246,6 @@ setTimeout(checkNotificationTriggers, 30000);
 // Production ready - using 30-minute interval only
 
 console.log('📧 Notification monitoring system initialized');
-
-/* ================================
-   ERROR MONITORING ALERT SYSTEM
-================================ */
-
-// Function to check for high error count and send alerts
-async function checkErrorAlerts() {
-  try {
-    console.log('🔍 Checking for error alerts...');
-    
-    // Get error count from the last 30 minutes
-    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-    
-    const errorCountResult = await pool.query(`
-      SELECT COUNT(*) as error_count
-      FROM error_logs
-      WHERE created_at >= $1
-    `, [thirtyMinutesAgo]);
-    
-    const errorCount = parseInt(errorCountResult.rows[0].error_count);
-    console.log(`📊 Found ${errorCount} errors in the last 30 minutes`);
-    
-    // Check if we should send an alert (10 or more errors)
-    if (errorCount >= 10) {
-      // Check if we already sent an alert for this time period to avoid spam
-      const lastAlertResult = await pool.query(`
-        SELECT last_alert_sent
-        FROM error_alert_tracking
-        WHERE id = 1
-      `);
-      
-      let shouldSendAlert = true;
-      
-      if (lastAlertResult.rows.length > 0) {
-        const lastAlertTime = new Date(lastAlertResult.rows[0].last_alert_sent);
-        const timeSinceLastAlert = Date.now() - lastAlertTime.getTime();
-        const oneHourInMs = 60 * 60 * 1000;
-        
-        // Only send alert if it's been more than 1 hour since last alert
-        if (timeSinceLastAlert < oneHourInMs) {
-          shouldSendAlert = false;
-          console.log(`⏰ Error alert cooldown active. Last alert sent: ${lastAlertTime.toISOString()}`);
-        }
-      }
-      
-      if (shouldSendAlert) {
-        console.log(`🚨 High error count detected! Sending alert for ${errorCount} errors`);
-        
-        // Get error breakdown by category
-        const errorBreakdownResult = await pool.query(`
-          SELECT error_category, COUNT(*) as count
-          FROM error_logs
-          WHERE created_at >= $1
-          GROUP BY error_category
-          ORDER BY count DESC
-        `, [thirtyMinutesAgo]);
-        
-        // Get error breakdown by chatbot
-        const chatbotBreakdownResult = await pool.query(`
-          SELECT chatbot_id, COUNT(*) as count
-          FROM error_logs
-          WHERE created_at >= $1
-          GROUP BY chatbot_id
-          ORDER BY count DESC
-          LIMIT 5
-        `, [thirtyMinutesAgo]);
-        
-        await sendErrorAlert(errorCount, errorBreakdownResult.rows, chatbotBreakdownResult.rows);
-        
-        // Update the last alert sent timestamp
-        await pool.query(`
-          INSERT INTO error_alert_tracking (id, last_alert_sent)
-          VALUES (1, CURRENT_TIMESTAMP)
-          ON CONFLICT (id) DO UPDATE SET last_alert_sent = CURRENT_TIMESTAMP
-        `);
-        
-        console.log('✅ Error alert sent and tracking updated');
-      }
-    } else {
-      console.log(`✅ Error count (${errorCount}) is below threshold (10). No alert needed.`);
-    }
-    
-  } catch (error) {
-    console.error('❌ Error in error monitoring system:', error);
-  }
-}
-
-// Function to send error alert email using EmailJS
-async function sendErrorAlert(errorCount, categoryBreakdown, chatbotBreakdown) {
-  try {
-    const subject = `🚨 High Error Alert: ${errorCount} errors detected`;
-    
-    // Format category breakdown
-    const categoryText = categoryBreakdown.map(cat => 
-      `• ${cat.error_category}: ${cat.count} errors`
-    ).join('\n');
-    
-    // Format chatbot breakdown
-    const chatbotText = chatbotBreakdown.map(bot => 
-      `• Chatbot ${bot.chatbot_id}: ${bot.count} errors`
-    ).join('\n');
-    
-    const message = `
-Hej Team,
-
-Vi har opdaget en høj fejlrate i systemet:
-
-📊 Fejl Oversigt (sidste 30 minutter)
-• Total antal fejl: ${errorCount}
-• Tærskel: 10 fejl
-• Tidspunkt: ${new Date().toLocaleString('da-DK')}
-
-📈 Fejl fordelt på kategorier:
-${categoryText}
-
-🤖 Fejl fordelt på chatbots:
-${chatbotText}
-
-Dette kan indikere systemproblemer der kræver øjeblikkelig opmærksomhed.
-
-Log ind på Error Monitoring dashboardet for at se detaljerede fejllogger og tage handling.
-
-Dashboard: https://dashboard.dialogintelligens.dk/error-monitoring
-
-Med venlig hilsen,
-Dialog Intelligens Monitoring System
-    `;
-
-    const templateParams = {
-      to_email: 'team@dialogintelligens.dk',
-      message: message,
-      emne: subject,
-    };
-
-    // Use EmailJS to send the alert
-    await emailjs.send(
-      'service_n5qoy4e',      // Your service ID
-      'template_sbtj6jv',     // Your template ID  
-      templateParams,
-      {
-        publicKey: 'CIcxIuT6fMzBr5cTm',
-        privateKey: 'WUW-nxSkm2bsJ4ZJgExNT',
-      }
-    );
-    
-    console.log(`✅ Error alert email sent to team@dialogintelligens.dk: ${subject}`);
-    
-  } catch (error) {
-    console.error('❌ Error sending error alert email:', error);
-  }
-}
-
-// Function to ensure error alert tracking table exists
-async function ensureErrorAlertTrackingTable() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS error_alert_tracking (
-        id INTEGER PRIMARY KEY DEFAULT 1,
-        last_alert_sent TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT single_row CHECK (id = 1)
-      )
-    `);
-    console.log('✅ Error alert tracking table ensured');
-  } catch (error) {
-    console.error('❌ Error creating error alert tracking table:', error);
-  }
-}
-
-// Initialize error alert tracking table
-ensureErrorAlertTrackingTable();
-
-// Set up error monitoring to run every 30 minutes
-cron.schedule('*/30 * * * *', async () => {
-  await checkErrorAlerts();
-});
-
-// Also check on startup (after 60 seconds to let server fully initialize)
-setTimeout(checkErrorAlerts, 60000);
-
-console.log('🚨 Error monitoring alert system initialized - checking every 30 minutes');
 
 // After Express app is initialised and authenticateToken is declared but before app.listen
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
@@ -2136,9 +1904,6 @@ app.put('/admin/commerce-tools-credentials/:chatbot_id', authenticateToken, asyn
     });
   }
 });
-
-// Initialize scheduled uploads processor
-initializeScheduledUploadsProcessor(pool);
 
 // Start the server
 app.listen(PORT, () => {

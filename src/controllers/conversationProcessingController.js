@@ -23,18 +23,18 @@ export async function processMessageController(req, res, pool) {
       configuration = {}
     } = req.body;
 
-    // Validate required fields
-    if (!user_id || !chatbot_id || !message_text) {
+    // Validate required fields (allow empty message_text if image_data is provided)
+    if (!user_id || !chatbot_id || (!message_text && !image_data)) {
       return res.status(400).json({
         error: 'Missing required fields',
-        details: 'user_id, chatbot_id, and message_text are required'
+        details: 'user_id, chatbot_id, and either message_text or image_data are required'
       });
     }
 
     console.log('📨 Backend: Processing message request:', {
       user_id,
       chatbot_id,
-      message_length: message_text.length,
+      message_length: message_text?.length || 0,
       has_image: !!image_data,
       session_id
     });

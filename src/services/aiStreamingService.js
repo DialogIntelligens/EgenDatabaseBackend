@@ -79,7 +79,6 @@ export class AiStreamingService {
       };
 
       console.log(`📡 Backend: Starting stream to ${apiUrl} for session ${streamingSessionId}`);
-      console.log(`📋 Backend: STREAMING REQUEST OVERRIDE CONFIG:`, JSON.stringify(streamingRequestBody.overrideConfig || {}, null, 2));
 
       const fetchOptions = {
         method: "POST",
@@ -606,20 +605,41 @@ export class AiStreamingService {
             }
           }
           
-          // Add new user message
-          allMessages.push({
+          // Add new user message, including image data
+          const userMessage = {
             text: sessionInfo.user_message || '',
             isUser: true,
             timestamp: sessionInfo.created_at
-          });
+          };
+
+          if (sessionInfo.user_image_data) {
+            userMessage.image = sessionInfo.user_image_data;
+            userMessage.fileName = sessionInfo.user_image_name || null;
+            userMessage.fileMime = sessionInfo.user_image_mime || null;
+            userMessage.fileSize = sessionInfo.user_image_size || null;
+            userMessage.isFile = sessionInfo.user_image_is_file || (sessionInfo.user_image_data.startsWith('data:') ? false : true);
+            userMessage.timestamp = sessionInfo.created_at;
+          }
+
+          allMessages.push(userMessage);
           
           // Add AI response
-          allMessages.push({
+          const aiMessage = {
             text: streamingResult.finalText,
             textWithMarkers: streamingResult.finalTextWithMarkers,
             isUser: false,
             timestamp: new Date().toISOString()
-          });
+          };
+
+          if (streamingResult.finalImage) {
+            aiMessage.image = streamingResult.finalImage.data;
+            aiMessage.fileName = streamingResult.finalImage.name || null;
+            aiMessage.fileMime = streamingResult.finalImage.mime || null;
+            aiMessage.fileSize = streamingResult.finalImage.size || null;
+            aiMessage.isFile = streamingResult.finalImage.isFile || false;
+          }
+
+          allMessages.push(aiMessage);
 
           const conversationData = {
             user_id: sessionInfo.user_id,
@@ -661,7 +681,12 @@ export class AiStreamingService {
           cs.user_id,
           cs.chatbot_id,
           cs.created_at,
-          cs.configuration->>'user_message' as user_message
+          cs.configuration->>'user_message' as user_message,
+          cs.configuration->>'image_data' as user_image_data,
+          cs.configuration->>'image_name' as user_image_name,
+          cs.configuration->>'image_mime' as user_image_mime,
+          (cs.configuration->>'image_size')::bigint as user_image_size,
+          (cs.configuration->>'image_is_file')::boolean as user_image_is_file
         FROM streaming_sessions ss
         JOIN conversation_sessions cs ON ss.conversation_session_id = cs.session_id
         WHERE ss.streaming_session_id = $1

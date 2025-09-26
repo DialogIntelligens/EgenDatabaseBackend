@@ -32,7 +32,7 @@ export class ConversationProcessingService {
     const {
       user_id,
       chatbot_id,
-      message_text,
+      message_text = '', // Default to empty string for image-only messages
       image_data,
       conversation_history,
       session_id,
@@ -52,23 +52,30 @@ export class ConversationProcessingService {
       const perfTracker = this.performance.startTracking(session_id || user_id, 'conversation');
       perfTracker.startPhase('total_processing');
 
-      // Step 1: Create session for tracking
-      perfTracker.startPhase('session_creation');
-      const session = await this.createSession(user_id, chatbot_id, session_id, message_text);
-      perfTracker.endPhase('session_creation');
-
-      // Step 2: Process image if provided
+      // Step 1: Process image if provided
       let imageDescription = '';
       if (image_data && (configuration.imageEnabled || configuration.imageAPI)) {
         perfTracker.startPhase('image_processing');
-        imageDescription = await this.imageProcessing.processImage(image_data, message_text, configuration);
+        imageDescription = await this.imageProcessing.processImage(image_data, message_text || '', configuration);
         perfTracker.endPhase('image_processing', { has_image: true, description_length: imageDescription.length });
       }
 
+      // Step 2: Create session for tracking
+      perfTracker.startPhase('session_creation');
+      const session = await this.createSession(user_id, chatbot_id, session_id, message_text, image_data);
+      perfTracker.endPhase('session_creation');
+
       // Step 3: Determine conversation flow type
+      // For image-only messages, use default message text for flow determination
+      const effectiveMessageText = message_text || (image_data ? 'Hvad kan du se på dette billede?' : '');
+      if (!message_text && image_data) {
+        console.log('📷 Backend: Image-only message detected, using default question for flow determination');
+      }
+      
+      
       perfTracker.startPhase('flow_determination');
       const flowResult = await this.flowRouting.determineFlow(
-        message_text,
+        effectiveMessageText,
         conversation_history,
         configuration,
         imageDescription
@@ -83,11 +90,15 @@ export class ConversationProcessingService {
       perfTracker.startPhase('flow_execution');
       const processingResult = await this.executeFlow(
         flowResult,
-        message_text,
+        effectiveMessageText,
         conversation_history,
         imageDescription,
         configuration,
-        session.id
+        session.id,
+        {
+          rawMessage: message_text || '',
+          imageData: image_data || null
+        }
       );
       perfTracker.endPhase('flow_execution', { 
         has_order_details: !!processingResult.orderDetails,
@@ -127,8 +138,21 @@ export class ConversationProcessingService {
   /**
    * Create or update conversation session
    */
-  async createSession(userId, chatbotId, sessionId = null, messageText = '') {
+  async createSession(userId, chatbotId, sessionId = null, messageText = '', imageData = null) {
     try {
+      const sessionConfig = {
+        user_message: messageText || '',
+        timestamp: new Date().toISOString()
+      };
+
+      if (imageData) {
+        sessionConfig.image_data = imageData.data || imageData;
+        if (imageData.name) sessionConfig.image_name = imageData.name;
+        if (imageData.mime) sessionConfig.image_mime = imageData.mime;
+        if (imageData.size) sessionConfig.image_size = imageData.size;
+        if (typeof imageData.isFile === 'boolean') sessionConfig.image_is_file = imageData.isFile;
+      }
+
       const result = await this.pool.query(`
         INSERT INTO conversation_sessions (
           user_id, 
@@ -148,7 +172,7 @@ export class ConversationProcessingService {
         userId, 
         chatbotId, 
         sessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        JSON.stringify({ user_message: messageText, timestamp: new Date().toISOString() })
+        JSON.stringify(sessionConfig)
       ]);
 
       return result.rows[0];
@@ -162,7 +186,7 @@ export class ConversationProcessingService {
   /**
    * Execute the determined conversation flow
    */
-  async executeFlow(flowResult, messageText, conversationHistory, imageDescription, configuration, sessionId) {
+  async executeFlow(flowResult, messageText, conversationHistory, imageDescription, configuration, sessionId, messageMetadata = {}) {
     const { questionType, selectedMetaData } = flowResult;
     
     console.log(`🔍 Backend: Executing flow for questionType: ${questionType}`);
@@ -244,14 +268,9 @@ export class ConversationProcessingService {
     // Determine API URL based on actual flow type (not metadata flow)
     const apiUrl = this.getApiUrlForFlow(actualQuestionType, configuration);
 
-    // Log complete override configuration being sent to AI API (without prompt text)
+    // Log complete override configuration being sent to AI API
     console.log(`🔍 Backend: Final streaming will use questionType: ${actualQuestionType}, API: ${apiUrl}`);
-    
-    const configToLog = { ...requestBody.overrideConfig };
-    if (configToLog.vars && configToLog.vars.masterPrompt) {
-      configToLog.vars.masterPrompt = `[PROMPT: ${configToLog.vars.masterPrompt.length} chars]`;
-    }
-    console.log(`📋 Backend: COMPLETE OVERRIDE CONFIG:`, JSON.stringify(configToLog || {}, null, 2));
+    console.log(`📋 Backend: COMPLETE OVERRIDE CONFIG:`, JSON.stringify(requestBody.overrideConfig || {}, null, 2));
 
     return {
       apiUrl,
