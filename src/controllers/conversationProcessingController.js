@@ -203,45 +203,6 @@ export async function uploadImageController(req, res, pool) {
 }
 
 /**
- * Get complete integration options for a chatbot (replaces old integration system)
- * GET /api/integration-options/:chatbotId
- */
-export async function getIntegrationOptionsController(req, res, pool) {
-  try {
-    const { chatbotId } = req.params;
-
-    if (!chatbotId) {
-      return res.status(400).json({
-        error: 'Missing chatbot ID'
-      });
-    }
-
-    const configurationService = createConfigurationService(pool);
-    const configuration = await configurationService.getFrontendConfiguration(chatbotId);
-
-    // Format as integration options (matching old system format)
-    const integrationOptions = {
-      action: 'integrationOptions',
-      chatbotID: chatbotId,
-      ...configuration
-    };
-
-    res.json({
-      success: true,
-      integration_options: integrationOptions
-    });
-
-  } catch (error) {
-    console.error('🚨 Backend: Error in getIntegrationOptionsController:', error);
-    
-    res.status(500).json({
-      error: 'Failed to get integration options',
-      details: error.message
-    });
-  }
-}
-
-/**
  * Health check endpoint for conversation processing
  * GET /api/conversation-health
  */

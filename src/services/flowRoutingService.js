@@ -52,6 +52,24 @@ export class FlowRoutingService {
   }
 
   /**
+   * Check if a specific flow has a template assignment
+   */
+  async hasTemplateAssignment(chatbotId, flowKey) {
+    try {
+      const result = await this.pool.query(`
+        SELECT template_id 
+        FROM flow_template_assignments 
+        WHERE chatbot_id = $1 AND flow_key = $2
+      `, [chatbotId, flowKey]);
+
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`Error checking ${flowKey} template assignment:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Execute parallel flows (fordelingsflow + metadata) for optimal latency
    */
   async executeParallelFlows(messageText, conversationHistory, configuration, imageDescription) {
@@ -59,9 +77,9 @@ export class FlowRoutingService {
     
     const parallelStartTime = performance.now();
     
-    // Check if metadata flows are available
-    const hasMetadataFlow = configuration.metaDataKey && configuration.metaDataPromptEnabled;
-    const hasMetadata2Flow = configuration.metaData2Key && configuration.metaData2PromptEnabled;
+    // Check if metadata flows are available (use database flow keys)
+    const hasMetadataFlow = configuration.metaDataKey && await this.hasTemplateAssignment(configuration.chatbot_id, 'metadata');
+    const hasMetadata2Flow = configuration.metaData2Key && await this.hasTemplateAssignment(configuration.chatbot_id, 'metadata2');
     
     if (!hasMetadataFlow && !hasMetadata2Flow) {
       console.log('🚀 Backend: No metadata flows available, falling back to sequential execution');
@@ -87,11 +105,16 @@ export class FlowRoutingService {
     
     let selectedMetaData = {};
     if (needsMetadata) {
+      console.log(`🔍 Backend: Fordelingsflow determined metadata is needed for questionType: ${questionType}`);
       if (questionType === configuration.metaDataKey && metadataResults.metadata) {
         selectedMetaData = metadataResults.metadata;
+        console.log(`🔍 Backend: Using metadata flow result:`, selectedMetaData);
       } else if (questionType === configuration.metaData2Key && metadataResults.metadata2) {
         selectedMetaData = metadataResults.metadata2;
+        console.log(`🔍 Backend: Using metadata2 flow result:`, selectedMetaData);
       }
+    } else {
+      console.log(`🔍 Backend: Fordelingsflow determined no metadata needed for questionType: ${questionType}`);
     }
 
     const totalDuration = performance.now() - parallelStartTime;
@@ -145,6 +168,9 @@ export class FlowRoutingService {
           bodyWithOverride.overrideConfig.pineconeApiKey = pineconeApiKey;
           console.log(`Applied Pinecone API key for fordelingsflow: ${pineconeApiKey.substring(0, 20)}...`);
         }
+
+        // Log complete override config for fordelingsflow
+        console.log(`📋 Backend: FORDELINGSFLOW OVERRIDE CONFIG:`, JSON.stringify(bodyWithOverride.overrideConfig || {}, null, 2));
         
         const response = await fetch(routingAPI, {
           method: "POST",
@@ -204,12 +230,15 @@ export class FlowRoutingService {
   }
 
   /**
-   * Execute a specific metadata flow
+   * Execute a specific metadata flow (non-streaming, for filter extraction only)
+   * This should NEVER be streamed to the user - only used for metadata filters
    */
   async executeMetadataFlow(questionText, conversationHistory, configuration, flowType) {
     try {
       const isMetadata2 = flowType === 'metadata2';
       const promptKey = isMetadata2 ? 'metadata2' : 'metadata';
+      
+      console.log(`🔍 Backend: Executing ${flowType} flow for metadata extraction (non-streaming)`);
       
       const metadataPrompt = await buildPrompt(this.pool, configuration.chatbot_id, promptKey);
       
@@ -234,13 +263,17 @@ export class FlowRoutingService {
         console.log(`Applied Pinecone API key for ${flowType} flow: ${pineconeApiKey.substring(0, 20)}...`);
       }
 
+      // Log complete override config for metadata flow
+      console.log(`📋 Backend: ${flowType.toUpperCase()} OVERRIDE CONFIG:`, JSON.stringify(requestBody.overrideConfig || {}, null, 2));
+
+      // IMPORTANT: This is a NON-STREAMING call - just get the metadata, don't stream to user
       const response = await fetch("https://den-utrolige-snebold.onrender.com/api/v1/prediction/c1b6c8d2-dd76-443d-ae5f-42efaf8c3668", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer YOUR_API_KEY",
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody) // Note: NO streaming: true
       });
 
       if (!response.ok) {
@@ -250,7 +283,7 @@ export class FlowRoutingService {
       const result = await response.json();
       let responseText = result.text || "";
 
-      // Parse metadata response
+      // Parse metadata response (same logic as frontend)
       return this.parseMetadataResponse(responseText, flowType);
 
     } catch (error) {

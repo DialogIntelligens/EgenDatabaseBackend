@@ -165,12 +165,51 @@ export class ConversationProcessingService {
   async executeFlow(flowResult, messageText, conversationHistory, imageDescription, configuration, sessionId) {
     const { questionType, selectedMetaData } = flowResult;
     
+    console.log(`🔍 Backend: Executing flow for questionType: ${questionType}`);
+    console.log(`🔍 Backend: Available flow keys:`, {
+      apiFlowKey: configuration.apiFlowKey,
+      metaDataKey: configuration.metaDataKey,
+      metaData2Key: configuration.metaData2Key,
+      flow2Key: configuration.flow2Key,
+      flow3Key: configuration.flow3Key,
+      flow4Key: configuration.flow4Key
+    });
+    
+    // CRITICAL: Determine the correct flow for streaming
+    // If questionType matches a metadata flow, we need to find the actual flow to use
+    let actualQuestionType = questionType;
+    
+    if (questionType === configuration.metaDataKey || questionType === configuration.metaData2Key) {
+      console.log(`🔍 Backend: QuestionType '${questionType}' is a metadata flow - finding actual streaming flow`);
+      
+      // Check if this questionType also matches any other flow keys
+      if (questionType === configuration.flow2Key) {
+        actualQuestionType = 'flow2';
+        console.log(`✅ Backend: Metadata questionType '${questionType}' also matches flow2Key - using flow2 for streaming`);
+      } else if (questionType === configuration.flow3Key) {
+        actualQuestionType = 'flow3';
+        console.log(`✅ Backend: Metadata questionType '${questionType}' also matches flow3Key - using flow3 for streaming`);
+      } else if (questionType === configuration.flow4Key) {
+        actualQuestionType = 'flow4';
+        console.log(`✅ Backend: Metadata questionType '${questionType}' also matches flow4Key - using flow4 for streaming`);
+      } else if (questionType === configuration.apiFlowKey) {
+        actualQuestionType = 'apiflow';
+        console.log(`✅ Backend: Metadata questionType '${questionType}' also matches apiFlowKey - using apiflow for streaming`);
+      } else {
+        actualQuestionType = 'main';
+        console.log(`⚠️ Backend: Metadata questionType '${questionType}' doesn't match any other flow - using main flow for streaming`);
+      }
+    }
+
+    // Log the final flow key being used for streaming
+    console.log(`🎯 Backend: FINAL STREAMING FLOW - Using flow key: '${actualQuestionType}' (from questionType: '${questionType}')`);
+    
     // Build final question with image description if present
     let finalQuestion = messageText;
     if (imageDescription) {
       finalQuestion += " image description(act as if this is an image that you are viewing): " +
         imageDescription +
-        " Omkring denne billedbeskrivelse: sig ikke at det lyder som om, men at det ligner. Opfør dig som om at teksten er et billede du ser. ";
+        " Omkring denne billedbeskrivelse: sig ikke at det lyder som om, men at det ligner. Opfør dig som om at teksten er det billede du ser. ";
     }
 
     // Handle order tracking if this is an API flow
@@ -190,24 +229,30 @@ export class ConversationProcessingService {
       history: conversationHistory,
     };
 
-    // Apply metadata filters if available
+    // Apply metadata filters if available (this is the key part!)
     if (Object.keys(selectedMetaData).length > 0) {
       requestBody.overrideConfig = {
         pineconeMetadataFilter: selectedMetaData,
       };
+      console.log(`🔍 Backend: Applied metadata filters:`, selectedMetaData);
     }
 
-    // Apply flow-specific configurations
-    await this.applyFlowConfiguration(requestBody, questionType, configuration);
+    // Apply flow-specific configurations (use actualQuestionType for streaming)
+    console.log(`🔧 Backend: Calling applyFlowConfiguration with actualQuestionType: ${actualQuestionType}`);
+    await this.applyFlowConfiguration(requestBody, actualQuestionType, configuration);
 
-    // Determine API URL based on flow type
-    const apiUrl = this.getApiUrlForFlow(questionType, configuration);
+    // Determine API URL based on actual flow type (not metadata flow)
+    const apiUrl = this.getApiUrlForFlow(actualQuestionType, configuration);
+
+    // Log complete override configuration being sent to AI API
+    console.log(`🔍 Backend: Final streaming will use questionType: ${actualQuestionType}, API: ${apiUrl}`);
+    console.log(`📋 Backend: COMPLETE OVERRIDE CONFIG:`, JSON.stringify(requestBody.overrideConfig || {}, null, 2));
 
     return {
       apiUrl,
       requestBody,
       orderDetails,
-      questionType
+      questionType: actualQuestionType // Return the actual streaming question type
     };
   }
 
@@ -285,47 +330,60 @@ export class ConversationProcessingService {
   async applyFlowConfiguration(requestBody, questionType, configuration) {
     const { chatbot_id } = configuration;
 
+    console.log(`🔧 Backend: applyFlowConfiguration called with questionType: ${questionType}`);
+
     // Apply website and language overrides
     this.applyOverrides(requestBody, configuration);
 
     // Get and apply prompt template for the flow
     try {
       const flowKey = this.getFlowKeyFromQuestionType(questionType, configuration);
+      console.log(`🔧 Backend: getFlowKeyFromQuestionType(${questionType}) returned: ${flowKey}`);
+      
       if (flowKey) {
         const prompt = await buildPrompt(this.pool, chatbot_id, flowKey);
         if (prompt) {
           requestBody.overrideConfig = requestBody.overrideConfig || {};
           requestBody.overrideConfig.vars = requestBody.overrideConfig.vars || {};
           requestBody.overrideConfig.vars.masterPrompt = prompt;
+          console.log(`✅ Applied prompt template for ${flowKey} flow (length: ${prompt?.length || 0})`);
         }
       }
     } catch (error) {
-      console.error('Error applying prompt template:', error);
+      console.error(`❌ Error applying prompt template for ${questionType}:`, error.message);
       // Continue without prompt override
     }
 
-    // Apply topK settings
+    // Apply topK settings (questionType here is actually the flow type like 'flow4')
     const topK = await this.getTopKForFlow(questionType, configuration);
     if (topK !== undefined) {
       requestBody.overrideConfig = requestBody.overrideConfig || {};
       requestBody.overrideConfig.topK = topK;
+      console.log(`✅ Applied topK setting for ${questionType}: ${topK}`);
     }
 
-    // Apply Pinecone index and API key overrides
+    // Apply Pinecone index and API key overrides (questionType here is actually the flow type like 'flow4')
     const pineconeIndex = await this.getPineconeIndexForFlow(questionType, configuration);
     const pineconeApiKey = await this.getPineconeApiKeyForFlow(questionType, configuration);
     
     if (pineconeIndex) {
       requestBody.overrideConfig = requestBody.overrideConfig || {};
       requestBody.overrideConfig.pineconeIndex = pineconeIndex;
+      console.log(`✅ Applied Pinecone index for ${questionType}: ${pineconeIndex}`);
+    } else {
+      console.log(`⚠️ No Pinecone index found for ${questionType} flow`);
     }
     
     if (pineconeApiKey) {
       requestBody.overrideConfig = requestBody.overrideConfig || {};
       requestBody.overrideConfig.pineconeApiKey = pineconeApiKey;
-      const flowKey = this.getFlowKeyFromQuestionType(questionType, configuration);
-      console.log(`Applied Pinecone API key for ${flowKey} flow: ${pineconeApiKey.substring(0, 20)}...`);
+      console.log(`✅ Applied Pinecone API key for ${questionType}: ${pineconeApiKey.substring(0, 20)}...`);
+    } else {
+      console.log(`⚠️ No Pinecone API key found for ${questionType} flow`);
     }
+
+    // Log final override config for this flow configuration
+    console.log(`📋 Backend: ${questionType.toUpperCase()} FLOW OVERRIDE CONFIG:`, JSON.stringify(requestBody.overrideConfig || {}, null, 2));
   }
 
   /**
@@ -348,19 +406,13 @@ export class ConversationProcessingService {
   }
 
   /**
-   * Get flow key from question type
+   * Get flow key from question type (now uses database flow keys)
+   * This method should receive the ACTUAL flow type (like 'flow4'), not the questionType
    */
-  getFlowKeyFromQuestionType(questionType, configuration) {
-    const { apiFlowKey, metaDataKey, metaData2Key, flow2Key, flow3Key, flow4Key } = configuration;
-
-    if (questionType === apiFlowKey) return 'apiflow';
-    if (questionType === metaDataKey) return 'metadata';
-    if (questionType === metaData2Key) return 'metadata2';
-    if (questionType === flow2Key) return 'flow2';
-    if (questionType === flow3Key) return 'flow3';
-    if (questionType === flow4Key) return 'flow4';
-    
-    return 'main'; // Default flow
+  getFlowKeyFromQuestionType(flowType, configuration) {
+    // flowType is already the correct flow key (e.g., 'flow4', 'main', 'apiflow')
+    // This method is used to get the flow key for template lookup
+    return flowType;
   }
 
   /**

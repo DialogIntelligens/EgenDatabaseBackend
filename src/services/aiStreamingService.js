@@ -73,16 +73,21 @@ export class AiStreamingService {
       const perfTracker = performanceService.startTracking(streamingSessionId, 'streaming');
 
       // Prepare fetch options for streaming
+      const streamingRequestBody = { 
+        ...requestBody, 
+        streaming: true
+      };
+
+      console.log(`📡 Backend: Starting stream to ${apiUrl} for session ${streamingSessionId}`);
+      console.log(`📋 Backend: STREAMING REQUEST OVERRIDE CONFIG:`, JSON.stringify(streamingRequestBody.overrideConfig || {}, null, 2));
+
       const fetchOptions = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer wEfLmtcJ4Mj2DODkFDWq2ggjjJ6gJ125sJJpfMR/Aeg=",
         },
-        body: JSON.stringify({ 
-          ...requestBody, 
-          streaming: true
-        }),
+        body: JSON.stringify(streamingRequestBody),
       };
 
       // Make streaming request with retry logic
