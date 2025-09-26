@@ -172,7 +172,8 @@ export class FlowRoutingService {
         // Log complete override config for fordelingsflow
         console.log(`📋 Backend: FORDELINGSFLOW OVERRIDE CONFIG:`, JSON.stringify(bodyWithOverride.overrideConfig || {}, null, 2));
         
-        const response = await fetch(routingAPI, {
+        const { makeAiApiRequest } = await import('../utils/connectionPoolUtils.js');
+        const response = await makeAiApiRequest(routingAPI, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bodyWithOverride)
@@ -267,7 +268,8 @@ export class FlowRoutingService {
       console.log(`📋 Backend: ${flowType.toUpperCase()} OVERRIDE CONFIG:`, JSON.stringify(requestBody.overrideConfig || {}, null, 2));
 
       // IMPORTANT: This is a NON-STREAMING call - just get the metadata, don't stream to user
-      const response = await fetch("https://den-utrolige-snebold.onrender.com/api/v1/prediction/c1b6c8d2-dd76-443d-ae5f-42efaf8c3668", {
+      const { makeAiApiRequest } = await import('../utils/connectionPoolUtils.js');
+      const response = await makeAiApiRequest("https://den-utrolige-snebold.onrender.com/api/v1/prediction/c1b6c8d2-dd76-443d-ae5f-42efaf8c3668", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

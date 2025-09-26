@@ -1,11 +1,18 @@
 /**
  * AI Streaming Service
  * Handles streaming responses from AI APIs and SSE management
+ * Phase 4 Optimized with connection pooling and enhanced error handling
  */
 export class AiStreamingService {
   constructor(pool) {
     this.pool = pool;
     this.activeStreams = new Map(); // Track active streaming sessions
+    this.streamingStats = {
+      totalStreams: 0,
+      successfulStreams: 0,
+      failedStreams: 0,
+      averageStreamDuration: 0
+    };
   }
 
   /**
@@ -89,7 +96,7 @@ export class AiStreamingService {
         body: JSON.stringify(streamingRequestBody),
       };
 
-      // Make streaming request with retry logic
+      // Make streaming request (use direct fetch for streaming compatibility)
       perfTracker.startPhase('api_connection');
       let response;
       try {

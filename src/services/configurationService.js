@@ -1,11 +1,13 @@
 /**
  * Configuration Service
  * Handles dynamic loading and merging of chatbot configurations
- * Migrated from frontend configuration management
+ * Phase 4 Optimized with caching and enhanced performance
  */
 export class ConfigurationService {
   constructor(pool) {
     this.pool = pool;
+    this.configCache = new Map();
+    this.cacheTTL = 5 * 60 * 1000; // 5 minutes cache TTL
   }
 
   /**
@@ -14,6 +16,14 @@ export class ConfigurationService {
    */
   async getFrontendConfiguration(chatbotId) {
     try {
+      // Check cache first
+      const cacheKey = `config:${chatbotId}`;
+      const cached = this.configCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
+        console.log('🔧 Using cached configuration for chatbot:', chatbotId);
+        return cached.data;
+      }
+
       console.log('🔧 Loading complete frontend configuration for chatbot:', chatbotId);
 
       // Get all configuration components in parallel
@@ -57,6 +67,13 @@ export class ConfigurationService {
       };
 
       console.log('🔧 Configuration loaded with keys:', Object.keys(configuration));
+      
+      // Cache the configuration
+      this.configCache.set(cacheKey, {
+        data: configuration,
+        timestamp: Date.now()
+      });
+
       return configuration;
 
     } catch (error) {
@@ -80,7 +97,13 @@ export class ConfigurationService {
           flow3_knowledgebase_index,
           flow4_knowledgebase_index,
           apiflow_knowledgebase_index,
-          first_message
+          first_message,
+          flow2_key,
+          flow3_key,
+          flow4_key,
+          apiflow_key,
+          metadata_key,
+          metadata2_key
         FROM chatbot_settings 
         WHERE chatbot_id = $1
       `, [chatbotId]);
@@ -98,7 +121,14 @@ export class ConfigurationService {
         flow4KnowledgebaseIndex: settings.flow4_knowledgebase_index || null,
         apiFlowKnowledgebaseIndex: settings.apiflow_knowledgebase_index || null,
         // Start message configuration from integration scripts
-        firstMessage: settings.first_message || null
+        firstMessage: settings.first_message || null,
+        // Flow keys from integration scripts (Phase 4: Now from database)
+        flow2_key: settings.flow2_key || null,
+        flow3_key: settings.flow3_key || null,
+        flow4_key: settings.flow4_key || null,
+        apiflow_key: settings.apiflow_key || null,
+        metadata_key: settings.metadata_key || null,
+        metadata2_key: settings.metadata2_key || null
       };
     } catch (error) {
       console.error('Error getting basic settings:', error);
@@ -111,7 +141,13 @@ export class ConfigurationService {
         flow3KnowledgebaseIndex: null,
         flow4KnowledgebaseIndex: null,
         apiFlowKnowledgebaseIndex: null,
-        firstMessage: null
+        firstMessage: null,
+        flow2_key: null,
+        flow3_key: null,
+        flow4_key: null,
+        apiflow_key: null,
+        metadata_key: null,
+        metadata2_key: null
       };
     }
   }
@@ -302,14 +338,21 @@ export class ConfigurationService {
   }
 
   /**
-   * Extract flow keys from database configuration (temporarily disabled until columns exist)
+   * Extract flow keys from database configuration
+   * Phase 4: Now enabled with database flow keys
    */
   extractFlowKeys(basicSettings) {
-    // TODO: Enable this once flow key columns are added to database
-    // For now, return empty flow keys so frontend integration script provides them
     const flowKeys = {};
     
-    console.log('🔧 Backend: Flow keys from database temporarily disabled - using frontend integration script');
+    // Use flow keys directly from database (chatbot_settings table)
+    if (basicSettings.flow2_key) flowKeys.flow2Key = basicSettings.flow2_key;
+    if (basicSettings.flow3_key) flowKeys.flow3Key = basicSettings.flow3_key;
+    if (basicSettings.flow4_key) flowKeys.flow4Key = basicSettings.flow4_key;
+    if (basicSettings.apiflow_key) flowKeys.apiFlowKey = basicSettings.apiflow_key;
+    if (basicSettings.metadata_key) flowKeys.metaDataKey = basicSettings.metadata_key;
+    if (basicSettings.metadata2_key) flowKeys.metaData2Key = basicSettings.metadata2_key;
+
+    console.log('🔧 Backend: Extracted flow keys from database:', flowKeys);
     return flowKeys;
   }
 

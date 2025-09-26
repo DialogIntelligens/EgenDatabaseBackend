@@ -435,6 +435,11 @@ export class ConversationProcessingService {
    */
   getFlowKeyFromQuestionType(flowType, configuration) {
     // flowType is already the correct flow key (e.g., 'flow4', 'main', 'apiflow')
+    // Special case: 'other' should use 'main' template
+    if (flowType === 'other') {
+      return 'main';
+    }
+    
     // This method is used to get the flow key for template lookup
     return flowType;
   }
@@ -520,24 +525,87 @@ export class ConversationProcessingService {
    */
   async logError(error, context = {}) {
     try {
+      // Enhanced error categorization
+      const errorCategory = this.categorizeError(error);
+      const recoveryAction = this.getRecoveryAction(error);
+
       await this.pool.query(`
         INSERT INTO error_logs (chatbot_id, user_id, error_category, error_message, error_details, stack_trace)
         VALUES ($1, $2, $3, $4, $5, $6)
       `, [
         context.chatbot_id || null,
         context.user_id || null,
-        'CONVERSATION_PROCESSING_ERROR',
+        errorCategory,
         error.message || 'Unknown error',
         JSON.stringify({
           context,
+          errorCategory,
+          recoveryAction,
           timestamp: new Date().toISOString(),
-          error_type: error.constructor.name
+          error_type: error.constructor.name,
+          systemState: this.getSystemState()
         }),
         error.stack || null
       ]);
+
+      console.log(`🚨 Backend: Error logged - Category: ${errorCategory}, Recovery: ${recoveryAction}`);
     } catch (logError) {
       console.error('Failed to log error to database:', logError);
     }
+  }
+
+  /**
+   * Categorize errors for better tracking
+   */
+  categorizeError(error) {
+    const message = error.message?.toLowerCase() || '';
+    
+    if (message.includes('network') || message.includes('fetch') || message.includes('timeout')) {
+      return 'NETWORK_ERROR';
+    }
+    if (message.includes('pinecone') || message.includes('404')) {
+      return 'PINECONE_ERROR';
+    }
+    if (message.includes('template') || message.includes('prompt')) {
+      return 'TEMPLATE_ERROR';
+    }
+    if (message.includes('database') || message.includes('sql')) {
+      return 'DATABASE_ERROR';
+    }
+    if (message.includes('streaming') || message.includes('sse')) {
+      return 'STREAMING_ERROR';
+    }
+    
+    return 'CONVERSATION_PROCESSING_ERROR';
+  }
+
+  /**
+   * Get recovery action for error type
+   */
+  getRecoveryAction(error) {
+    const category = this.categorizeError(error);
+    
+    const recoveryActions = {
+      'NETWORK_ERROR': 'Retry with exponential backoff',
+      'PINECONE_ERROR': 'Check Pinecone configuration and API keys',
+      'TEMPLATE_ERROR': 'Verify template assignments and prompt content',
+      'DATABASE_ERROR': 'Check database connectivity and schema',
+      'STREAMING_ERROR': 'Restart streaming session',
+      'CONVERSATION_PROCESSING_ERROR': 'Manual investigation required'
+    };
+    
+    return recoveryActions[category] || 'Manual investigation required';
+  }
+
+  /**
+   * Get current system state for debugging
+   */
+  getSystemState() {
+    return {
+      timestamp: new Date().toISOString(),
+      memoryUsage: process.memoryUsage(),
+      uptime: process.uptime()
+    };
   }
 
   /**

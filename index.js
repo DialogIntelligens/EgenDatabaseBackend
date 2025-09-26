@@ -38,6 +38,7 @@ import { registerMagentoRoutes } from './src/routes/magentoRoutes.js';
 import { registerStatisticsRoutes } from './src/routes/statisticsRoutes.js';
 import { registerConversationsRoutes } from './src/routes/conversationsRoutes.js';
 import { registerConversationProcessingRoutes } from './src/routes/conversationProcessingRoutes.js';
+import { registerMonitoringRoutes } from './src/routes/monitoringRoutes.js';
 import { ensureConversationUpdateJobsTable } from './src/utils/conversationsUtils.js';
 import axios from 'axios';
 
@@ -132,6 +133,17 @@ cron.schedule('0 4 * * *', async () => {
     await performanceService.cleanupOldMetrics();
   } catch (error) {
     console.error('Error cleaning up performance metrics:', error);
+  }
+});
+
+// Cleanup expired caches (every 30 minutes)
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    console.log('Cleaning up expired caches...');
+    const { cleanupExpiredCache } = await import('./src/utils/cacheUtils.js');
+    cleanupExpiredCache();
+  } catch (error) {
+    console.error('Error cleaning up caches:', error);
   }
 });
 
@@ -1276,6 +1288,7 @@ registerMagentoRoutes(app, pool);
 registerStatisticsRoutes(app, pool, authenticateToken);
 registerConversationsRoutes(app, pool, authenticateToken, SECRET_KEY);
 registerConversationProcessingRoutes(app, pool, authenticateToken);
+registerMonitoringRoutes(app, pool, authenticateToken);
 registerPineconeRoutes(app, pool, authenticateToken);
 
 /* ================================

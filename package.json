@@ -14,7 +14,8 @@
     "extract-pinecone-github": "node scripts/extract-pinecone-config-from-github.js",
     "extract-pinecone-public": "node scripts/extract-pinecone-config-from-public-github.js",
     "extract-start-messages": "node scripts/extract-start-messages-from-github.js",
-    "extract-flow-keys": "node scripts/extract-flow-keys-from-github.js"
+    "extract-flow-keys": "node scripts/extract-flow-keys-from-github.js",
+    "test-phase4": "node scripts/test-phase4-complete.js"
   },
   "keywords": [],
   "author": "",
