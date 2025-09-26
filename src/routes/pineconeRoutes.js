@@ -3,7 +3,8 @@ import {
   updatePineconeDataController,
   getPineconeDataController,
   deletePineconeDataController,
-  markPineconeDataViewedController
+  markPineconeDataViewedController,
+  processScheduledUploadsController
 } from '../controllers/pineconeController.js';
 
 /**
@@ -24,4 +25,7 @@ export function registerPineconeRoutes(app, pool, authenticateToken) {
 
   // POST mark Pinecone data as viewed
   app.post('/pinecone-data/:data_id/mark-viewed', authenticateToken, (req, res) => markPineconeDataViewedController(req, res, pool));
+
+  // POST process scheduled uploads manually
+  app.post('/pinecone-data/process-scheduled', authenticateToken, (req, res) => processScheduledUploadsController(req, res, pool));
 }

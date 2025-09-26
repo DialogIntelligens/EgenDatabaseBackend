@@ -6,6 +6,8 @@ import {
   markPineconeDataViewedService
 } from '../services/pineconeService.js';
 
+import { processScheduledUploads } from '../services/scheduledUploadsService.js';
+
 /**
  * Create Pinecone data entry
  */
@@ -22,6 +24,9 @@ export async function createPineconeDataController(req, res, pool) {
       return res.status(404).json({ error: err.message });
     }
     if (err.message === 'Invalid expirationTime format') {
+      return res.status(400).json({ error: err.message });
+    }
+    if (err.message === 'Invalid scheduleTime format') {
       return res.status(400).json({ error: err.message });
     }
     if (err.message.includes('No Pinecone API key found')) {
@@ -116,6 +121,22 @@ export async function markPineconeDataViewedController(req, res, pool) {
     if (err.message === 'Pinecone data not found') {
       return res.status(404).json({ error: err.message });
     }
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+}
+
+/**
+ * Process scheduled uploads manually
+ */
+export async function processScheduledUploadsController(req, res, pool) {
+  try {
+    const result = await processScheduledUploads(pool);
+    res.json({
+      message: 'Scheduled uploads processed successfully',
+      ...result
+    });
+  } catch (err) {
+    console.error('Error processing scheduled uploads:', err);
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 }

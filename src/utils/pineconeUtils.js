@@ -50,20 +50,19 @@ export async function getPineconeApiKeyForIndex(pool, userId, indexName, namespa
         index.API_key
       );
       
-      // If found a matching index with API_key, return that key
-      if (matchedIndex && matchedIndex.API_key) {
-        console.log(`Using index-specific API key for index: ${indexName}, namespace: ${namespace}`);
+      if (matchedIndex) {
+        console.log(`Using specific API key for index: ${indexName}, namespace: ${namespace}`);
         return matchedIndex.API_key;
       }
     }
     
-    // Fallback to user's default API key
+    // If no specific API key found, use the user's default API key
     if (user.pinecone_api_key) {
       console.log(`Using default user API key for index: ${indexName}, namespace: ${namespace}`);
       return user.pinecone_api_key;
     }
     
-    throw new Error('No Pinecone API key found for this index or user');
+    throw new Error('No Pinecone API key found for this user and index');
   } catch (error) {
     console.error('Error getting Pinecone API key:', error);
     throw error;
@@ -78,53 +77,51 @@ export function initializePineconeClient(apiKey) {
 }
 
 /**
- * Create unique vector ID
+ * Create a unique vector ID
  */
 export function createVectorId() {
-  return `vector-${Date.now()}`;
+  return `vec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
 /**
  * Prepare vector metadata for Pinecone
  */
 export function prepareVectorMetadata(userId, text, title, group = null) {
-  const vectorMetadata = {
-    userId: userId.toString(),
-    text,
-    title,
-    metadata: 'true'
+  const metadata = {
+    user_id: userId,
+    text: text,
+    title: title,
+    timestamp: new Date().toISOString()
   };
   
-  // Only add group to metadata if it's defined
-  if (group !== undefined && group !== null) {
-    vectorMetadata.group = group;
+  // Only add group if it's provided and not null/undefined
+  if (group !== null && group !== undefined) {
+    metadata.group = group;
   }
   
-  return vectorMetadata;
+  return metadata;
 }
 
 /**
- * Parse user's Pinecone indexes
+ * Parse user's pinecone indexes from database
  */
 export function parseUserPineconeIndexes(pineconeIndexes) {
   if (typeof pineconeIndexes === 'string') {
     return JSON.parse(pineconeIndexes);
   }
-  return pineconeIndexes;
+  return pineconeIndexes || [];
 }
 
 /**
- * Extract namespaces from user's Pinecone indexes
+ * Extract namespaces from user's pinecone indexes
  */
 export function extractUserNamespaces(pineconeIndexes) {
   const parsed = parseUserPineconeIndexes(pineconeIndexes);
-  return Array.isArray(parsed) 
-    ? parsed.map(index => index.namespace).filter(Boolean)
-    : [];
+  return Array.isArray(parsed) ? parsed.map(index => index.namespace).filter(Boolean) : [];
 }
 
 /**
- * Parse and prepare database metadata
+ * Prepare metadata for database storage
  */
 export function prepareDatabaseMetadata(group) {
   return group ? { group } : {};
@@ -137,20 +134,19 @@ export function parseExistingMetadata(existingMetadata) {
   let metadata = {};
   if (existingMetadata) {
     try {
-      if (typeof existingMetadata === 'string') {
-        metadata = JSON.parse(existingMetadata);
-      } else {
-        metadata = existingMetadata;
-      }
+      metadata = typeof existingMetadata === 'string'
+        ? JSON.parse(existingMetadata)
+        : existingMetadata;
     } catch (e) {
       console.error('Error parsing existing metadata:', e);
+      metadata = {};
     }
   }
   return metadata;
 }
 
 /**
- * Format Pinecone data response
+ * Format Pinecone data response for API
  */
 export function formatPineconeDataResponse(rows) {
   return rows.map((row) => {
@@ -174,6 +170,8 @@ export function formatPineconeDataResponse(rows) {
       pinecone_index_name: row.pinecone_index_name,
       namespace: row.namespace,
       expiration_time: row.expiration_time,
+      scheduled_time: row.scheduled_time, // Include scheduled time
+      is_scheduled: row.is_scheduled, // Include scheduling status
       group: group, // Include group information
       has_viewed: row.has_viewed // Include the has_viewed status
     };
