@@ -93,7 +93,23 @@ export const getEmneAndScore = async (conversationText, userId, chatbotId, pool)
     const lacking_info = infoMatch && infoMatch[1].toLowerCase() === 'yes' ? true : false;
     const fallback = fallbackMatch ? fallbackMatch[1].toLowerCase() === 'yes' : null;
     const ligegyldig = ligegyldigMatch ? ligegyldigMatch[1].toLowerCase() === 'yes' : null;
-    const tags = tagsMatch ? tagsMatch[1].split(',').map(tag => tag.trim()) : null;
+
+    // Parse tags - handle both comma-separated strings and JSON array strings
+    let tags = null;
+    if (tagsMatch) {
+      const tagsContent = tagsMatch[1].trim();
+      try {
+        // First try to parse as JSON array (in case AI returns ["tag1", "tag2"])
+        tags = JSON.parse(tagsContent);
+        if (!Array.isArray(tags)) {
+          // If it's not an array, treat as single tag
+          tags = [tagsContent];
+        }
+      } catch (jsonError) {
+        // If JSON parsing fails, split by comma as before
+        tags = tagsContent.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+      }
+    }
 
     return { emne, score, lacking_info, fallback, ligegyldig, tags };
   } catch (error) {
