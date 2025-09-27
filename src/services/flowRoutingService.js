@@ -25,6 +25,7 @@ export class FlowRoutingService {
         console.log('🔍 Backend: No flow keys configured, using main flow directly');
         return {
           questionType: 'main',
+          selectedMetaData: {}, // Empty metadata since no routing was done
           method: 'direct',
           executionTime: 0
         };
