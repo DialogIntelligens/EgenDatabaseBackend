@@ -17,9 +17,19 @@ export class OrderTrackingService {
     try {
       console.log("🚨 FLOW ROUTING: Entering apiVarFlow with template-based system");
       
-      // Check if apiVarFlow is enabled
-      if (!configuration.apiVarFlowPromptEnabled) {
-        console.log("🚨 FLOW ROUTING: No apiVarFlow template configured, skipping variable extraction");
+      // Check if apiVarFlow template exists
+      try {
+        const templateExists = await this.pool.query(
+          'SELECT template_id FROM flow_template_assignments WHERE chatbot_id = $1 AND flow_key = $2',
+          [configuration.chatbot_id, 'apivarflow']
+        );
+
+        if (templateExists.rows.length === 0) {
+          console.log("🚨 FLOW ROUTING: No apiVarFlow template configured, skipping variable extraction");
+          return {};
+        }
+      } catch (error) {
+        console.log("🚨 FLOW ROUTING: Error checking apiVarFlow template, skipping variable extraction:", error.message);
         return {};
       }
 
@@ -100,20 +110,43 @@ export class OrderTrackingService {
    */
   async handleOrderTracking(orderVariables, configuration) {
     try {
+      // Special handling for bevco - needs any 2 of 4 fields
+      if (configuration.chatbot_id === 'bevco') {
+        const bevcoFields = ['order_number', 'email', 'phone', 'order_date'];
+        const bevcoProvidedFields = bevcoFields.filter(field =>
+          orderVariables[field] && orderVariables[field].trim() !== ""
+        );
+
+        const trackingConditionMet = bevcoProvidedFields.length >= 2;
+
+        console.log("🚨 FLOW ROUTING: Bevco tracking check - providedFields:", bevcoProvidedFields.length);
+        console.log("🚨 FLOW ROUTING: Required fields: any 2 of", bevcoFields);
+        console.log("🚨 FLOW ROUTING: DEBUG - orderVariables:", orderVariables);
+
+        if (trackingConditionMet) {
+          console.log("🚨 FLOW ROUTING: ✅ Bevco tracking condition met, proceeding with API calls");
+          return await this.handleCustomTracking(orderVariables, configuration);
+        } else {
+          console.log("🚨 FLOW ROUTING: ❌ Bevco tracking condition NOT met");
+          return null;
+        }
+      }
+
+      // Standard logic for other chatbots
       const { trackingRequiredFields = ['order_number', 'email'] } = configuration;
-      
+
       // Extract provided fields for tracking
-      const providedFields = trackingRequiredFields.filter(field => 
+      const providedFields = trackingRequiredFields.filter(field =>
         orderVariables[field] && orderVariables[field].trim() !== ""
       );
-      
+
       console.log("🚨 FLOW ROUTING: Order tracking check - providedFields:", providedFields.length);
       console.log("🚨 FLOW ROUTING: Required fields:", trackingRequiredFields);
       console.log("🚨 FLOW ROUTING: DEBUG - orderVariables:", orderVariables);
 
       // Check tracking conditions based on enabled systems
       let trackingConditionMet = false;
-      
+
       if (configuration.shopifyEnabled) {
         trackingConditionMet = await this.checkShopifyCondition(orderVariables);
       } else if (configuration.magentoEnabled) {
@@ -345,8 +378,21 @@ export class OrderTrackingService {
           console.error("🚨 FLOW ROUTING: Commerce Tools error:", commerceToolsResponse.status, errorText);
           return null;
         }
+      } else if (configuration.chatbot_id === 'bevco') {
+        // Handle BevCo-specific order tracking
+        console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco");
+
+        const { proxyBevcoOrderService } = await import('./bevcoService.js');
+        const bevcoData = await proxyBevcoOrderService({
+          order_number: orderVariables.order_number,
+          email: orderVariables.email,
+          phone: orderVariables.phone
+        });
+
+        console.log("🚨 FLOW ROUTING: ✅ BevCo response received");
+        return bevcoData;
       } else if (configuration.orderTrackingUrl) {
-        // Handle other custom tracking systems (BevCo, etc.)
+        // Handle other custom tracking systems
         return await this.handleGenericTracking(orderVariables, configuration);
       }
       

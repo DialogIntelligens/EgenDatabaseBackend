@@ -113,8 +113,17 @@ export class FlowRoutingService {
     const hasMetadata2Flow = configuration.metaData2Key && await this.hasTemplateAssignment(configuration.chatbot_id, 'metadata2');
     
     if (!hasMetadataFlow && !hasMetadata2Flow) {
-      console.log('🚀 Backend: No metadata flows available, falling back to sequential execution');
-      return await this.executeSequentialFlow(messageText, conversationHistory, configuration);
+      console.log('🚀 Backend: No metadata flows available, executing fordelingsflow only');
+      
+      // Execute only fordelingsflow since we have it but no metadata flows
+      const fordelingsflowResult = await this.executeFordelingsflow(messageText, conversationHistory, configuration);
+      
+      return {
+        questionType: fordelingsflowResult.text,
+        selectedMetaData: {},
+        executionTime: performance.now() - parallelStartTime,
+        method: 'fordelingsflow_only'
+      };
     }
 
     // Prepare question with image description for metadata flows
