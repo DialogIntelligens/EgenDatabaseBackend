@@ -71,6 +71,17 @@ export async function processMessageController(req, res, pool) {
   } catch (error) {
     console.error('🚨 Backend: Error in processMessageController:', error);
     
+    // Handle configuration errors differently (user-facing errors)
+    if (error.message.includes('Configuration error:') || error.message.includes('No template content available')) {
+      return res.status(400).json({
+        error: 'Configuration error',
+        details: error.message,
+        user_message: 'Beklager, denne chatbot er ikke korrekt konfigureret. Kontakt venligst support.',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Handle other errors as internal server errors
     res.status(500).json({
       error: 'Message processing failed',
       details: error.message,

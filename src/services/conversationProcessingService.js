@@ -263,7 +263,13 @@ export class ConversationProcessingService {
 
     // Apply flow-specific configurations (use actualQuestionType for streaming)
     console.log(`🔧 Backend: Calling applyFlowConfiguration with actualQuestionType: ${actualQuestionType}`);
-    await this.applyFlowConfiguration(requestBody, actualQuestionType, configuration);
+    try {
+      await this.applyFlowConfiguration(requestBody, actualQuestionType, configuration);
+    } catch (promptError) {
+      // If prompt configuration fails, throw a user-friendly error
+      console.error(`🚨 Backend: Prompt configuration failed for flow '${actualQuestionType}':`, promptError.message);
+      throw new Error(`Configuration error: ${promptError.message}`);
+    }
 
     // Determine API URL based on actual flow type (not metadata flow)
     const apiUrl = this.getApiUrlForFlow(actualQuestionType, configuration);
@@ -359,23 +365,43 @@ export class ConversationProcessingService {
     // Apply website and language overrides
     this.applyOverrides(requestBody, configuration);
 
-    // Get and apply prompt template for the flow
+    // Get and apply prompt template for the flow with fallback logic
     try {
       const flowKey = this.getFlowKeyFromQuestionType(questionType, configuration);
       console.log(`🔧 Backend: getFlowKeyFromQuestionType(${questionType}) returned: ${flowKey}`);
       
       if (flowKey) {
-        const prompt = await buildPrompt(this.pool, chatbot_id, flowKey);
+        let prompt = await buildPrompt(this.pool, chatbot_id, flowKey);
+        let usedFlowKey = flowKey;
+        
+        // If no prompt found for the determined flow, try fallback to main
+        if (!prompt || prompt.trim() === '') {
+          console.log(`⚠️ No prompt found for ${flowKey} flow, trying fallback to main flow`);
+          
+          if (flowKey !== 'main') {
+            prompt = await buildPrompt(this.pool, chatbot_id, 'main');
+            usedFlowKey = 'main';
+            
+            if (!prompt || prompt.trim() === '') {
+              throw new Error(`No template content available for flow '${flowKey}' and fallback 'main' flow also has no template. Please configure a template for this chatbot.`);
+            } else {
+              console.log(`✅ Using fallback main prompt for ${flowKey} flow (length: ${prompt?.length || 0})`);
+            }
+          } else {
+            throw new Error(`No template content available for main flow. Please configure a template for this chatbot.`);
+          }
+        }
+        
         if (prompt) {
           requestBody.overrideConfig = requestBody.overrideConfig || {};
           requestBody.overrideConfig.vars = requestBody.overrideConfig.vars || {};
           requestBody.overrideConfig.vars.masterPrompt = prompt;
-          console.log(`✅ Applied prompt template for ${flowKey} flow (length: ${prompt?.length || 0})`);
+          console.log(`✅ Applied prompt template for ${usedFlowKey} flow (length: ${prompt?.length || 0})`);
         }
       }
     } catch (error) {
       console.error(`❌ Error applying prompt template for ${questionType}:`, error.message);
-      // Continue without prompt override
+      throw error; // Don't continue without prompt - throw error to prevent AI response without prompt
     }
 
     // Apply topK settings (questionType here is actually the flow type like 'flow4')
@@ -433,15 +459,18 @@ export class ConversationProcessingService {
    * Get flow key from question type (now uses database flow keys)
    * This method should receive the ACTUAL flow type (like 'flow4'), not the questionType
    */
-  getFlowKeyFromQuestionType(flowType, configuration) {
-    // flowType is already the correct flow key (e.g., 'flow4', 'main', 'apiflow')
-    // Special case: 'other' should use 'main' template
-    if (flowType === 'other') {
-      return 'main';
-    }
-    
-    // This method is used to get the flow key for template lookup
-    return flowType;
+  getFlowKeyFromQuestionType(questionType, configuration) {
+    const { flow2Key, flow3Key, flow4Key, apiFlowKey, metaDataKey, metaData2Key } = configuration;
+
+    // Map questionType to the correct flow key for template lookup
+    if (questionType === flow2Key) return 'flow2';
+    else if (questionType === flow3Key) return 'flow3';
+    else if (questionType === flow4Key) return 'flow4';
+    else if (questionType === apiFlowKey) return 'apiflow';
+    else if (questionType === metaDataKey) return 'metadata';
+    else if (questionType === metaData2Key) return 'metadata2';
+    else if (questionType === 'other') return 'main'; // Special case
+    else return 'main'; // Default fallback
   }
 
   /**
