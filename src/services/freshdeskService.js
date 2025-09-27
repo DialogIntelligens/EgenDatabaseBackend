@@ -11,21 +11,6 @@ export async function createTicketService(body, pool) {
     return { statusCode: 400, payload: { error: 'Missing required fields: email, subject, and description are required' } };
   }
 
-  // Skip Freshdesk processing in development environment
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`Development mode: Skipping direct Freshdesk ticket creation for email=${email}, subject="${subject}"`);
-    return {
-      statusCode: 200,
-      payload: {
-        message: 'Development mode: Direct ticket processing skipped',
-        email: email,
-        subject: subject,
-        environment: 'development',
-        note: 'This ticket would be processed in production'
-      }
-    };
-  }
-
   try {
     const result = await createFreshdeskTicket(body);
     return {
@@ -72,21 +57,6 @@ export async function queueTicketService(body, pool, chatbotId = null, userId = 
     return { 
       statusCode: 400, 
       payload: { error: 'Missing required fields: email, subject, and description are required' } 
-    };
-  }
-
-  // Skip Freshdesk processing in development environment
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`Development mode: Skipping Freshdesk ticket creation for email=${email}, subject="${subject}"`);
-    return {
-      statusCode: 200,
-      payload: {
-        message: 'Development mode: Ticket processing skipped',
-        email: email,
-        subject: subject,
-        environment: 'development',
-        note: 'This ticket would be processed in production'
-      }
     };
   }
 
