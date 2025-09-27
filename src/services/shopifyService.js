@@ -177,7 +177,7 @@ export async function getShopifyCredentialsService(params, pool) {
   console.log('🔑 SHOPIFY: Fetching credentials for chatbot:', chatbot_id);
 
   const result = await pool.query(
-    'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store, shopify_api_version FROM shopify_credentials WHERE chatbot_id = $1',
+    'SELECT chatbot_id, shopify_access_token, shopify_api_key, shopify_secret_key, shopify_store FROM shopify_credentials WHERE chatbot_id = $1',
     [chatbot_id]
   );
 
@@ -193,7 +193,7 @@ export async function getShopifyCredentialsService(params, pool) {
       shopifyAccessToken: credentials.shopify_access_token,
       shopifyApiKey: credentials.shopify_api_key,
       shopifySecretKey: credentials.shopify_secret_key,
-      shopifyApiVersion: credentials.shopify_api_version
+      shopifyApiVersion: '2024-10' // Hardcoded as requested
     }
   }};
 }
