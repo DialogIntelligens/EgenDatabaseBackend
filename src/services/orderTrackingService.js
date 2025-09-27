@@ -182,21 +182,21 @@ export class OrderTrackingService {
       
       // Fetch Shopify credentials from database
       const credentialsResponse = await this.pool.query(`
-        SELECT shopify_store, shopify_access_token, shopify_api_version 
-        FROM shopify_credentials 
+        SELECT shopify_store, shopify_access_token
+        FROM shopify_credentials
         WHERE chatbot_id = $1
       `, [configuration.chatbot_id]);
-      
+
       let shopifyRequestBody;
-      
+
       if (credentialsResponse.rows.length > 0) {
         const credentials = credentialsResponse.rows[0];
         console.log("🔑 SHOPIFY: Retrieved credentials for store:", credentials.shopify_store);
-        
+
         shopifyRequestBody = {
           shopifyStore: credentials.shopify_store,
           shopifyAccessToken: credentials.shopify_access_token,
-          shopifyApiVersion: credentials.shopify_api_version || '2024-10',
+          shopifyApiVersion: '2024-10', // Hardcoded as in the old code
           chatbot_id: configuration.chatbot_id
         };
       } else {
