@@ -17,9 +17,22 @@ export class FlowRoutingService {
     console.log('🔍 Backend: Starting flow determination for message:', messageText.substring(0, 50));
 
     try {
+      // Check if any flow keys are configured at all
+      const hasFlowKeys = this.hasAnyFlowKeys(configuration);
+
+      if (!hasFlowKeys) {
+        // No flow keys configured - go straight to main flow
+        console.log('🔍 Backend: No flow keys configured, using main flow directly');
+        return {
+          questionType: 'main',
+          method: 'direct',
+          executionTime: 0
+        };
+      }
+
       // Check if fordelingsflow template is assigned
       const hasFordelingsflow = await this.checkFordelingsflowTemplate(configuration.chatbot_id);
-      
+
       if (hasFordelingsflow) {
         // Use parallel execution for optimal performance
         return await this.executeParallelFlows(messageText, conversationHistory, configuration, imageDescription);
@@ -31,6 +44,23 @@ export class FlowRoutingService {
       console.error('🚨 Backend: Error in flow determination:', error);
       throw error;
     }
+  }
+
+  /**
+   * Check if any flow keys are configured (not just fordelingsflow)
+   */
+  hasAnyFlowKeys(configuration) {
+    const flowKeys = [
+      configuration.flow2Key,
+      configuration.flow3Key,
+      configuration.flow4Key,
+      configuration.apiFlowKey,
+      configuration.metaDataKey,
+      configuration.metaData2Key
+    ];
+
+    // Check if any flow key is configured (not null/undefined/empty)
+    return flowKeys.some(key => key && key.trim() !== '');
   }
 
   /**
