@@ -152,7 +152,7 @@ export class ConversationAnalyticsService {
         analysis.lacking_info,
         analysis.fallback,
         analysis.ligegyldig,
-        analysis.tags ? JSON.stringify(analysis.tags) : null,
+        analysis.tags,
         conversationData.form_data ? JSON.stringify(conversationData.form_data) : null,
         conversationData.split_test_id || null,
         configuration.purchaseTrackingEnabled || false
@@ -181,7 +181,7 @@ export class ConversationAnalyticsService {
         analysis.lacking_info,
         analysis.fallback,
         analysis.ligegyldig,
-        analysis.tags ? JSON.stringify(analysis.tags) : null,
+        analysis.tags,
         conversationData.form_data ? JSON.stringify(conversationData.form_data) : null,
         conversationData.is_livechat || false,
         conversationData.split_test_id || null,
