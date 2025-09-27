@@ -213,30 +213,31 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       chatbot_id, 
       image_enabled, 
       camera_button_enabled,
-      // Database-driven settings (moved from GitHub script)
+      // Flow configuration fields
       flow2_key,
       flow3_key,
       flow4_key,
       apiflow_key,
       metadata_key,
       metadata2_key,
-      pinecone_api_key,
+      // Knowledgebase indexes
       knowledgebase_index_endpoint,
       flow2_knowledgebase_index,
       flow3_knowledgebase_index,
       flow4_knowledgebase_index,
       apiflow_knowledgebase_index,
+      // Pinecone API key
+      pinecone_api_key,
+      // First message
       first_message
     } = req.body;
     
     if (!chatbot_id) return res.status(400).json({ error: 'chatbot_id required' });
 
-    // Validate image_enabled is boolean if provided
+    // Validate boolean fields if provided
     if (image_enabled !== undefined && typeof image_enabled !== 'boolean') {
       return res.status(400).json({ error: 'image_enabled must be a boolean' });
     }
-
-    // Validate camera_button_enabled is boolean if provided
     if (camera_button_enabled !== undefined && typeof camera_button_enabled !== 'boolean') {
       return res.status(400).json({ error: 'camera_button_enabled must be a boolean' });
     }
@@ -244,16 +245,27 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
     try {
       await pool.query(
         `INSERT INTO chatbot_settings (
-          chatbot_id, image_enabled, camera_button_enabled, 
-          flow2_key, flow3_key, flow4_key, apiflow_key, metadata_key, metadata2_key,
-          pinecone_api_key, knowledgebase_index_endpoint,
-          flow2_knowledgebase_index, flow3_knowledgebase_index, 
-          flow4_knowledgebase_index, apiflow_knowledgebase_index,
-          first_message, updated_at
-         )
+          chatbot_id, 
+          image_enabled, 
+          camera_button_enabled,
+          flow2_key,
+          flow3_key,
+          flow4_key,
+          apiflow_key,
+          metadata_key,
+          metadata2_key,
+          knowledgebase_index_endpoint,
+          flow2_knowledgebase_index,
+          flow3_knowledgebase_index,
+          flow4_knowledgebase_index,
+          apiflow_knowledgebase_index,
+          pinecone_api_key,
+          first_message,
+          updated_at
+        )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
-         ON CONFLICT (chatbot_id) 
-         DO UPDATE SET 
+         ON CONFLICT (chatbot_id)
+         DO UPDATE SET
            image_enabled = COALESCE($2, chatbot_settings.image_enabled),
            camera_button_enabled = COALESCE($3, chatbot_settings.camera_button_enabled),
            flow2_key = COALESCE($4, chatbot_settings.flow2_key),
@@ -262,20 +274,32 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
            apiflow_key = COALESCE($7, chatbot_settings.apiflow_key),
            metadata_key = COALESCE($8, chatbot_settings.metadata_key),
            metadata2_key = COALESCE($9, chatbot_settings.metadata2_key),
-           pinecone_api_key = COALESCE($10, chatbot_settings.pinecone_api_key),
-           knowledgebase_index_endpoint = COALESCE($11, chatbot_settings.knowledgebase_index_endpoint),
-           flow2_knowledgebase_index = COALESCE($12, chatbot_settings.flow2_knowledgebase_index),
-           flow3_knowledgebase_index = COALESCE($13, chatbot_settings.flow3_knowledgebase_index),
-           flow4_knowledgebase_index = COALESCE($14, chatbot_settings.flow4_knowledgebase_index),
-           apiflow_knowledgebase_index = COALESCE($15, chatbot_settings.apiflow_knowledgebase_index),
+           knowledgebase_index_endpoint = COALESCE($10, chatbot_settings.knowledgebase_index_endpoint),
+           flow2_knowledgebase_index = COALESCE($11, chatbot_settings.flow2_knowledgebase_index),
+           flow3_knowledgebase_index = COALESCE($12, chatbot_settings.flow3_knowledgebase_index),
+           flow4_knowledgebase_index = COALESCE($13, chatbot_settings.flow4_knowledgebase_index),
+           apiflow_knowledgebase_index = COALESCE($14, chatbot_settings.apiflow_knowledgebase_index),
+           pinecone_api_key = COALESCE($15, chatbot_settings.pinecone_api_key),
            first_message = COALESCE($16, chatbot_settings.first_message),
            updated_at = CURRENT_TIMESTAMP`,
-        [chatbot_id, image_enabled, camera_button_enabled,
-         flow2_key, flow3_key, flow4_key, apiflow_key, metadata_key, metadata2_key,
-         pinecone_api_key, knowledgebase_index_endpoint,
-         flow2_knowledgebase_index, flow3_knowledgebase_index, 
-         flow4_knowledgebase_index, apiflow_knowledgebase_index,
-         first_message]
+        [
+          chatbot_id, 
+          image_enabled, 
+          camera_button_enabled,
+          flow2_key,
+          flow3_key,
+          flow4_key,
+          apiflow_key,
+          metadata_key,
+          metadata2_key,
+          knowledgebase_index_endpoint,
+          flow2_knowledgebase_index,
+          flow3_knowledgebase_index,
+          flow4_knowledgebase_index,
+          apiflow_knowledgebase_index,
+          pinecone_api_key,
+          first_message
+        ]
       );
       res.json({ success: true, message: 'Chatbot settings saved successfully' });
     } catch (err) {
