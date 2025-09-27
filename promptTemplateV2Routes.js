@@ -209,7 +209,26 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
   });
 
   router.post('/chatbot-settings', authenticateToken, async (req, res) => {
-    const { chatbot_id, image_enabled, camera_button_enabled } = req.body;
+    const { 
+      chatbot_id, 
+      image_enabled, 
+      camera_button_enabled,
+      // Database-driven settings (moved from GitHub script)
+      flow2_key,
+      flow3_key,
+      flow4_key,
+      apiflow_key,
+      metadata_key,
+      metadata2_key,
+      pinecone_api_key,
+      knowledgebase_index_endpoint,
+      flow2_knowledgebase_index,
+      flow3_knowledgebase_index,
+      flow4_knowledgebase_index,
+      apiflow_knowledgebase_index,
+      first_message
+    } = req.body;
+    
     if (!chatbot_id) return res.status(400).json({ error: 'chatbot_id required' });
 
     // Validate image_enabled is boolean if provided
@@ -224,14 +243,39 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 
     try {
       await pool.query(
-        `INSERT INTO chatbot_settings (chatbot_id, image_enabled, camera_button_enabled, updated_at)
-         VALUES ($1, $2, COALESCE($3, FALSE), CURRENT_TIMESTAMP)
-         ON CONFLICT (chatbot_id)
-         DO UPDATE SET
+        `INSERT INTO chatbot_settings (
+          chatbot_id, image_enabled, camera_button_enabled, 
+          flow2_key, flow3_key, flow4_key, apiflow_key, metadata_key, metadata2_key,
+          pinecone_api_key, knowledgebase_index_endpoint,
+          flow2_knowledgebase_index, flow3_knowledgebase_index, 
+          flow4_knowledgebase_index, apiflow_knowledgebase_index,
+          first_message, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
+         ON CONFLICT (chatbot_id) 
+         DO UPDATE SET 
            image_enabled = COALESCE($2, chatbot_settings.image_enabled),
            camera_button_enabled = COALESCE($3, chatbot_settings.camera_button_enabled),
+           flow2_key = COALESCE($4, chatbot_settings.flow2_key),
+           flow3_key = COALESCE($5, chatbot_settings.flow3_key),
+           flow4_key = COALESCE($6, chatbot_settings.flow4_key),
+           apiflow_key = COALESCE($7, chatbot_settings.apiflow_key),
+           metadata_key = COALESCE($8, chatbot_settings.metadata_key),
+           metadata2_key = COALESCE($9, chatbot_settings.metadata2_key),
+           pinecone_api_key = COALESCE($10, chatbot_settings.pinecone_api_key),
+           knowledgebase_index_endpoint = COALESCE($11, chatbot_settings.knowledgebase_index_endpoint),
+           flow2_knowledgebase_index = COALESCE($12, chatbot_settings.flow2_knowledgebase_index),
+           flow3_knowledgebase_index = COALESCE($13, chatbot_settings.flow3_knowledgebase_index),
+           flow4_knowledgebase_index = COALESCE($14, chatbot_settings.flow4_knowledgebase_index),
+           apiflow_knowledgebase_index = COALESCE($15, chatbot_settings.apiflow_knowledgebase_index),
+           first_message = COALESCE($16, chatbot_settings.first_message),
            updated_at = CURRENT_TIMESTAMP`,
-        [chatbot_id, image_enabled, camera_button_enabled]
+        [chatbot_id, image_enabled, camera_button_enabled,
+         flow2_key, flow3_key, flow4_key, apiflow_key, metadata_key, metadata2_key,
+         pinecone_api_key, knowledgebase_index_endpoint,
+         flow2_knowledgebase_index, flow3_knowledgebase_index, 
+         flow4_knowledgebase_index, apiflow_knowledgebase_index,
+         first_message]
       );
       res.json({ success: true, message: 'Chatbot settings saved successfully' });
     } catch (err) {
