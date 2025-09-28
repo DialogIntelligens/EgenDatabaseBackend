@@ -349,7 +349,8 @@ export class AiStreamingService {
       if (displayToken.includes("XXX")) {
         isBuffering = true;
         bufferedContent = displayToken;
-        displayToken = ""; // Don't emit this token yet
+        displayToken = "BUFFERING_START"; // Special token to indicate buffering started
+        // Don't accumulate to currentAiText for control tokens
       } else {
         currentAiText += displayToken;
         currentAiTextWithMarkers += tokenWithMarkers;
@@ -359,7 +360,7 @@ export class AiStreamingService {
       if (displayToken.includes("YYY")) {
         currentAiText += bufferedContent;
         currentAiTextWithMarkers += bufferedContent;
-        displayToken = bufferedContent; // Emit the full product block
+        displayToken = bufferedContent + "BUFFERING_END"; // Emit the full product block followed by buffering end marker
         bufferedContent = "";
         isBuffering = false;
       } else {
