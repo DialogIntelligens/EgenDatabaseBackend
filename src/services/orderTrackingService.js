@@ -25,7 +25,7 @@ export class OrderTrackingService {
         );
 
         if (templateExists.rows.length === 0) {
-          console.log("🚨 FLOW ROUTING: No apiVarFlow template configured, skipping variable extraction");
+        console.log("🚨 FLOW ROUTING: No apiVarFlow template configured, skipping variable extraction");
           return {};
         }
       } catch (error) {
@@ -134,19 +134,19 @@ export class OrderTrackingService {
 
       // Standard logic for other chatbots
       const { trackingRequiredFields = ['order_number', 'email'] } = configuration;
-
+      
       // Extract provided fields for tracking
-      const providedFields = trackingRequiredFields.filter(field =>
+      const providedFields = trackingRequiredFields.filter(field => 
         orderVariables[field] && orderVariables[field].trim() !== ""
       );
-
+      
       console.log("🚨 FLOW ROUTING: Order tracking check - providedFields:", providedFields.length);
       console.log("🚨 FLOW ROUTING: Required fields:", trackingRequiredFields);
       console.log("🚨 FLOW ROUTING: DEBUG - orderVariables:", orderVariables);
 
       // Check tracking conditions based on enabled systems
       let trackingConditionMet = false;
-
+      
       if (configuration.shopifyEnabled) {
         trackingConditionMet = await this.checkShopifyCondition(orderVariables);
       } else if (configuration.magentoEnabled) {
@@ -216,16 +216,16 @@ export class OrderTrackingService {
       // Fetch Shopify credentials from database
       const credentialsResponse = await this.pool.query(`
         SELECT shopify_store, shopify_access_token
-        FROM shopify_credentials
+        FROM shopify_credentials 
         WHERE chatbot_id = $1
       `, [configuration.chatbot_id]);
-
+      
       let shopifyRequestBody;
-
+      
       if (credentialsResponse.rows.length > 0) {
         const credentials = credentialsResponse.rows[0];
         console.log("🔑 SHOPIFY: Retrieved credentials for store:", credentials.shopify_store);
-
+        
         shopifyRequestBody = {
           shopifyStore: credentials.shopify_store,
           shopifyAccessToken: credentials.shopify_access_token,

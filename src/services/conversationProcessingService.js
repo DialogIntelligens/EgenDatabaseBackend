@@ -65,6 +65,14 @@ export class ConversationProcessingService {
       const session = await this.createSession(user_id, chatbot_id, session_id, message_text, image_data);
       perfTracker.endPhase('session_creation');
 
+      // Step 2.5: Build complete conversation history from database
+      perfTracker.startPhase('history_reconstruction');
+      const completeHistory = await this.buildCompleteConversationHistory(user_id, chatbot_id, conversation_history);
+      perfTracker.endPhase('history_reconstruction', { 
+        frontend_history_length: conversation_history?.length || 0,
+        complete_history_length: completeHistory.length 
+      });
+
       // Step 3: Determine conversation flow type
       // For image-only messages, use default message text for flow determination
       const effectiveMessageText = message_text || (image_data ? 'Hvad kan du se på dette billede?' : '');
@@ -76,7 +84,7 @@ export class ConversationProcessingService {
       perfTracker.startPhase('flow_determination');
       const flowResult = await this.flowRouting.determineFlow(
         effectiveMessageText,
-        conversation_history,
+        completeHistory,
         configuration,
         imageDescription
       );
@@ -91,7 +99,7 @@ export class ConversationProcessingService {
       const processingResult = await this.executeFlow(
         flowResult,
         effectiveMessageText,
-        conversation_history,
+        completeHistory,
         imageDescription,
         configuration,
         session.id,
@@ -132,6 +140,56 @@ export class ConversationProcessingService {
       console.error('🚨 Backend: Error processing message:', error);
       await this.logError(error, { user_id, chatbot_id, message_text });
       throw error;
+    }
+  }
+
+  /**
+   * Build complete conversation history from database
+   * This ensures AI has access to all previous messages, not just what frontend sends
+   */
+  async buildCompleteConversationHistory(userId, chatbotId, frontendHistory = []) {
+    try {
+      console.log('📚 Backend: Building complete conversation history from database');
+      
+      // Get existing conversation from database
+      const existingConversation = await this.aiStreaming.getExistingConversation(userId, chatbotId);
+      
+      if (!existingConversation || !existingConversation.conversation_data) {
+        console.log('📚 Backend: No existing conversation found, using frontend history');
+        return frontendHistory || [];
+      }
+
+      // Parse conversation data from database
+      let dbMessages = [];
+      try {
+        dbMessages = typeof existingConversation.conversation_data === 'string' 
+          ? JSON.parse(existingConversation.conversation_data)
+          : existingConversation.conversation_data;
+      } catch (e) {
+        console.error('📚 Backend: Error parsing conversation data, using frontend history:', e);
+        return frontendHistory || [];
+      }
+
+      if (!Array.isArray(dbMessages)) {
+        console.log('📚 Backend: Invalid conversation data format, using frontend history');
+        return frontendHistory || [];
+      }
+
+      // Convert database format to flowise history format
+      const historyForFlowise = dbMessages
+        .filter(msg => msg.text && msg.text.trim() !== '') // Only include messages with content
+        .map(msg => ({
+          content: msg.text,
+          role: msg.isUser ? "userMessage" : "apiMessage"
+        }));
+
+      console.log(`📚 Backend: Built complete history: ${historyForFlowise.length} messages (${dbMessages.length} total in DB)`);
+      return historyForFlowise;
+
+    } catch (error) {
+      console.error('📚 Backend: Error building conversation history:', error);
+      console.log('📚 Backend: Falling back to frontend history');
+      return frontendHistory || [];
     }
   }
 
