@@ -6,7 +6,7 @@ import { createImageProcessingService } from './imageProcessingService.js';
 import { createConversationAnalyticsService } from './conversationAnalyticsService.js';
 import { createPerformanceTrackingService } from './performanceTrackingService.js';
 import { getEmneAndScore } from '../utils/mainUtils.js';
-import { buildPrompt } from '../../promptTemplateV2Routes.js';
+import { buildPrompt, buildRephrasePrompt } from '../../promptTemplateV2Routes.js';
 
 /**
  * Main conversation processing service
@@ -397,6 +397,19 @@ export class ConversationProcessingService {
           requestBody.overrideConfig.vars = requestBody.overrideConfig.vars || {};
           requestBody.overrideConfig.vars.masterPrompt = prompt;
           console.log(`✅ Applied prompt template for ${usedFlowKey} flow (length: ${prompt?.length || 0})`);
+
+          // Try to fetch and apply rephrase prompt for this flow
+          try {
+            const rephrasePrompt = await buildRephrasePrompt(this.pool, chatbot_id, usedFlowKey);
+            if (rephrasePrompt && rephrasePrompt.trim() !== '') {
+              requestBody.overrideConfig.vars.masterRephrasePrompt = rephrasePrompt;
+              console.log(`✅ Applied rephrase prompt for ${usedFlowKey} flow (length: ${rephrasePrompt?.length || 0})`);
+            } else {
+              console.log(`ℹ️ No rephrase prompt found for ${usedFlowKey} flow`);
+            }
+          } catch (rephraseError) {
+            console.log(`ℹ️ Could not fetch rephrase prompt for ${usedFlowKey}: ${rephraseError.message}`);
+          }
         }
       }
     } catch (error) {

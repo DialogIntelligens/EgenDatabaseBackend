@@ -643,6 +643,22 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 }
 
 /* Helper to build final prompt */
+export async function buildRephrasePrompt(pool, chatbot_id, flow_key) {
+  // Skip flows that don't use rephrase prompts
+  if (flow_key === 'metadata' || flow_key === 'metadata2' || flow_key === 'statistics' || flow_key === 'image' || flow_key === 'fordelingsflow') {
+    console.log(`${flow_key} rephrase prompt skipped - flow doesn't use rephrase`);
+    return null;
+  }
+
+  try {
+    const prompt = await buildPrompt(pool, chatbot_id, `${flow_key}_rephrase`);
+    return prompt;
+  } catch (error) {
+    console.log(`No rephrase prompt found for ${flow_key}: ${error.message}`);
+    return null;
+  }
+}
+
 export async function buildPrompt(pool, chatbot_id, flow_key) {
   let templateSections = [];
   

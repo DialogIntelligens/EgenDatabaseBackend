@@ -1,6 +1,6 @@
 -- Complete Chatbot Settings Table Refresh
 -- Generated automatically from GitHub integration scripts
--- Generated on: 2025-09-27T21:19:48.893Z
+-- Generated on: 2025-09-28T16:06:03.097Z
 -- Found 97 chatbot configurations
 
 -- Step 1: Clear existing chatbot settings
@@ -220,8 +220,8 @@ INSERT INTO chatbot_settings (chatbot_id, flow2_key, flow3_key, first_message, c
 VALUES ('kystfisken', 'qproduct', 'rproduct', 'Hej😊 Kan jeg hjælpe med at besvare et spørgsmål eller anbefale en fisk?🐟', NOW(), NOW());
 
 -- Configuration 53: linaa
-INSERT INTO chatbot_settings (chatbot_id, flow3_key, flow4_key, metadata_key, knowledgebase_index_endpoint, flow3_knowledgebase_index, flow4_knowledgebase_index, first_message, created_at, updated_at)
-VALUES ('linaa', 'product', 'productfilter', 'productfilter', 'linaa-alt', 'linaa-pro', 'linaa-pro', 'Hej! Jeg er din AI-hjælper hos Linå 🤖. \n\nSpørg om produkter (varenr.), materialer, værktøj, guides eller råd til dit projekt – hjemme eller til undervisning. \n\nJeg lærer løbende og henter hjælp fra kundeservice, hvis nødvendigt.', NOW(), NOW());
+INSERT INTO chatbot_settings (chatbot_id, flow3_key, flow4_key, metadata_key, pinecone_api_key, knowledgebase_index_endpoint, flow3_knowledgebase_index, flow4_knowledgebase_index, first_message, created_at, updated_at)
+VALUES ('linaa', 'product', 'productfilter', 'productfilter', 'pcsk_5jmBcT_PypcxuLpuC6aGqQtgLXeaM8Nt9GzPtqyBLtpeDATfZgMiDmVinhCJeLGV1zoPSK', 'linaa-alt', 'linaa-pro', 'linaa-pro', 'Hej! Jeg er din AI-hjælper hos Linå 🤖. \n\nSpørg om produkter (varenr.), materialer, værktøj, guides eller råd til dit projekt – hjemme eller til undervisning. \n\nJeg lærer løbende og henter hjælp fra kundeservice, hvis nødvendigt.', NOW(), NOW());
 
 -- Configuration 54: localliving
 INSERT INTO chatbot_settings (chatbot_id, flow2_key, flow3_key, metadata_key, first_message, created_at, updated_at)
