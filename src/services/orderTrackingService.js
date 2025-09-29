@@ -383,11 +383,25 @@ export class OrderTrackingService {
         console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco");
 
         const { proxyBevcoOrderService } = await import('./bevcoService.js');
-        const bevcoData = await proxyBevcoOrderService({
-          order_number: orderVariables.order_number,
-          email: orderVariables.email,
-          phone: orderVariables.phone
-        });
+        
+        // Only send non-empty fields to BevCo API
+        const bevcoRequestData = {};
+        if (orderVariables.order_number && orderVariables.order_number.trim() !== '') {
+          bevcoRequestData.order_number = orderVariables.order_number;
+        }
+        if (orderVariables.email && orderVariables.email.trim() !== '') {
+          bevcoRequestData.email = orderVariables.email;
+        }
+        if (orderVariables.phone && orderVariables.phone.trim() !== '') {
+          bevcoRequestData.phone = orderVariables.phone;
+        }
+        if (orderVariables.order_date && orderVariables.order_date.trim() !== '') {
+          bevcoRequestData.order_date = orderVariables.order_date;
+        }
+
+        console.log("🚨 FLOW ROUTING: BevCo request data (filtered):", bevcoRequestData);
+        
+        const bevcoData = await proxyBevcoOrderService(bevcoRequestData);
 
         console.log("🚨 FLOW ROUTING: ✅ BevCo response received");
         return bevcoData;

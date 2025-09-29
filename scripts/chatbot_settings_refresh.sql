@@ -1,6 +1,6 @@
 -- Complete Chatbot Settings Table Refresh
 -- Generated automatically from GitHub integration scripts
--- Generated on: 2025-09-28T16:06:03.097Z
+-- Generated on: 2025-09-29T10:09:23.885Z
 -- Found 97 chatbot configurations
 
 -- Step 1: Clear existing chatbot settings
@@ -128,8 +128,8 @@ INSERT INTO chatbot_settings (chatbot_id, flow2_key, flow3_key, flow4_key, apifl
 VALUES ('dillingus', 'product', 'productnofilter', 'category', 'order', 'product', 'pcsk_GNBAU_9Y2fpBkz3mhEpx6EYLZjov7rJd4DuMNg76vpm8fZqsvPK6rkFCdEPTwRh5YuRUh', 'dillingus-faq', 'dillingus-pro', 'dillingus-pro', 'dillingus-kat', 'dillingus-faq', 'Hi there 😊 I', NOW(), NOW());
 
 -- Configuration 30: dillingdk
-INSERT INTO chatbot_settings (chatbot_id, flow2_key, flow3_key, apiflow_key, metadata_key, knowledgebase_index_endpoint, flow2_knowledgebase_index, flow3_knowledgebase_index, flow4_knowledgebase_index, apiflow_knowledgebase_index, first_message, created_at, updated_at)
-VALUES ('dillingdk', 'product', 'productnofilter', 'order', 'product', 'dilling-faq', 'dilling-pro', 'dilling-pro', 'dilling-kat', 'dilling-faq', 'Hej med dig 🙂 Jeg er DILLINGs chatbot. Hvordan kan jeg hjælpe dig?', NOW(), NOW());
+INSERT INTO chatbot_settings (chatbot_id, flow2_key, flow3_key, apiflow_key, metadata_key, pinecone_api_key, knowledgebase_index_endpoint, flow2_knowledgebase_index, flow3_knowledgebase_index, flow4_knowledgebase_index, apiflow_knowledgebase_index, first_message, created_at, updated_at)
+VALUES ('dillingdk', 'product', 'productnofilter', 'order', 'product', 'pcsk_GNBAU_9Y2fpBkz3mhEpx6EYLZjov7rJd4DuMNg76vpm8fZqsvPK6rkFCdEPTwRh5YuRUh', 'dilling-faq', 'dilling-pro', 'dilling-pro', 'dilling-kat', 'dilling-faq', 'Hej med dig 🙂 Jeg er DILLINGs chatbot. Hvordan kan jeg hjælpe dig?', NOW(), NOW());
 
 -- Configuration 31: ditur
 INSERT INTO chatbot_settings (chatbot_id, flow3_key, flow4_key, apiflow_key, metadata_key, pinecone_api_key, knowledgebase_index_endpoint, flow3_knowledgebase_index, flow4_knowledgebase_index, apiflow_knowledgebase_index, first_message, created_at, updated_at)
@@ -272,8 +272,8 @@ INSERT INTO chatbot_settings (chatbot_id, flow2_key, pinecone_api_key, knowledge
 VALUES ('naturoghelse', 'product', 'pcsk_3UjrPD_31C2RmtD3gCJT257xMaBWDWfxQeCjSC3TFHJiU2hxzDu8uDVkjeSKRKDYDuwVS1', 'naturoghelse-alt', 'naturoghelse-pro', 'humac-pro', 'Hej 😊 Spørg mig om alt – lige fra produkter til generelle spørgsmål, eller få personlige anbefalinger 🤖', NOW(), NOW());
 
 -- Configuration 66: nocla
-INSERT INTO chatbot_settings (chatbot_id, flow2_key, pinecone_api_key, knowledgebase_index_endpoint, flow3_knowledgebase_index, first_message, created_at, updated_at)
-VALUES ('nocla', 'product', 'pcsk_3UjrPD_31C2RmtD3gCJT257xMaBWDWfxQeCjSC3TFHJiU2hxzDu8uDVkjeSKRKDYDuwVS1', 'nocla-alt', 'humac-pro', 'Hej 😊 Spørg mig om alt – lige fra produkter til generelle spørgsmål, eller få personlige anbefalinger til opskrifter 🤖', NOW(), NOW());
+INSERT INTO chatbot_settings (chatbot_id, flow2_key, pinecone_api_key, knowledgebase_index_endpoint, flow2_knowledgebase_index, flow3_knowledgebase_index, first_message, created_at, updated_at)
+VALUES ('nocla', 'recipe', 'pcsk_3UjrPD_31C2RmtD3gCJT257xMaBWDWfxQeCjSC3TFHJiU2hxzDu8uDVkjeSKRKDYDuwVS1', 'nocla-alt', 'nocla-alt', 'humac-pro', 'Hej 😊 Spørg mig om alt – lige fra produkter til generelle spørgsmål, eller få personlige anbefalinger til opskrifter 🤖', NOW(), NOW());
 
 -- Configuration 67: nytelse
 INSERT INTO chatbot_settings (chatbot_id, flow3_key, first_message, created_at, updated_at)
