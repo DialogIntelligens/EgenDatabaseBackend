@@ -147,7 +147,16 @@ export class OrderTrackingService {
       // Check tracking conditions based on enabled systems
       let trackingConditionMet = false;
       
-      if (configuration.shopifyEnabled) {
+      // Special check for DILLING chatbots using Commerce Tools
+      const dillingChatbots = ['dillingdk', 'dillingde', 'dillingnl', 'dillingfr', 'dillinguk', 'dillingus', 'dillingeu', 'dillingch', 'dillingno', 'dillingse', 'dillingfi'];
+      if (dillingChatbots.includes(configuration.chatbot_id)) {
+        // Commerce Tools: require order_number AND (email OR phone)
+        const hasOrderNumber = orderVariables.order_number && orderVariables.order_number.trim() !== "";
+        const hasEmail = orderVariables.email && orderVariables.email.trim() !== "";
+        const hasPhone = orderVariables.phone && orderVariables.phone.trim() !== "";
+        trackingConditionMet = hasOrderNumber && (hasEmail || hasPhone);
+        console.log("🚨 FLOW ROUTING: Commerce Tools condition - order_number:", hasOrderNumber, "email:", hasEmail, "phone:", hasPhone, "condition met:", trackingConditionMet);
+      } else if (configuration.shopifyEnabled) {
         trackingConditionMet = await this.checkShopifyCondition(orderVariables);
       } else if (configuration.magentoEnabled) {
         trackingConditionMet = await this.checkMagentoCondition(orderVariables);
@@ -163,7 +172,11 @@ export class OrderTrackingService {
       if (trackingConditionMet) {
         console.log("🚨 FLOW ROUTING: ✅ Tracking condition met, proceeding with API calls");
         
-        if (configuration.shopifyEnabled) {
+        // Special routing for DILLING chatbots to Commerce Tools
+        const dillingChatbots = ['dillingdk', 'dillingde', 'dillingnl', 'dillingfr', 'dillinguk', 'dillingus', 'dillingeu', 'dillingch', 'dillingno', 'dillingse', 'dillingfi'];
+        if (dillingChatbots.includes(configuration.chatbot_id)) {
+          return await this.handleCustomTracking(orderVariables, configuration);
+        } else if (configuration.shopifyEnabled) {
           return await this.handleShopifyTracking(orderVariables, configuration);
         } else if (configuration.magentoEnabled) {
           return await this.handleMagentoTracking(orderVariables, configuration);
