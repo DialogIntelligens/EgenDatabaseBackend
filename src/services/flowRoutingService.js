@@ -38,8 +38,15 @@ export class FlowRoutingService {
         // Use parallel execution for optimal performance
         return await this.executeParallelFlows(messageText, conversationHistory, configuration, imageDescription);
       } else {
-        // Fallback to sequential execution
-        return await this.executeSequentialFlow(messageText, conversationHistory, configuration);
+        // No fordelingsflow template - use main flow directly
+        // This prevents calling the broken basic routing API
+        console.log('🔍 Backend: No fordelingsflow template, using main flow directly (flow keys configured but no routing)');
+        return {
+          questionType: 'main',
+          selectedMetaData: {},
+          method: 'main_fallback',
+          executionTime: 0
+        };
       }
     } catch (error) {
       console.error('🚨 Backend: Error in flow determination:', error);

@@ -34,6 +34,7 @@ export class ConfigurationService {
         flowApiKeys,
         shopifySettings,
         magentoSettings,
+        commerceToolsSettings,
         templateAssignments,
         promptOverrides
       ] = await Promise.all([
@@ -43,6 +44,7 @@ export class ConfigurationService {
         this.getFlowApiKeys(chatbotId),
         this.getShopifySettings(chatbotId),
         this.getMagentoSettings(chatbotId),
+        this.getCommerceToolsSettings(chatbotId),
         this.getTemplateAssignments(chatbotId),
         this.getPromptOverrides(chatbotId)
       ]);
@@ -56,6 +58,7 @@ export class ConfigurationService {
         flowApiKeys,
         ...shopifySettings,
         ...magentoSettings,
+        ...commerceToolsSettings,
         templateAssignments,
         promptOverrides,
         
@@ -280,6 +283,30 @@ export class ConfigurationService {
         orderTrackingUseProxy: true,
         orderTrackingProxyUrl: 'https://egendatabasebackend.onrender.com/api/magento/orders',
         orderTrackingRequestMethod: 'POST'
+      };
+    }
+  }
+
+  /**
+   * Get CommerceTools settings
+   */
+  async getCommerceToolsSettings(chatbotId) {
+    try {
+      const result = await this.pool.query(`
+        SELECT commercetools_enabled 
+        FROM commercetools_credentials 
+        WHERE chatbot_id = $1
+      `, [chatbotId]);
+
+      return {
+        commerceToolsEnabled: result.rows[0]?.commercetools_enabled || false,
+        orderTrackingEnabled: result.rows[0]?.commercetools_enabled || false
+      };
+    } catch (error) {
+      console.error('Error getting CommerceTools settings:', error);
+      return {
+        commerceToolsEnabled: false,
+        orderTrackingEnabled: false
       };
     }
   }
