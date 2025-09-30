@@ -362,36 +362,67 @@ export class OrderTrackingService {
   }
 
   /**
+   * Handle Commerce Tools order tracking
+   */
+  async handleCommerceToolsTracking(orderVariables, configuration) {
+    try {
+      // Get commerce tools credentials for this chatbot
+      const credentialsResult = await this.pool.query(
+        `SELECT * FROM commercetools_credentials
+         WHERE chatbot_id = $1 AND commercetools_enabled = true`,
+        [configuration.chatbot_id]
+      );
+
+      if (credentialsResult.rows.length === 0) {
+        console.error("🚨 FLOW ROUTING: Commerce Tools not configured for chatbot:", configuration.chatbot_id);
+        return null;
+      }
+
+      const credentials = credentialsResult.rows[0];
+
+      // Import the Commerce Tools functions
+      const { fetchCommerceToolsOrder, extractRelevantCommerceToolsOrderDetails } = await import('../utils/commerceToolsUtils.js');
+
+      // Fetch order from Commerce Tools
+      const order = await fetchCommerceToolsOrder(credentials, orderVariables.order_number, orderVariables.email);
+
+      if (!order) {
+        console.log("🚨 FLOW ROUTING: Order not found in Commerce Tools");
+        return null;
+      }
+
+      // Extract relevant order details using the same logic as frontend
+      const relevantOrderDetails = extractRelevantCommerceToolsOrderDetails(order);
+
+      console.log("🚨 FLOW ROUTING: ✅ Commerce Tools order found and processed");
+
+      // Return simplified order information in the format expected by the chatbot
+      return {
+        success: true,
+        results: [order], // Keep original format for compatibility
+        relevantOrderDetails: relevantOrderDetails, // Add simplified format
+        count: 1,
+        total: 1
+      };
+
+    } catch (error) {
+      console.error("🚨 FLOW ROUTING: Commerce Tools tracking error:", error);
+      return null;
+    }
+  }
+
+  /**
    * Handle custom order tracking (BevCo, Commerce Tools, etc.)
    */
   async handleCustomTracking(orderVariables, configuration) {
     try {
       console.log("🚨 FLOW ROUTING: Making custom tracking request for chatbot:", configuration.chatbot_id);
       
-      // Check if this is Commerce Tools (should use backend)
+      // Check if this is Commerce Tools (direct service call)
       const dillingChatbots = ['dillingdk', 'dillingde', 'dillingnl', 'dillingfr', 'dillinguk', 'dillingus', 'dillingeu', 'dillingch', 'dillingno', 'dillingse', 'dillingfi'];
       if (dillingChatbots.includes(configuration.chatbot_id)) {
         console.log("🚨 FLOW ROUTING: Using Commerce Tools backend for DILLING");
-        
-        const commerceToolsResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3000'}/track-order`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chatbot_id: configuration.chatbot_id,
-            order_number: orderVariables.order_number,
-            email: orderVariables.email
-          })
-        });
-        
-        if (commerceToolsResponse.ok) {
-          const commerceToolsData = await commerceToolsResponse.json();
-          console.log("🚨 FLOW ROUTING: ✅ Commerce Tools response received");
-          return commerceToolsData;
-        } else {
-          const errorText = await commerceToolsResponse.text();
-          console.error("🚨 FLOW ROUTING: Commerce Tools error:", commerceToolsResponse.status, errorText);
-          return null;
-        }
+        return await this.handleCommerceToolsTracking(orderVariables, configuration);
       } else if (configuration.chatbot_id === 'bevco') {
         // Handle BevCo-specific order tracking
         console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco");
