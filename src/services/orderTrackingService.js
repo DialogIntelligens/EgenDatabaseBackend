@@ -356,8 +356,9 @@ export class OrderTrackingService {
       console.log("🚨 FLOW ROUTING: Making custom tracking request for chatbot:", configuration.chatbot_id);
       
       // Check if this is Commerce Tools (should use backend)
-      if (configuration.chatbot_id === 'dillingdk' || configuration.chatbot_id === 'dillingch') {
-        console.log("🚨 FLOW ROUTING: Using Commerce Tools backend for DILLING (", configuration.chatbot_id, ")");
+      const dillingChatbots = ['dillingdk', 'dillingde', 'dillingnl', 'dillingfr', 'dillinguk', 'dillingus', 'dillingeu', 'dillingch', 'dillingno', 'dillingse', 'dillingfi'];
+      if (dillingChatbots.includes(configuration.chatbot_id)) {
+        console.log("🚨 FLOW ROUTING: Using Commerce Tools backend for DILLING");
         
         const commerceToolsResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3000'}/track-order`, {
           method: 'POST',
