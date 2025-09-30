@@ -78,8 +78,16 @@ export class ConversationAnalyticsService {
       );
       
       // Save context chunks if available
+      // Calculate message index: it's the last message in the conversation (the AI response we just added)
       if (contextChunks.length > 0 && savedConversation?.id) {
-        await this.saveContextChunks(savedConversation.id, contextChunks);
+        const messageIndex = conversationData.messages ? conversationData.messages.length - 1 : null;
+        
+        if (messageIndex !== null && messageIndex > 0) {
+          // Only save chunks if messageIndex > 0 (skip first message which is the start message)
+          await this.saveContextChunks(savedConversation.id, contextChunks, messageIndex);
+        } else {
+          console.log(`⚠️ Backend: Skipping context chunks save for first message (index: ${messageIndex})`);
+        }
       }
       
       console.log('💾 Backend: Conversation saved with ID:', savedConversation?.id);
@@ -198,17 +206,27 @@ export class ConversationAnalyticsService {
 
   /**
    * Save context chunks for conversation
+   * 
+   * @param {number} conversationId - The conversation ID
+   * @param {Array} contextChunks - The chunks to save
+   * @param {number} messageIndex - The index of the message these chunks belong to
    */
-  async saveContextChunks(conversationId, contextChunks) {
+  async saveContextChunks(conversationId, contextChunks, messageIndex = null) {
     try {
       if (!contextChunks || contextChunks.length === 0) return;
       
-      console.log(`💾 Backend: Saving ${contextChunks.length} context chunks for conversation ${conversationId}`);
+      // If no messageIndex provided, we can't save the chunks properly
+      if (messageIndex === null) {
+        console.warn(`⚠️ Backend: No messageIndex provided for context chunks, skipping save`);
+        return;
+      }
       
-      // Clear existing chunks for this conversation
+      console.log(`💾 Backend: Saving ${contextChunks.length} context chunks for conversation ${conversationId}, message ${messageIndex}`);
+      
+      // Clear existing chunks for this specific message (in case of retry)
       await this.pool.query(
-        'DELETE FROM message_context_chunks WHERE conversation_id = $1',
-        [conversationId]
+        'DELETE FROM message_context_chunks WHERE conversation_id = $1 AND message_index = $2',
+        [conversationId, messageIndex]
       );
       
       // Insert new chunks
@@ -220,7 +238,7 @@ export class ConversationAnalyticsService {
            VALUES ($1, $2, $3, $4, $5)`,
           [
             conversationId,
-            0, // Assuming these are for the AI response (index 0)
+            messageIndex,
             chunk.pageContent || chunk.content || '',
             JSON.stringify(chunk.metadata || {}),
             chunk.score || null
@@ -228,7 +246,7 @@ export class ConversationAnalyticsService {
         );
       }
       
-      console.log(`💾 Backend: Successfully saved ${contextChunks.length} context chunks`);
+      console.log(`💾 Backend: Successfully saved ${contextChunks.length} context chunks for message ${messageIndex}`);
     } catch (error) {
       console.error('Error saving context chunks:', error);
     }
