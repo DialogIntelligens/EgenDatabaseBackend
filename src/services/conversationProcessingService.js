@@ -542,6 +542,13 @@ export class ConversationProcessingService {
   getFlowKeyFromQuestionType(questionType, configuration) {
     const { flow2Key, flow3Key, flow4Key, apiFlowKey, metaDataKey, metaData2Key } = configuration;
 
+    // If questionType is already a flow key (like 'flow2', 'flow3'), return it directly
+    // This happens when we've already converted from metadata flow result to actual flow
+    if (['flow2', 'flow3', 'flow4', 'apiflow', 'metadata', 'metadata2', 'main'].includes(questionType)) {
+      console.log(`🔧 Backend: QuestionType '${questionType}' is already a flow key, returning as-is`);
+      return questionType;
+    }
+
     // Map questionType to the correct flow key for template lookup
     if (questionType === flow2Key) return 'flow2';
     else if (questionType === flow3Key) return 'flow3';
