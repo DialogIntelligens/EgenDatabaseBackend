@@ -18,10 +18,10 @@ export class ImageProcessingService {
     try {
       console.log('📷 Backend: Starting image processing');
       
-      const { imageAPI, imageEnabled, imagePromptEnabled, chatbot_id } = configuration;
-      
-      if (!imageAPI && !imageEnabled) {
-        console.log('📷 Backend: Image processing not enabled');
+      const { imageAPI, imageEnabled, image_enabled, imagePromptEnabled, chatbot_id } = configuration;
+
+      if (!imageAPI && !imageEnabled && !image_enabled) {
+        console.log('📷 Backend: Image processing not enabled - config:', { imageAPI, imageEnabled, image_enabled });
         return '';
       }
 
@@ -68,7 +68,8 @@ export class ImageProcessingService {
    * Migrated from frontend image processing logic
    */
   async processImageWithAPI(imageData, messageText, configuration) {
-    const { imageAPI, imageEnabled, imagePromptEnabled, chatbot_id } = configuration;
+    const { imageAPI, imageEnabled, image_enabled, imagePromptEnabled, chatbot_id } = configuration;
+    console.log('📷 Backend: processImageWithAPI called with config:', { imageAPI, imageEnabled, image_enabled, imagePromptEnabled, chatbot_id });
     
     let apiUrl = imageAPI;
     let requestBody = {

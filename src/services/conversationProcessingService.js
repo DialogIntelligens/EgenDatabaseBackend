@@ -54,10 +54,19 @@ export class ConversationProcessingService {
 
       // Step 1: Process image if provided
       let imageDescription = '';
-      if (image_data && (configuration.imageEnabled || configuration.imageAPI)) {
+      if (image_data && (configuration.image_enabled || configuration.imageEnabled || configuration.imageAPI)) {
         perfTracker.startPhase('image_processing');
+        console.log('📷 Backend: Processing image for description generation');
         imageDescription = await this.imageProcessing.processImage(image_data, message_text || '', configuration);
         perfTracker.endPhase('image_processing', { has_image: true, description_length: imageDescription.length });
+        console.log('📷 Backend: Image processed, description length:', imageDescription.length);
+      } else {
+        console.log('📷 Backend: Skipping image processing - config:', {
+          image_enabled: configuration.image_enabled,
+          imageEnabled: configuration.imageEnabled,
+          imageAPI: configuration.imageAPI,
+          has_image_data: !!image_data
+        });
       }
 
       // Step 2: Create session for tracking
