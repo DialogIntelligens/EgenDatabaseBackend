@@ -22,7 +22,7 @@ export const MARKERS = {
   CONTACT_FORM: '%%',
   FRESHDESK: '$$',
   HUMAN_AGENT: '&&',
-  IMAGE_UPLOAD: 'i#'
+  IMAGE_UPLOAD: '§'
 };
 
 /**
@@ -181,7 +181,7 @@ export class ChunkProcessor {
       }
     }
 
-    // Image marker (i#)
+    // Image marker (§)
     if (markers.IMAGE_UPLOAD) {
       const combinedImage = this.lastImageChunk + token;
       if (combinedImage.includes(markers.IMAGE_UPLOAD)) {

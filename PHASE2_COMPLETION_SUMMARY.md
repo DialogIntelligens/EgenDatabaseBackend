@@ -21,7 +21,7 @@ All core conversation logic has been successfully migrated from frontend to back
 
 ### ✅ Streaming Logic
 - **streamAnswer function** - Complete SSE streaming with retry logic
-- **Marker processing** - Contact form (%%%), Freshdesk ($$), Human Agent (&&), Image (i#)
+- **Marker processing** - Contact form (%%%), Freshdesk ($$), Human Agent (&&), Image (§)
 - **Product block buffering** - XXX...YYY buffering system
 - **Error handling** - Network retry logic and graceful degradation
 

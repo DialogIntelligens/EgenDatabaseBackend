@@ -164,7 +164,7 @@ export class AiStreamingService {
 
     const freshMarker = "$$";
     const humanAgentMarker = "&&";
-    const imageMarker = "i#";
+    const imageMarker = "§";
 
     try {
       while (!done) {
@@ -331,7 +331,7 @@ export class AiStreamingService {
       }
     }
 
-    // Image marker (i#)
+    // Image marker (§)
     if (imageMarker) {
       const combinedImage = lastImageChunk + token;
       if (combinedImage.includes(imageMarker)) {
