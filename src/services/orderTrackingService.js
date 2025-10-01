@@ -10,6 +10,13 @@ export class OrderTrackingService {
   }
 
   /**
+   * Check if this chatbot uses BevCo order tracking
+   */
+  isBevCoChatbot(chatbotId) {
+    return chatbotId === 'bevco' || chatbotId === 'bevcose';
+  }
+
+  /**
    * Extract order variables using apiVarFlow
    * Migrated from frontend API flow logic
    */
@@ -110,8 +117,8 @@ export class OrderTrackingService {
    */
   async handleOrderTracking(orderVariables, configuration) {
     try {
-      // Special handling for bevco - needs any 2 of 4 fields
-      if (configuration.chatbot_id === 'bevco') {
+      // Special handling for bevco/bevcose - needs any 2 of 4 fields
+      if (this.isBevCoChatbot(configuration.chatbot_id)) {
         const bevcoFields = ['order_number', 'email', 'phone', 'order_date'];
         const bevcoProvidedFields = bevcoFields.filter(field =>
           orderVariables[field] && orderVariables[field].trim() !== ""
@@ -358,9 +365,9 @@ export class OrderTrackingService {
       if (dillingChatbots.includes(configuration.chatbot_id)) {
         console.log("🚨 FLOW ROUTING: Using Commerce Tools backend for DILLING");
         return await this.handleCommerceToolsTracking(orderVariables, configuration);
-      } else if (configuration.chatbot_id === 'bevco') {
-        // Handle BevCo-specific order tracking
-        console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco");
+  } else if (this.isBevCoChatbot(configuration.chatbot_id)) {
+    // Handle BevCo-specific order tracking
+    console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco/bevcose");
 
         const { proxyBevcoOrderService } = await import('./bevcoService.js');
         
