@@ -232,33 +232,33 @@ export class OrderTrackingService {
   async handleShopifyTracking(orderVariables, configuration) {
     try {
       console.log("🚨 FLOW ROUTING: Making Shopify tracking request");
-
+      
       // Prepare request body for direct service call
       const shopifyRequestBody = {
-        chatbot_id: configuration.chatbot_id,
-        shopifyApiVersion: '2024-10'
-      };
-
+          chatbot_id: configuration.chatbot_id,
+          shopifyApiVersion: '2024-10'
+        };
+    
       // Add available order variables to Shopify request
       if (orderVariables.email) shopifyRequestBody.email = orderVariables.email;
       if (orderVariables.phone) shopifyRequestBody.phone = orderVariables.phone;
       if (orderVariables.order_number) shopifyRequestBody.order_number = orderVariables.order_number;
       if (orderVariables.name) shopifyRequestBody.name = orderVariables.name;
-
+      
       console.log("🚨 FLOW ROUTING: Shopify request body:", JSON.stringify(shopifyRequestBody, null, 2));
-
+      
       // Import and call Shopify service directly
       const { getShopifyOrdersService } = await import('./shopifyService.js');
       const shopifyData = await getShopifyOrdersService(shopifyRequestBody, this.pool);
 
-      console.log("🚨 FLOW ROUTING: Shopify API response received");
-
-      // Log filtering results if available
-      if (shopifyData.filtered_from && shopifyData.filtered_from > shopifyData.total_count) {
-        console.log(`🔍 SHOPIFY FILTERING: ${shopifyData.filtered_from - shopifyData.total_count} orders were filtered out. ${shopifyData.total_count} orders matched all criteria.`);
-      }
-
-      return shopifyData;
+        console.log("🚨 FLOW ROUTING: Shopify API response received");
+        
+        // Log filtering results if available
+        if (shopifyData.filtered_from && shopifyData.filtered_from > shopifyData.total_count) {
+          console.log(`🔍 SHOPIFY FILTERING: ${shopifyData.filtered_from - shopifyData.total_count} orders were filtered out. ${shopifyData.total_count} orders matched all criteria.`);
+        }
+        
+        return shopifyData;
     } catch (error) {
       console.error("🔑 SHOPIFY: Error in Shopify tracking:", error);
       return null;
@@ -271,11 +271,11 @@ export class OrderTrackingService {
   async handleMagentoTracking(orderVariables, configuration) {
     try {
       console.log("🚨 FLOW ROUTING: Making Magento tracking request");
-
+      
       // Prepare request body for direct service call
       const magentoRequestBody = {
-        chatbot_id: configuration.chatbot_id
-      };
+          chatbot_id: configuration.chatbot_id
+        };
 
       // Add available order variables to Magento request
       if (orderVariables.email) magentoRequestBody.email = orderVariables.email;
@@ -289,14 +289,14 @@ export class OrderTrackingService {
       const { searchMagentoOrdersService } = await import('./magentoService.js');
       const magentoData = await searchMagentoOrdersService(magentoRequestBody, this.pool);
 
-      console.log("🚨 FLOW ROUTING: ✅ Magento API response received");
+        console.log("🚨 FLOW ROUTING: ✅ Magento API response received");
+        
+        // Log filtering results if available
+        if (magentoData.filtered_from && magentoData.filtered_from > magentoData.total_count) {
+          console.log(`🔍 MAGENTO FILTERING: ${magentoData.filtered_from - magentoData.total_count} orders were filtered out. ${magentoData.total_count} orders matched all criteria.`);
+        }
 
-      // Log filtering results if available
-      if (magentoData.filtered_from && magentoData.filtered_from > magentoData.total_count) {
-        console.log(`🔍 MAGENTO FILTERING: ${magentoData.filtered_from - magentoData.total_count} orders were filtered out. ${magentoData.total_count} orders matched all criteria.`);
-      }
-
-      return magentoData;
+        return magentoData;
     } catch (error) {
       console.error("🔑 MAGENTO: Error in Magento tracking:", error);
       return null;
