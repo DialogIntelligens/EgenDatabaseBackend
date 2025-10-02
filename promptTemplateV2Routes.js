@@ -432,7 +432,11 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
     const { chatbot_id, flow_key, section_key, action, content, isModuleSection, moduleId, moduleName, originalModuleSectionKey, parentSectionKey } = req.body;
     if (!chatbot_id || !flow_key || !section_key || !action) return res.status(400).json({ error: 'chatbot_id, flow_key, section_key, action required' });
     if (!['add', 'modify', 'remove'].includes(action)) return res.status(400).json({ error: 'invalid action' });
+    
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+      
       // Store module metadata as JSON in the content field alongside the actual content
       let contentData = content;
       if (isModuleSection) {
@@ -446,17 +450,49 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
         });
       }
       
-      await pool.query(
-        `INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at)
-         VALUES ($1,$2,$3,$4,$5,NOW())
-         ON CONFLICT (chatbot_id, flow_key, section_key)
-         DO UPDATE SET action=$4, content=$5, updated_at=NOW()`,
-        [chatbot_id, flow_key, section_key, action, contentData],
+      // Check if this override already exists (for history tracking)
+      const existingResult = await client.query(
+        'SELECT id, action, content FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 AND section_key=$3',
+        [chatbot_id, flow_key, section_key]
       );
-      res.json({ message: 'saved' });
+      
+      // If updating an existing 'modify' action, save history before updating
+      if (existingResult.rows.length > 0 && existingResult.rows[0].action === 'modify') {
+        const existing = existingResult.rows[0];
+        try {
+          await client.query(
+            `INSERT INTO prompt_overrides_history (override_id, chatbot_id, flow_key, section_key, action, content, saved_at, saved_by)
+             VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)`,
+            [existing.id, chatbot_id, flow_key, section_key, existing.action, existing.content, req.user?.userId || null]
+          );
+        } catch (historyError) {
+          // If history table doesn't exist yet, log but continue with save
+          if (historyError.code === '42P01') { // Table doesn't exist
+            console.warn('⚠️  prompt_overrides_history table not found. Run SETUP_NOW.sql to enable version history.');
+          } else {
+            throw historyError; // Re-throw other errors
+          }
+        }
+      }
+      
+      // Insert or update the override
+      const result = await client.query(
+        `INSERT INTO prompt_overrides (chatbot_id, flow_key, section_key, action, content, updated_at, modified_by)
+         VALUES ($1,$2,$3,$4,$5,NOW(),$6)
+         ON CONFLICT (chatbot_id, flow_key, section_key)
+         DO UPDATE SET action=$4, content=$5, updated_at=NOW(), modified_by=$6
+         RETURNING id`,
+        [chatbot_id, flow_key, section_key, action, contentData, req.user?.userId || null],
+      );
+      
+      await client.query('COMMIT');
+      res.json({ message: 'saved', id: result.rows[0].id });
     } catch (err) {
+      await client.query('ROLLBACK');
       console.error('POST overrides error', err);
       res.status(500).json({ error: 'Server error', details: err.message });
+    } finally {
+      client.release();
     }
   });
 
@@ -467,6 +503,165 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
     } catch (err) {
       console.error('DELETE override error', err);
       res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  /* =============================
+     OVERRIDE HISTORY & REVERT
+  ============================= */
+  // Get history for a specific override (only for 'modify' actions)
+  router.get('/overrides/:chatbot_id/:flow_key/:section_key/history', async (req, res) => {
+    try {
+      const { chatbot_id, flow_key, section_key } = req.params;
+      
+      // Get current override to check if it's a 'modify' action
+      const currentResult = await pool.query(
+        'SELECT id, action FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 AND section_key=$3',
+        [chatbot_id, flow_key, section_key]
+      );
+      
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Override not found' });
+      }
+      
+      if (currentResult.rows[0].action !== 'modify') {
+        return res.json({ history: [], message: 'History only available for modify actions' });
+      }
+      
+      // Get history ordered by most recent first
+      const historyResult = await pool.query(
+        `SELECT id, content, saved_at, saved_by, action
+         FROM prompt_overrides_history
+         WHERE chatbot_id=$1 AND flow_key=$2 AND section_key=$3
+         ORDER BY saved_at DESC
+         LIMIT 10`,
+        [chatbot_id, flow_key, section_key]
+      );
+      
+      // Parse module metadata from stored content if present
+      const processedHistory = historyResult.rows.map(row => {
+        try {
+          const parsed = JSON.parse(row.content);
+          if (parsed.isModuleSection) {
+            return {
+              ...row,
+              content: parsed.content,
+              isModuleSection: parsed.isModuleSection,
+              moduleId: parsed.moduleId,
+              moduleName: parsed.moduleName
+            };
+          }
+        } catch (e) {
+          // Not JSON or doesn't contain module metadata
+        }
+        return row;
+      });
+      
+      res.json({ history: processedHistory });
+    } catch (err) {
+      console.error('GET override history error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    }
+  });
+
+  // Revert to a previous version from history
+  router.post('/overrides/revert', authenticateToken, async (req, res) => {
+    const { chatbot_id, flow_key, section_key } = req.body;
+    
+    if (!chatbot_id || !flow_key || section_key === undefined) {
+      return res.status(400).json({ error: 'chatbot_id, flow_key, and section_key required' });
+    }
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Get current override
+      const currentResult = await client.query(
+        'SELECT id, action, content FROM prompt_overrides WHERE chatbot_id=$1 AND flow_key=$2 AND section_key=$3',
+        [chatbot_id, flow_key, section_key]
+      );
+      
+      if (currentResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Override not found' });
+      }
+      
+      if (currentResult.rows[0].action !== 'modify') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Can only revert modify actions' });
+      }
+      
+      // Get the most recent history entry
+      const historyResult = await client.query(
+        `SELECT id, content, saved_at
+         FROM prompt_overrides_history
+         WHERE chatbot_id=$1 AND flow_key=$2 AND section_key=$3
+         ORDER BY saved_at DESC
+         LIMIT 1`,
+        [chatbot_id, flow_key, section_key]
+      );
+      
+      if (historyResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'No history found for this override' });
+      }
+      
+      const previousVersion = historyResult.rows[0];
+      const current = currentResult.rows[0];
+      
+      // Save current version to history before reverting
+      await client.query(
+        `INSERT INTO prompt_overrides_history (override_id, chatbot_id, flow_key, section_key, action, content, saved_at, saved_by)
+         VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)`,
+        [current.id, chatbot_id, flow_key, section_key, current.action, current.content, req.user?.userId || null]
+      );
+      
+      // Update override with previous content
+      await client.query(
+        `UPDATE prompt_overrides
+         SET content=$1, updated_at=NOW(), modified_by=$2
+         WHERE id=$3`,
+        [previousVersion.content, req.user?.userId || null, current.id]
+      );
+      
+      // Delete the history entry we just restored (since it's now current)
+      await client.query(
+        'DELETE FROM prompt_overrides_history WHERE id=$1',
+        [previousVersion.id]
+      );
+      
+      await client.query('COMMIT');
+      
+      // Parse and return the content
+      let restoredContent = previousVersion.content;
+      let metadata = {};
+      try {
+        const parsed = JSON.parse(previousVersion.content);
+        if (parsed.isModuleSection) {
+          restoredContent = parsed.content;
+          metadata = {
+            isModuleSection: parsed.isModuleSection,
+            moduleId: parsed.moduleId,
+            moduleName: parsed.moduleName
+          };
+        }
+      } catch (e) {
+        // Not JSON
+      }
+      
+      res.json({ 
+        message: 'Reverted to previous version', 
+        content: restoredContent,
+        ...metadata,
+        reverted_from: previousVersion.saved_at
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Revert override error', err);
+      res.status(500).json({ error: 'Server error', details: err.message });
+    } finally {
+      client.release();
     }
   });
 
