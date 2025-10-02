@@ -11,7 +11,7 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { registerFreshdeskRoutes } from './src/routes/freshdeskRoutes.js';
 import { createFreshdeskQueueService } from './src/services/freshdeskQueueService.js';
-import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes } from './pineconeChecker.js';
+import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, deleteSpecificVectors } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
@@ -20,7 +20,7 @@ import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
 import { getEmneAndScore } from './src/utils/mainUtils.js';
 import { registerBevcoRoutes } from './src/routes/bevcoRoutes.js';
 import { registerPineconeRoutes } from './src/routes/pineconeRoutes.js';
-import { getPineconeApiKeyForIndex, initializePineconeClient } from './src/utils/pineconeUtils.js';
+import { getPineconeApiKeyForIndex, initializePineconeClient, generateEmbedding } from './src/utils/pineconeUtils.js';
 import emailjs from '@emailjs/nodejs';
 import { registerGdprRoutes } from './src/routes/gdprRoutes.js';
 import { ensureGdprSettingsTable, scheduleGdprCleanup } from './src/utils/gdprUtils.js';
@@ -284,6 +284,109 @@ app.post('/check-missing-chunks-all', authenticateToken, async (req, res) => {
     console.error('Error checking missing chunks for all indexes:', error);
     res.status(500).json({ 
       error: 'Failed to check missing chunks for all indexes', 
+      details: error.message 
+    });
+  }
+});
+
+// Endpoint to search vectors by natural language query using embeddings
+app.post('/search-vectors-by-query', authenticateToken, async (req, res) => {
+  const { query, userId, indexName, namespace, topK = 5 } = req.body;
+  const requestingUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
+
+  // Validate required parameters
+  if (!query || !indexName || !namespace) {
+    return res.status(400).json({ error: 'query, indexName, and namespace are required' });
+  }
+
+  try {
+    // Determine which user's data to search
+    let targetUserId = requestingUserId;
+    if (isAdmin && userId) {
+      targetUserId = userId;
+    }
+
+    console.log(`Searching vectors for user ${targetUserId}, query: "${query}", index: ${indexName}, namespace: ${namespace}`);
+    
+    // Generate embedding for the query
+    console.log('Generating embedding for query...');
+    const queryEmbedding = await generateEmbedding(query);
+    console.log('Embedding generated successfully');
+    
+    // Get Pinecone API key
+    console.log('Getting Pinecone API key...');
+    const pineconeApiKey = await getPineconeApiKeyForIndex(pool, targetUserId, indexName, namespace);
+    
+    // Initialize Pinecone client and query
+    console.log('Initializing Pinecone client...');
+    const pineconeClient = initializePineconeClient(pineconeApiKey);
+    const index = pineconeClient.index(namespace);
+    
+    // Query Pinecone for similar vectors
+    console.log(`Querying Pinecone for top ${topK} results...`);
+    const queryResponse = await index.query({
+      vector: queryEmbedding,
+      topK: topK,
+      includeMetadata: true
+    });
+    
+    console.log(`Found ${queryResponse.matches?.length || 0} results`);
+    
+    // Format results
+    const results = (queryResponse.matches || []).map(match => ({
+      vectorId: match.id,
+      score: match.score,
+      title: match.metadata?.title || 'No title',
+      text: match.metadata?.text || 'No text',
+      userId: match.metadata?.userId || match.metadata?.user_id,
+      group: match.metadata?.group || 'No group',
+      indexName: indexName,
+      namespace: namespace,
+      metadata: match.metadata
+    }));
+    
+    res.json({
+      query: query,
+      results: results,
+      summary: {
+        totalResults: results.length,
+        indexName: indexName,
+        namespace: namespace
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error searching vectors by query:', error);
+    res.status(500).json({ 
+      error: 'Failed to search vectors', 
+      details: error.message 
+    });
+  }
+});
+
+// Endpoint to delete specific vectors from Pinecone
+app.post('/delete-specific-vectors', authenticateToken, async (req, res) => {
+  const { vectorsToDelete } = req.body;
+  const requestingUserId = req.user.userId;
+  const isAdmin = req.user.isAdmin === true;
+
+  // Validate required parameters
+  if (!vectorsToDelete || !Array.isArray(vectorsToDelete) || vectorsToDelete.length === 0) {
+    return res.status(400).json({ error: 'vectorsToDelete array is required and must not be empty' });
+  }
+
+  try {
+    console.log(`User ${requestingUserId} requesting deletion of ${vectorsToDelete.length} vectors`);
+    
+    const result = await deleteSpecificVectors(requestingUserId, vectorsToDelete, isAdmin);
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Error deleting specific vectors:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete vectors', 
       details: error.message 
     });
   }
