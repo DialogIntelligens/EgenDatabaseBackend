@@ -1292,6 +1292,57 @@ registerMonitoringRoutes(app, pool, authenticateToken);
 registerPineconeRoutes(app, pool, authenticateToken);
 
 /* ================================
+   OpenAI Merge Suggestion Endpoint
+================================ */
+app.post('/api/openai/merge-suggestion', authenticateToken, async (req, res) => {
+    try {
+        const { prompt, items } = req.body;
+        
+        if (!prompt || !items || items.length < 1) {
+            return res.status(400).json({ error: 'Invalid request. Prompt and at least 1 item is required.' });
+        }
+
+        // Import OpenAI
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
+        });
+
+        // Call OpenAI
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a helpful assistant that analyzes duplicate content and suggests how to merge them into a single, improved version. Provide a clear merged version that combines the best parts of both entries.'
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ],
+            temperature: 0.7,
+            max_tokens: 2000
+        });
+
+        const suggestion = completion.choices[0]?.message?.content;
+
+        if (!suggestion) {
+            return res.status(500).json({ error: 'No response from OpenAI' });
+        }
+
+        res.json({ suggestion });
+
+    } catch (error) {
+        console.error('Error generating merge suggestion:', error);
+        res.status(500).json({ 
+            error: 'Failed to generate merge suggestion',
+            details: error.message 
+        });
+    }
+});
+
+/* ================================
    GDPR Compliance Functions
 ================================ */
 
