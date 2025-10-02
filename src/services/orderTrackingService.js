@@ -10,6 +10,13 @@ export class OrderTrackingService {
   }
 
   /**
+   * Check if this chatbot uses BevCo order tracking
+   */
+  isBevCoChatbot(chatbotId) {
+    return chatbotId === 'bevco' || chatbotId === 'bevcose';
+  }
+
+  /**
    * Extract order variables using apiVarFlow
    * Migrated from frontend API flow logic
    */
@@ -110,8 +117,8 @@ export class OrderTrackingService {
    */
   async handleOrderTracking(orderVariables, configuration) {
     try {
-      // Special handling for bevco - needs any 2 of 4 fields
-      if (configuration.chatbot_id === 'bevco') {
+      // Special handling for bevco/bevcose - needs any 2 of 4 fields
+      if (this.isBevCoChatbot(configuration.chatbot_id)) {
         const bevcoFields = ['order_number', 'email', 'phone', 'order_date'];
         const bevcoProvidedFields = bevcoFields.filter(field =>
           orderVariables[field] && orderVariables[field].trim() !== ""
@@ -225,33 +232,33 @@ export class OrderTrackingService {
   async handleShopifyTracking(orderVariables, configuration) {
     try {
       console.log("🚨 FLOW ROUTING: Making Shopify tracking request");
-
+      
       // Prepare request body for direct service call
       const shopifyRequestBody = {
-        chatbot_id: configuration.chatbot_id,
-        shopifyApiVersion: '2024-10'
-      };
-
+          chatbot_id: configuration.chatbot_id,
+          shopifyApiVersion: '2024-10'
+        };
+    
       // Add available order variables to Shopify request
       if (orderVariables.email) shopifyRequestBody.email = orderVariables.email;
       if (orderVariables.phone) shopifyRequestBody.phone = orderVariables.phone;
       if (orderVariables.order_number) shopifyRequestBody.order_number = orderVariables.order_number;
       if (orderVariables.name) shopifyRequestBody.name = orderVariables.name;
-
+      
       console.log("🚨 FLOW ROUTING: Shopify request body:", JSON.stringify(shopifyRequestBody, null, 2));
-
+      
       // Import and call Shopify service directly
       const { getShopifyOrdersService } = await import('./shopifyService.js');
       const shopifyData = await getShopifyOrdersService(shopifyRequestBody, this.pool);
 
-      console.log("🚨 FLOW ROUTING: Shopify API response received");
-
-      // Log filtering results if available
-      if (shopifyData.filtered_from && shopifyData.filtered_from > shopifyData.total_count) {
-        console.log(`🔍 SHOPIFY FILTERING: ${shopifyData.filtered_from - shopifyData.total_count} orders were filtered out. ${shopifyData.total_count} orders matched all criteria.`);
-      }
-
-      return shopifyData;
+        console.log("🚨 FLOW ROUTING: Shopify API response received");
+        
+        // Log filtering results if available
+        if (shopifyData.filtered_from && shopifyData.filtered_from > shopifyData.total_count) {
+          console.log(`🔍 SHOPIFY FILTERING: ${shopifyData.filtered_from - shopifyData.total_count} orders were filtered out. ${shopifyData.total_count} orders matched all criteria.`);
+        }
+        
+        return shopifyData;
     } catch (error) {
       console.error("🔑 SHOPIFY: Error in Shopify tracking:", error);
       return null;
@@ -264,11 +271,11 @@ export class OrderTrackingService {
   async handleMagentoTracking(orderVariables, configuration) {
     try {
       console.log("🚨 FLOW ROUTING: Making Magento tracking request");
-
+      
       // Prepare request body for direct service call
       const magentoRequestBody = {
-        chatbot_id: configuration.chatbot_id
-      };
+          chatbot_id: configuration.chatbot_id
+        };
 
       // Add available order variables to Magento request
       if (orderVariables.email) magentoRequestBody.email = orderVariables.email;
@@ -282,14 +289,14 @@ export class OrderTrackingService {
       const { searchMagentoOrdersService } = await import('./magentoService.js');
       const magentoData = await searchMagentoOrdersService(magentoRequestBody, this.pool);
 
-      console.log("🚨 FLOW ROUTING: ✅ Magento API response received");
+        console.log("🚨 FLOW ROUTING: ✅ Magento API response received");
+        
+        // Log filtering results if available
+        if (magentoData.filtered_from && magentoData.filtered_from > magentoData.total_count) {
+          console.log(`🔍 MAGENTO FILTERING: ${magentoData.filtered_from - magentoData.total_count} orders were filtered out. ${magentoData.total_count} orders matched all criteria.`);
+        }
 
-      // Log filtering results if available
-      if (magentoData.filtered_from && magentoData.filtered_from > magentoData.total_count) {
-        console.log(`🔍 MAGENTO FILTERING: ${magentoData.filtered_from - magentoData.total_count} orders were filtered out. ${magentoData.total_count} orders matched all criteria.`);
-      }
-
-      return magentoData;
+        return magentoData;
     } catch (error) {
       console.error("🔑 MAGENTO: Error in Magento tracking:", error);
       return null;
@@ -358,9 +365,9 @@ export class OrderTrackingService {
       if (dillingChatbots.includes(configuration.chatbot_id)) {
         console.log("🚨 FLOW ROUTING: Using Commerce Tools backend for DILLING");
         return await this.handleCommerceToolsTracking(orderVariables, configuration);
-      } else if (configuration.chatbot_id === 'bevco') {
-        // Handle BevCo-specific order tracking
-        console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco");
+  } else if (this.isBevCoChatbot(configuration.chatbot_id)) {
+    // Handle BevCo-specific order tracking
+    console.log("🚨 FLOW ROUTING: Using BevCo backend for bevco/bevcose");
 
         const { proxyBevcoOrderService } = await import('./bevcoService.js');
         

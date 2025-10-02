@@ -54,10 +54,19 @@ export class ConversationProcessingService {
 
       // Step 1: Process image if provided
       let imageDescription = '';
-      if (image_data && (configuration.imageEnabled || configuration.imageAPI)) {
+      if (image_data && (configuration.image_enabled || configuration.imageEnabled || configuration.imageAPI)) {
         perfTracker.startPhase('image_processing');
+        console.log('📷 Backend: Processing image for description generation');
         imageDescription = await this.imageProcessing.processImage(image_data, message_text || '', configuration);
         perfTracker.endPhase('image_processing', { has_image: true, description_length: imageDescription.length });
+        console.log('📷 Backend: Image processed, description length:', imageDescription.length);
+      } else {
+        console.log('📷 Backend: Skipping image processing - config:', {
+          image_enabled: configuration.image_enabled,
+          imageEnabled: configuration.imageEnabled,
+          imageAPI: configuration.imageAPI,
+          has_image_data: !!image_data
+        });
       }
 
       // Step 2: Create session for tracking
@@ -532,6 +541,13 @@ export class ConversationProcessingService {
    */
   getFlowKeyFromQuestionType(questionType, configuration) {
     const { flow2Key, flow3Key, flow4Key, apiFlowKey, metaDataKey, metaData2Key } = configuration;
+
+    // If questionType is already a flow key (like 'flow2', 'flow3'), return it directly
+    // This happens when we've already converted from metadata flow result to actual flow
+    if (['flow2', 'flow3', 'flow4', 'apiflow', 'metadata', 'metadata2', 'main'].includes(questionType)) {
+      console.log(`🔧 Backend: QuestionType '${questionType}' is already a flow key, returning as-is`);
+      return questionType;
+    }
 
     // Map questionType to the correct flow key for template lookup
     if (questionType === flow2Key) return 'flow2';

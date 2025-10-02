@@ -164,7 +164,7 @@ export class AiStreamingService {
 
     const freshMarker = "$$";
     const humanAgentMarker = "&&";
-    const imageMarker = "i#";
+    const imageMarker = "§";
 
     try {
       while (!done) {
@@ -331,13 +331,17 @@ export class AiStreamingService {
       }
     }
 
-    // Image marker (i#)
+    // Image marker (§)
     if (imageMarker) {
       const combinedImage = lastImageChunk + token;
       if (combinedImage.includes(imageMarker)) {
+        console.log(`🖼️ Backend: Image marker "${imageMarker}" detected in: "${combinedImage}"`);
         detectedMarkers.imageUpload = true;
         tokenWithMarkers = imageMarker;
-        displayToken = combinedImage.replaceAll(imageMarker, "").slice(lastImageChunk.length);
+        const beforeReplace = combinedImage;
+        const afterReplace = combinedImage.replaceAll(imageMarker, "");
+        displayToken = afterReplace.slice(lastImageChunk.length);
+        console.log(`🖼️ Backend: Image marker processing - before: "${beforeReplace}", after: "${afterReplace}", displayToken: "${displayToken}"`);
         lastImageChunk = displayToken.length >= imageMarker.length ? displayToken.slice(-imageMarker.length) : displayToken;
       } else {
         lastImageChunk = token.length >= imageMarker.length ? token.slice(-imageMarker.length) : token;
@@ -371,6 +375,10 @@ export class AiStreamingService {
     return {
       displayToken,
       markers: detectedMarkers,
+      _debug: {
+        imageMarkerDetected: detectedMarkers.imageUpload,
+        markersDetected: Object.keys(detectedMarkers)
+      },
       lastChunk,
       lastFreshChunk,
       lastHumanAgentChunk,
