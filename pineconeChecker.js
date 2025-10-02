@@ -517,32 +517,19 @@ export async function checkMissingChunks(userId, indexName, namespace) {
         const allPineconeVectors = await getAllVectorsFromIndex(pineconeClient, indexName, namespace, debugInfo);
         debugInfo.push(`✅ Successfully fetched ${allPineconeVectors.length} vectors from Pinecone`);
         
-        // Filter out scraper chunks - scraper chunks have non-empty full_url, fake_urls, or url metadata
-        debugInfo.push('🔍 Filtering out scraper chunks (vectors with non-empty URL metadata)...');
+        // Filter out scraper chunks - only keep vectors with userId (non-scraper chunks)
+        debugInfo.push('🔍 Filtering out scraper chunks (keeping only vectors with userId)...');
         const nonScraperVectors = allPineconeVectors.filter(vector => {
-          const metadata = vector.metadata || {};
-          
-          // Helper function to check if a field has actual content (not undefined, null, or empty string)
-          const hasContent = (field) => {
-            return field !== undefined && field !== null && field !== '';
-          };
-          
-          const hasScraperUrl = (
-            hasContent(metadata.full_url) ||
-            hasContent(metadata.fake_urls) ||
-            hasContent(metadata.url)
-          );
-          
-          if (hasScraperUrl) {
-            debugInfo.push(`🚮 Filtered out scraper chunk: ${vector.id} (has URL metadata: full_url="${metadata.full_url || ''}", fake_urls="${metadata.fake_urls || ''}", url="${metadata.url || ''}")`);
+          const hasUserId = vector.metadata && vector.metadata.userId;
+          if (!hasUserId) {
+            debugInfo.push(`🚮 Filtered out scraper chunk: ${vector.id} (no userId)`);
           }
-          
-          return !hasScraperUrl;
+          return hasUserId;
         });
         
         debugInfo.push(`📊 Found ${allPineconeVectors.length} total vectors in Pinecone`);
-        debugInfo.push(`📊 Found ${nonScraperVectors.length} non-scraper vectors (without URL metadata)`);
-        debugInfo.push(`📊 Found ${allPineconeVectors.length - nonScraperVectors.length} scraper vectors (with URL metadata) - these will be ignored`);
+        debugInfo.push(`📊 Found ${nonScraperVectors.length} non-scraper vectors (with userId)`);
+        debugInfo.push(`📊 Found ${allPineconeVectors.length - nonScraperVectors.length} scraper vectors (without userId) - these will be ignored`);
     
     // Get all chunks from our database for this index/namespace
     debugInfo.push('🗄️ Querying database for existing chunks...');
@@ -582,11 +569,11 @@ export async function checkMissingChunks(userId, indexName, namespace) {
         vectorId: vector.id,
         title: vector.metadata.title || 'No title',
         text: vector.metadata.text ? (vector.metadata.text.substring(0, 200) + '...') : 'No text',
-        userId: vector.metadata.userId || vector.metadata.user_id || 'No userId',
+        userId: vector.metadata.userId,
         group: vector.metadata.group || 'No group',
         metadata: vector.metadata
       })),
-                note: `This check finds non-scraper vectors (without URL metadata) that exist in Pinecone but are missing from your database. Scraper vectors (with non-empty full_url, fake_urls, or url metadata) are automatically ignored.`,
+                note: `This check finds non-scraper vectors (with userId) that exist in Pinecone but are missing from your database. Scraper vectors (without userId) are automatically ignored.`,
       debugInfo: debugInfo
     };
     
