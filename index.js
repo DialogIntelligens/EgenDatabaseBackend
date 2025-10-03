@@ -1436,10 +1436,111 @@ app.post('/api/openai/merge-suggestion', authenticateToken, async (req, res) => 
 
         res.json({ suggestion });
 
-    } catch (error) {
+  } catch (error) {
         console.error('Error generating merge suggestion:', error);
         res.status(500).json({ 
             error: 'Failed to generate merge suggestion',
+            details: error.message 
+        });
+    }
+});
+
+/* ================================
+   OpenAI Semantic Duplicate Detection
+================================ */
+app.post('/api/openai/detect-semantic-duplicates', authenticateToken, async (req, res) => {
+    try {
+        const { items } = req.body;
+        
+        if (!items || items.length < 2) {
+            return res.json({ duplicates: [] });
+        }
+
+        // Import OpenAI
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
+        });
+
+        // Prepare items for analysis (limit to 50 items to avoid token limits)
+        const itemsToAnalyze = items.slice(0, 50).map((item, idx) => ({
+            index: idx,
+            id: item.id,
+            title: item.title || '',
+            content: item.text || ''
+        }));
+
+        const prompt = `You are analyzing knowledge base entries to find semantic duplicates - entries that convey the same or very similar meaning even if worded differently.
+
+Analyze these entries and identify pairs that are semantic duplicates:
+
+${itemsToAnalyze.map((item, i) => `
+Entry ${i}:
+ID: ${item.id}
+Title: ${item.title}
+Content: ${item.content}
+`).join('\n')}
+
+Return ONLY a JSON array of duplicate pairs. Each pair should include:
+- The indices of the two duplicate entries
+- A confidence score (0-1)
+- A brief reason
+
+Format:
+[
+  {
+    "index1": 0,
+    "index2": 3,
+    "confidence": 0.95,
+    "reason": "Both explain order tracking with nearly identical information"
+  }
+]
+
+Only include pairs with confidence > 0.75. If no duplicates found, return empty array [].`;
+
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a semantic similarity expert. You identify when two pieces of text convey the same meaning, even with different wording.'
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ],
+            temperature: 0.3,
+            max_tokens: 3000
+        });
+
+        const response = completion.choices[0]?.message?.content || '[]';
+        
+        // Parse the response
+        let duplicatePairs = [];
+        try {
+            const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+            duplicatePairs = JSON.parse(cleaned);
+        } catch (e) {
+            console.warn('Failed to parse semantic duplicate response:', e);
+        }
+
+        // Map back to original items
+        const duplicates = duplicatePairs.map(pair => ({
+            items: [
+                itemsToAnalyze[pair.index1],
+                itemsToAnalyze[pair.index2]
+            ],
+            confidence: pair.confidence,
+            reason: pair.reason
+        }));
+
+        res.json({ duplicates });
+
+    } catch (error) {
+        console.error('Error detecting semantic duplicates:', error);
+        res.status(500).json({ 
+            error: 'Failed to detect semantic duplicates',
             details: error.message 
         });
     }
