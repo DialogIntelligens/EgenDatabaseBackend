@@ -507,6 +507,15 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       );
       
       await client.query('COMMIT');
+      
+      // Invalidate prompt cache for this specific flow
+      cacheService.delete(`prompt:${chatbot_id}:${flow_key}`);
+      console.log(`🧹 Cache: Cleared prompt cache for ${chatbot_id}:${flow_key} after override update`);
+      
+      // Also invalidate config cache since prompt flags depend on overrides
+      cacheService.delete(`config:${chatbot_id}`);
+      console.log(`🧹 Cache: Cleared config cache for ${chatbot_id} after override update`);
+      
       res.json({ message: 'saved', id: result.rows[0].id });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -519,7 +528,19 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
 
   router.delete('/overrides/:id', authenticateToken, async (req, res) => {
     try {
+      // Get chatbot_id and flow_key before deleting for cache invalidation
+      const override = await pool.query('SELECT chatbot_id, flow_key FROM prompt_overrides WHERE id=$1', [req.params.id]);
+      
       await pool.query('DELETE FROM prompt_overrides WHERE id=$1', [req.params.id]);
+      
+      // Invalidate cache if we found the override
+      if (override.rows.length > 0) {
+        const { chatbot_id, flow_key } = override.rows[0];
+        cacheService.delete(`prompt:${chatbot_id}:${flow_key}`);
+        cacheService.delete(`config:${chatbot_id}`);
+        console.log(`🧹 Cache: Cleared caches for ${chatbot_id}:${flow_key} after override deletion`);
+      }
+      
       res.json({ message: 'deleted' });
     } catch (err) {
       console.error('DELETE override error', err);
@@ -653,6 +674,11 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       );
       
       await client.query('COMMIT');
+      
+      // Invalidate cache after reverting override
+      cacheService.delete(`prompt:${chatbot_id}:${flow_key}`);
+      cacheService.delete(`config:${chatbot_id}`);
+      console.log(`🧹 Cache: Cleared caches for ${chatbot_id}:${flow_key} after override revert`);
       
       // Parse and return the content
       let restoredContent = previousVersion.content;

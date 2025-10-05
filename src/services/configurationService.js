@@ -63,8 +63,8 @@ export class ConfigurationService {
         // Add flow keys from database configuration
         ...this.extractFlowKeys(basicSettings),
         
-        // Add prompt enabled flags
-        ...this.extractPromptFlags(templateAssignments)
+        // Add prompt enabled flags (checks both template assignments AND prompt overrides)
+        ...this.extractPromptFlags(templateAssignments, promptOverrides)
       };
 
       console.log('🔧 Configuration loaded with keys:', Object.keys(configuration));
@@ -356,13 +356,37 @@ export class ConfigurationService {
   }
 
   /**
-   * Extract prompt enabled flags from template assignments
+   * Extract prompt enabled flags from template assignments and prompt overrides
+   * A flow has a prompt if it has either a template assignment OR prompt overrides
    */
-  extractPromptFlags(templateAssignments) {
+  extractPromptFlags(templateAssignments, promptOverrides) {
     const promptFlags = {};
     
-    // Enable prompts for flows that have template assignments
-    Object.keys(templateAssignments).forEach(flowKey => {
+    // Helper function to check if a flow has any configuration (template or overrides)
+    const hasFlowConfiguration = (flowKey) => {
+      const hasTemplate = templateAssignments[flowKey] !== undefined;
+      const hasOverrides = promptOverrides && 
+                          promptOverrides[flowKey] && 
+                          Object.keys(promptOverrides[flowKey]).length > 0;
+      return hasTemplate || hasOverrides;
+    };
+    
+    // Enable prompts for flows that have template assignments OR prompt overrides
+    const allFlowKeys = new Set([
+      ...Object.keys(templateAssignments),
+      ...(promptOverrides ? Object.keys(promptOverrides) : [])
+    ]);
+    
+    allFlowKeys.forEach(flowKey => {
+      const hasTemplate = templateAssignments[flowKey] !== undefined;
+      const hasOverrides = promptOverrides && 
+                          promptOverrides[flowKey] && 
+                          Object.keys(promptOverrides[flowKey]).length > 0;
+      
+      if (!hasFlowConfiguration(flowKey)) return;
+      
+      console.log(`🔧 Flow '${flowKey}' enabled: template=${hasTemplate}, overrides=${hasOverrides}`);
+      
       switch (flowKey) {
         case 'main':
           promptFlags.mainPromptEnabled = true;

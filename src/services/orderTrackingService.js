@@ -24,19 +24,30 @@ export class OrderTrackingService {
     try {
       console.log("🚨 FLOW ROUTING: Entering apiVarFlow with template-based system");
       
-      // Check if apiVarFlow template exists
+      // Check if apiVarFlow has either template assignment OR prompt overrides
       try {
-        const templateExists = await this.pool.query(
-          'SELECT template_id FROM flow_template_assignments WHERE chatbot_id = $1 AND flow_key = $2',
-          [configuration.chatbot_id, 'apivarflow']
-        );
+        const [templateResult, overridesResult] = await Promise.all([
+          this.pool.query(
+            'SELECT template_id FROM flow_template_assignments WHERE chatbot_id = $1 AND flow_key = $2',
+            [configuration.chatbot_id, 'apivarflow']
+          ),
+          this.pool.query(
+            'SELECT COUNT(*) as count FROM prompt_overrides WHERE chatbot_id = $1 AND flow_key = $2',
+            [configuration.chatbot_id, 'apivarflow']
+          )
+        ]);
 
-        if (templateExists.rows.length === 0) {
-        console.log("🚨 FLOW ROUTING: No apiVarFlow template configured, skipping variable extraction");
+        const hasTemplate = templateResult.rows.length > 0;
+        const hasOverrides = parseInt(overridesResult.rows[0]?.count || 0) > 0;
+        
+        if (!hasTemplate && !hasOverrides) {
+          console.log("🚨 FLOW ROUTING: No apiVarFlow configuration (template or overrides), skipping variable extraction");
           return {};
         }
+        
+        console.log(`🚨 FLOW ROUTING: apiVarFlow configuration found - template: ${hasTemplate}, overrides: ${hasOverrides}`);
       } catch (error) {
-        console.log("🚨 FLOW ROUTING: Error checking apiVarFlow template, skipping variable extraction:", error.message);
+        console.log("🚨 FLOW ROUTING: Error checking apiVarFlow configuration, skipping variable extraction:", error.message);
         return {};
       }
 
