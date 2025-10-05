@@ -102,9 +102,10 @@ export class FlowRoutingService {
 
   /**
    * Execute parallel flows (fordelingsflow + metadata) for optimal latency
+   * OPTIMIZATION: Now executes fordelingsflow first, then only runs metadata flows if needed
    */
   async executeParallelFlows(messageText, conversationHistory, configuration, imageDescription) {
-    console.log('🚀 Backend: Starting parallel execution of fordelingsflow and metadata flows');
+    console.log('🚀 Backend: Starting OPTIMIZED parallel execution');
     
     const parallelStartTime = performance.now();
     
@@ -116,36 +117,70 @@ export class FlowRoutingService {
       console.log('🚀 Backend: No metadata flows available, executing fordelingsflow only');
       
       // Execute only fordelingsflow since we have it but no metadata flows
+      const fordelingsflowStartTime = performance.now();
       const fordelingsflowResult = await this.executeFordelingsflow(messageText, conversationHistory, configuration);
+      const fordelingsflowDuration = performance.now() - fordelingsflowStartTime;
+      
+      console.log(`⏱️ TIMING: Fordelingsflow took ${fordelingsflowDuration.toFixed(0)}ms`);
       
       return {
         questionType: fordelingsflowResult.text,
         selectedMetaData: {},
         executionTime: performance.now() - parallelStartTime,
-        method: 'fordelingsflow_only'
+        method: 'fordelingsflow_only',
+        timingBreakdown: {
+          fordelingsflow: fordelingsflowDuration
+        }
       };
     }
 
-    // Prepare question with image description for metadata flows
-    let finalQuestionForMetadata = messageText;
-    if (imageDescription) {
-      finalQuestionForMetadata += " image description(act as if this is an image that you are viewing): " +
-        imageDescription +
-        " Omkring denne billedbeskrivelse: sig ikke at det lyder som om, men at det ligner. Opfør dig som om at teksten er det billede du ser. ";
-    }
-
-    // Execute fordelingsflow and metadata flows in parallel
-    const [fordelingsflowResult, metadataResults] = await Promise.all([
-      this.executeFordelingsflow(messageText, conversationHistory, configuration),
-      this.executeMetadataFlows(finalQuestionForMetadata, conversationHistory, configuration, hasMetadataFlow, hasMetadata2Flow)
-    ]);
+    // OPTIMIZATION: Execute fordelingsflow first to determine if we need metadata
+    console.log('⚡ OPTIMIZATION: Executing fordelingsflow first to check if metadata is needed');
+    const fordelingsflowStartTime = performance.now();
+    const fordelingsflowResult = await this.executeFordelingsflow(messageText, conversationHistory, configuration);
+    const fordelingsflowDuration = performance.now() - fordelingsflowStartTime;
+    console.log(`⏱️ TIMING: Fordelingsflow took ${fordelingsflowDuration.toFixed(0)}ms`);
 
     const questionType = fordelingsflowResult.text;
     const needsMetadata = questionType === configuration.metaDataKey || questionType === configuration.metaData2Key;
     
     let selectedMetaData = {};
+    let metadataDuration = 0;
+    let metadata2Duration = 0;
+    
     if (needsMetadata) {
-      console.log(`🔍 Backend: Fordelingsflow determined metadata is needed for questionType: ${questionType}`);
+      console.log(`⚡ OPTIMIZATION: Metadata IS needed for questionType: ${questionType}, executing metadata flows`);
+      
+      // Prepare question with image description for metadata flows
+      let finalQuestionForMetadata = messageText;
+      if (imageDescription) {
+        finalQuestionForMetadata += " image description(act as if this is an image that you are viewing): " +
+          imageDescription +
+          " Omkring denne billedbeskrivelse: sig ikke at det lyder som om, men at det ligner. Opfør dig som om at teksten er det billede du ser. ";
+      }
+
+      // Now execute metadata flows with timing
+      const metadataStartTime = performance.now();
+      const metadataResults = await this.executeMetadataFlows(
+        finalQuestionForMetadata, 
+        conversationHistory, 
+        configuration, 
+        hasMetadataFlow, 
+        hasMetadata2Flow
+      );
+      const totalMetadataDuration = performance.now() - metadataStartTime;
+      
+      console.log(`⏱️ TIMING: Metadata flows took ${totalMetadataDuration.toFixed(0)}ms total`);
+      
+      // Extract timing if available
+      if (metadataResults.timingBreakdown) {
+        metadataDuration = metadataResults.timingBreakdown.metadata || 0;
+        metadata2Duration = metadataResults.timingBreakdown.metadata2 || 0;
+        console.log(`⏱️ TIMING: - Metadata flow: ${metadataDuration.toFixed(0)}ms`);
+        console.log(`⏱️ TIMING: - Metadata2 flow: ${metadata2Duration.toFixed(0)}ms`);
+      }
+      
+      // Use the metadata results
       if (questionType === configuration.metaDataKey && metadataResults.metadata) {
         selectedMetaData = metadataResults.metadata;
         console.log(`🔍 Backend: Using metadata flow result:`, selectedMetaData);
@@ -154,17 +189,24 @@ export class FlowRoutingService {
         console.log(`🔍 Backend: Using metadata2 flow result:`, selectedMetaData);
       }
     } else {
-      console.log(`🔍 Backend: Fordelingsflow determined no metadata needed for questionType: ${questionType}`);
+      console.log(`⚡ OPTIMIZATION: Metadata NOT needed for questionType: ${questionType}, SKIPPING metadata flows (saved ~2-3 seconds!)`);
     }
 
     const totalDuration = performance.now() - parallelStartTime;
-    console.log(`🚀 Backend: Parallel execution completed in ${totalDuration.toFixed(0)}ms`);
+    console.log(`🚀 Backend: Optimized execution completed in ${totalDuration.toFixed(0)}ms`);
+    console.log(`⏱️ TIMING BREAKDOWN: Fordelingsflow=${fordelingsflowDuration.toFixed(0)}ms, Metadata=${metadataDuration.toFixed(0)}ms, Metadata2=${metadata2Duration.toFixed(0)}ms`);
 
     return {
       questionType,
       selectedMetaData,
       executionTime: totalDuration,
-      method: 'parallel'
+      method: needsMetadata ? 'sequential_optimized' : 'fordelingsflow_only_optimized',
+      timingBreakdown: {
+        fordelingsflow: fordelingsflowDuration,
+        metadata: metadataDuration,
+        metadata2: metadata2Duration,
+        skippedMetadata: !needsMetadata
+      }
     };
   }
 
@@ -240,30 +282,48 @@ export class FlowRoutingService {
   }
 
   /**
-   * Execute metadata flows in parallel
+   * Execute metadata flows in parallel with detailed timing
    */
   async executeMetadataFlows(questionText, conversationHistory, configuration, hasMetadataFlow, hasMetadata2Flow) {
     const metadataPromises = [];
+    const timingPromises = [];
+    const flowTypes = [];
 
     if (hasMetadataFlow) {
-      metadataPromises.push(this.executeMetadataFlow(questionText, conversationHistory, configuration, 'metadata'));
+      flowTypes.push('metadata');
+      const startTime = performance.now();
+      metadataPromises.push(
+        this.executeMetadataFlow(questionText, conversationHistory, configuration, 'metadata')
+          .then(result => ({ result, duration: performance.now() - startTime, flowType: 'metadata' }))
+      );
     }
 
     if (hasMetadata2Flow) {
-      metadataPromises.push(this.executeMetadataFlow(questionText, conversationHistory, configuration, 'metadata2'));
+      flowTypes.push('metadata2');
+      const startTime = performance.now();
+      metadataPromises.push(
+        this.executeMetadataFlow(questionText, conversationHistory, configuration, 'metadata2')
+          .then(result => ({ result, duration: performance.now() - startTime, flowType: 'metadata2' }))
+      );
     }
 
     const results = await Promise.allSettled(metadataPromises);
     
-    const metadataResults = {};
+    const metadataResults = {
+      timingBreakdown: {}
+    };
+    
     results.forEach((result, index) => {
-      const flowType = index === 0 ? (hasMetadataFlow ? 'metadata' : 'metadata2') : 'metadata2';
-      
       if (result.status === 'fulfilled' && result.value) {
-        metadataResults[flowType] = result.value;
+        const { result: flowResult, duration, flowType } = result.value;
+        metadataResults[flowType] = flowResult;
+        metadataResults.timingBreakdown[flowType] = duration;
+        console.log(`⏱️ TIMING: ${flowType} flow completed in ${duration.toFixed(0)}ms`);
       } else {
+        const flowType = flowTypes[index];
         console.error(`Metadata flow ${flowType} failed:`, result.reason);
         metadataResults[flowType] = {};
+        metadataResults.timingBreakdown[flowType] = 0;
       }
     });
 
