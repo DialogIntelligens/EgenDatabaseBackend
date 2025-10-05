@@ -104,12 +104,10 @@ export function registerMonitoringRoutes(app, pool, authenticateToken) {
    */
   app.get('/api/monitoring/cache-stats', async (req, res) => {
     try {
-      const { configurationCache, promptCache, templateCache } = await import('../utils/cacheUtils.js');
+      const cacheService = (await import('../utils/cacheService.js')).default;
       
       const stats = {
-        configuration: configurationCache.getStats(),
-        prompts: promptCache.getStats(),
-        templates: templateCache.getStats(),
+        cache: cacheService.getStats(),
         timestamp: new Date().toISOString()
       };
       
@@ -132,12 +130,13 @@ export function registerMonitoringRoutes(app, pool, authenticateToken) {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
-      const { clearAllCaches } = await import('../utils/cacheUtils.js');
-      clearAllCaches();
+      const cacheService = (await import('../utils/cacheService.js')).default;
+      const previousSize = cacheService.getStats().size;
+      cacheService.clear();
       
       res.json({
         success: true,
-        message: 'All caches cleared',
+        message: `Cleared ${previousSize} cache entries`,
         timestamp: new Date().toISOString()
       });
     } catch (error) {

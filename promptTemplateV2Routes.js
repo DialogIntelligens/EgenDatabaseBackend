@@ -1,4 +1,5 @@
 import express from 'express';
+import cacheService from './src/utils/cacheService.js';
 
 /**
  * Registers V2 prompt template routes under /prompt-template
@@ -86,6 +87,11 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
         ],
       );
       await client.query('COMMIT');
+      
+      // Invalidate all prompt caches since this template may be used by multiple chatbots
+      const clearedCount = cacheService.clearPattern('prompt:*');
+      console.log(`🧹 Cache: Cleared ${clearedCount} prompt caches after template update`);
+      
       res.json({ message: 'template updated', version: newVersion });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -130,6 +136,16 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
          ON CONFLICT (chatbot_id, flow_key) DO UPDATE SET template_id=$3, updated_at=NOW()`,
         [chatbot_id, flow_key, template_id],
       );
+      
+      // Invalidate prompt cache for this specific chatbot and flow
+      const cacheKey = `prompt:${chatbot_id}:${flow_key}`;
+      cacheService.delete(cacheKey);
+      console.log(`🧹 Cache: Cleared prompt cache for ${chatbot_id}:${flow_key}`);
+      
+      // Also invalidate config cache for this chatbot
+      cacheService.delete(`config:${chatbot_id}`);
+      console.log(`🧹 Cache: Cleared config cache for ${chatbot_id}`);
+      
       res.json({ message: 'assigned' });
     } catch (err) {
       console.error('POST assignments error', err);
@@ -301,6 +317,11 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
           first_message
         ]
       );
+      
+      // Invalidate config cache for this chatbot since settings were updated
+      cacheService.delete(`config:${chatbot_id}`);
+      console.log(`🧹 Cache: Cleared config cache for ${chatbot_id} after settings update`);
+      
       res.json({ success: true, message: 'Chatbot settings saved successfully' });
     } catch (err) {
       console.error('POST chatbot settings error', err);
@@ -855,6 +876,14 @@ export async function buildRephrasePrompt(pool, chatbot_id, flow_key) {
 }
 
 export async function buildPrompt(pool, chatbot_id, flow_key) {
+  // Check cache first
+  const cacheKey = `prompt:${chatbot_id}:${flow_key}`;
+  const cached = cacheService.get(cacheKey);
+  if (cached) {
+    console.log(`💾 Using cached prompt for ${chatbot_id}:${flow_key}`);
+    return cached;
+  }
+
   let templateSections = [];
   
   if (flow_key === 'statistics') {
@@ -973,6 +1002,10 @@ export async function buildPrompt(pool, chatbot_id, flow_key) {
   if (finalPrompt.trim()) {
     finalPrompt = `${finalPrompt}\n\n${dateTimeInfo}`;
   }
+  
+  // Cache the built prompt (10 minute TTL)
+  cacheService.set(cacheKey, finalPrompt, 600);
+  console.log(`💾 Cached prompt for ${chatbot_id}:${flow_key} (length: ${finalPrompt.length})`);
   
   return finalPrompt;
 }

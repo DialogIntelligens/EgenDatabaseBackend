@@ -1,3 +1,5 @@
+import cacheService from '../utils/cacheService.js';
+
 /**
  * Configuration Service
  * Handles dynamic loading and merging of chatbot configurations
@@ -6,8 +8,7 @@
 export class ConfigurationService {
   constructor(pool) {
     this.pool = pool;
-    this.configCache = new Map();
-    this.cacheTTL = 5 * 60 * 1000; // 5 minutes cache TTL
+    this.cacheTTL = 600; // 10 minutes cache TTL (in seconds)
   }
 
   /**
@@ -18,10 +19,10 @@ export class ConfigurationService {
     try {
       // Check cache first
       const cacheKey = `config:${chatbotId}`;
-      const cached = this.configCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
-        console.log('🔧 Using cached configuration for chatbot:', chatbotId);
-        return cached.data;
+      const cached = cacheService.get(cacheKey);
+      if (cached) {
+        console.log('💾 Using cached configuration for chatbot:', chatbotId);
+        return cached;
       }
 
       console.log('🔧 Loading complete frontend configuration for chatbot:', chatbotId);
@@ -69,10 +70,8 @@ export class ConfigurationService {
       console.log('🔧 Configuration loaded with keys:', Object.keys(configuration));
       
       // Cache the configuration
-      this.configCache.set(cacheKey, {
-        data: configuration,
-        timestamp: Date.now()
-      });
+      cacheService.set(cacheKey, configuration, this.cacheTTL);
+      console.log(`💾 Cached configuration for ${chatbotId} (TTL: ${this.cacheTTL}s)`);
 
       return configuration;
 
