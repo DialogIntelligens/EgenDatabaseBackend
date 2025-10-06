@@ -18,7 +18,8 @@ import {
   saveContextChunksService,
   getUnreadCommentsCountService,
   getLeadsCountService,
-  getUnreadLivechatCountService
+  getUnreadLivechatCountService,
+  getConversationsForExportService
 } from '../services/conversationsService.js';
 
 /**
@@ -365,6 +366,22 @@ export async function getUnreadLivechatCountController(req, res, pool) {
     res.json(result);
   } catch (err) {
     console.error('Error fetching unread livechat count:', err);
+    if (err.message === 'chatbot_id is required') {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+}
+
+/**
+ * Get conversations for export
+ */
+export async function getConversationsForExportController(req, res, pool) {
+  try {
+    const conversations = await getConversationsForExportService(req.query, pool);
+    res.json({ conversations });
+  } catch (err) {
+    console.error('Error fetching conversations for export:', err);
     if (err.message === 'chatbot_id is required') {
       return res.status(400).json({ error: err.message });
     }

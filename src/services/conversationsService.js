@@ -803,3 +803,52 @@ export async function getUnreadLivechatCountService(query, pool) {
   
   return { unread_livechat_count: unreadLivechatCount };
 }
+
+/**
+ * Get conversations for export with specific fields
+ */
+export async function getConversationsForExportService(query, pool) {
+  const { chatbot_id, start_date, end_date, emne } = query;
+
+  if (!chatbot_id) {
+    throw new Error('chatbot_id is required');
+  }
+
+  // Convert comma-separated IDs into an array
+  const chatbotIds = chatbot_id.split(',');
+
+  let queryText = `
+    SELECT 
+      c.id,
+      c.user_id,
+      c.chatbot_id,
+      c.emne,
+      c.tags,
+      c.fallback,
+      c.customer_rating,
+      c.conversation_data,
+      c.created_at
+    FROM conversations c
+    WHERE c.chatbot_id = ANY($1)
+  `;
+  let queryParams = [chatbotIds];
+  let paramIndex = 2;
+
+  // Add date range filter if provided
+  if (start_date && end_date) {
+    queryText += ` AND c.created_at BETWEEN $${paramIndex++} AND $${paramIndex++}`;
+    queryParams.push(start_date, end_date);
+  }
+
+  // Add emne (topic) filter if provided and not 'all'
+  if (emne && emne !== 'all') {
+    queryText += ` AND c.emne = $${paramIndex++}`;
+    queryParams.push(emne);
+  }
+
+  // Order by created_at descending
+  queryText += ` ORDER BY c.created_at DESC`;
+
+  const result = await pool.query(queryText, queryParams);
+  return result.rows;
+}
