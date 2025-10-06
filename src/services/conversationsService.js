@@ -188,7 +188,7 @@ export async function getConversationsService(query, pool) {
  * Get conversation count with filters
  */
 export async function getConversationCountService(query, userId, pool) {
-  const { chatbot_id, fejlstatus, customer_rating, emne, tags, is_resolved, has_purchase } = query;
+  const { chatbot_id, fejlstatus, customer_rating, emne, tags, is_resolved, has_purchase, conversation_filter } = query;
   if (!chatbot_id) {
     throw new Error('chatbot_id is required');
   }
@@ -250,7 +250,17 @@ export async function getConversationCountService(query, userId, pool) {
       queryText += ` AND (c.is_resolved = FALSE OR c.is_resolved IS NULL)`;
     }
   }
+  if (conversation_filter && conversation_filter.trim() !== '') {
+    // Search in both conversation ID and conversation data
+    queryText += ` AND (c.id::text ILIKE '%' || $${paramIndex} || '%' OR c.conversation_data::text ILIKE '%' || $${paramIndex} || '%')`;
+    queryParams.push(`${conversation_filter}`);
+    console.log('🔍 Count Search Filter:', conversation_filter);
+    console.log('🔍 Count Query:', queryText);
+    console.log('🔍 Count Params:', queryParams);
+    paramIndex++;
+  }
   const result = await pool.query(queryText, queryParams);
+  console.log('🔍 Count Result:', result.rows[0]?.conversation_count || 0);
   return result.rows;
 }
 
@@ -346,8 +356,11 @@ export async function getConversationsMetadataService(query, userId, pool) {
     queryParams.push(emne);
   }
   if (conversation_filter && conversation_filter.trim() !== '') {
-    queryText += ` AND c.conversation_data::text ILIKE '%' || $${paramIndex++} || '%'`;
+    // Search in both conversation ID and conversation data
+    queryText += ` AND (c.id::text ILIKE '%' || $${paramIndex} || '%' OR c.conversation_data::text ILIKE '%' || $${paramIndex} || '%')`;
     queryParams.push(`${conversation_filter}`);
+    console.log('🔍 Metadata Search Filter:', conversation_filter);
+    paramIndex++;
   }
   if (is_resolved && is_resolved !== '') {
     if (is_resolved === 'resolved') {
