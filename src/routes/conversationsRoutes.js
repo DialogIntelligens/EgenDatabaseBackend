@@ -18,7 +18,8 @@ import {
   saveContextChunksController,
   getUnreadCommentsCountController,
   getLeadsCountController,
-  getUnreadLivechatCountController
+  getUnreadLivechatCountController,
+  getConversationsForExportController
 } from '../controllers/conversationsController.js';
 
 /**
@@ -84,4 +85,7 @@ export function registerConversationsRoutes(app, pool, authenticateToken, SECRET
 
   // GET unread livechat count
   app.get('/unread-livechat-count', authenticateToken, (req, res) => getUnreadLivechatCountController(req, res, pool));
+
+  // GET conversations for export (with specific fields for CSV export)
+  app.get('/conversations-for-export', authenticateToken, (req, res) => getConversationsForExportController(req, res, pool));
 }
