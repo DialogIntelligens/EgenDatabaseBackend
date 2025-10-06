@@ -225,10 +225,11 @@ export class AiStreamingService {
               currentAiTextWithMarkers = processedToken.currentAiTextWithMarkers;
 
               // Emit token to frontend
-              await this.emitSSE(streamingSessionId, 'token', {
-                token: processedToken.displayToken,
-                markers: processedToken.markers
-              });
+              const tokenData = { token: processedToken.displayToken };
+              if (Object.keys(processedToken.markers).length > 0) {
+                tokenData.markers = processedToken.markers;
+              }
+              await this.emitSSE(streamingSessionId, 'token', tokenData);
 
             } else if (json.event === "end") {
               // Handle final buffered content
