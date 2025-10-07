@@ -39,6 +39,7 @@ import { registerStatisticsRoutes } from './src/routes/statisticsRoutes.js';
 import { registerConversationsRoutes } from './src/routes/conversationsRoutes.js';
 import { registerConversationProcessingRoutes } from './src/routes/conversationProcessingRoutes.js';
 import { registerMonitoringRoutes } from './src/routes/monitoringRoutes.js';
+import { registerConversationMissingInfoRoutes } from './src/routes/conversationMissingInfoRoutes.js';
 import { ensureConversationUpdateJobsTable } from './src/utils/conversationsUtils.js';
 import axios from 'axios';
 
@@ -1392,6 +1393,7 @@ registerStatisticsRoutes(app, pool, authenticateToken);
 registerConversationsRoutes(app, pool, authenticateToken, SECRET_KEY);
 registerConversationProcessingRoutes(app, pool, authenticateToken);
 registerMonitoringRoutes(app, pool, authenticateToken);
+registerConversationMissingInfoRoutes(app, pool, authenticateToken);
 registerPineconeRoutes(app, pool, authenticateToken);
 
 /* ================================
