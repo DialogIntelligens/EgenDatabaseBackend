@@ -28,8 +28,7 @@ export function registerConversationProcessingRoutes(app, pool, authenticateToke
 
   // Get conversation configuration for a chatbot
   // Provides all the configuration needed for conversation processing
-  // Protected endpoint - requires authentication
-  router.get('/conversation-config/:chatbotId', authenticateToken, async (req, res) => {
+  router.get('/conversation-config/:chatbotId', async (req, res) => {
     await getConversationConfigController(req, res, pool);
   });
 
