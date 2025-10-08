@@ -544,6 +544,7 @@ export async function updateConversationSubjectService(id, body, pool) {
   return result.rows[0];
 }
 
+
 /**
  * Update conversation (PATCH)
  */
