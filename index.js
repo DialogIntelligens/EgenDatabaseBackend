@@ -11,6 +11,7 @@ import { generateGPTAnalysis } from './gptAnalysis.js'; // Import GPT analysis
 import { registerPromptTemplateV2Routes } from './promptTemplateV2Routes.js';
 import { registerFreshdeskRoutes } from './src/routes/freshdeskRoutes.js';
 import { createFreshdeskQueueService } from './src/services/freshdeskQueueService.js';
+import { processScheduledUploads } from './src/services/scheduledUploadsService.js';
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, deleteSpecificVectors } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
@@ -95,6 +96,19 @@ cron.schedule('* * * * *', async () => {
     }
   } catch (error) {
     console.error('Error processing Freshdesk queue:', error);
+  }
+});
+
+// Process scheduled uploads every minute
+cron.schedule('* * * * *', async () => {
+  try {
+    const result = await processScheduledUploads(pool);
+    
+    if (result.processed > 0) {
+      console.log(`Scheduled uploads processing: Processed ${result.processed} upload(s)`);
+    }
+  } catch (error) {
+    console.error('Error processing scheduled uploads:', error);
   }
 });
 
@@ -1469,36 +1483,106 @@ app.post('/api/openai/detect-semantic-duplicates', authenticateToken, async (req
             index: idx,
             id: item.id,
             title: item.title || '',
-            content: item.text || ''
+            content: item.text || '',
+            server: item.pinecone_index_name || 'unknown',
+            environment: item.namespace || 'unknown'
         }));
 
-        const prompt = `You are analyzing knowledge base entries to find semantic duplicates - entries that convey the same or very similar meaning even if worded differently.
+        const prompt = `You are an expert semantic similarity analyst specializing in chatbot knowledge base content. Your task is to identify entries that convey the same meaning, solve the same problems, or cover the same topics, even when worded differently.
 
-Analyze these entries and identify pairs that are semantic duplicates:
+## CRITICAL INSTRUCTIONS:
+
+1. **Server/Environment Context**: Each entry belongs to a specific server/site (pinecone_index_name) and environment/namespace. Entries from different servers/sites are intentionally separate and should NOT be flagged as duplicates, even if semantically similar.
+
+2. **Semantic Similarity Focus**: Find entries that mean the same thing, even if:
+   - Different wording/phrasing
+   - Different examples or analogies
+   - Partial overlap (one covers a subset of the other)
+   - Same topic but different depth/detail level
+   - Different titles but same core concept
+
+3. **Duplicate Categories to Detect**:
+   - **Exact duplicates**: Nearly identical content
+   - **Paraphrased duplicates**: Same meaning, different words
+   - **Overlapping duplicates**: One entry covers part of what another covers
+   - **Related duplicates**: Different aspects of the same problem/topic
+   - **Contextual duplicates**: Same answer but different question phrasing
+
+4. **IMPORTANT: Server Separation Rule**
+   - If entries have different "server" values (pinecone_index_name), they belong to different sites/languages
+   - These should NEVER be flagged as duplicates, regardless of semantic similarity
+   - Example: "kundekonto" for Danish site vs "customer account" for French site
+
+5. **High-Confidence Indicators** (>0.85 confidence):
+   - Same core solution to same problem
+   - Identical process steps or procedures
+   - Same policy, rule, or guideline
+   - Identical troubleshooting steps
+
+6. **Medium-Confidence Indicators** (0.75-0.85):
+   - Same topic with significant content overlap
+   - Different approaches to same problem
+   - Complementary information on same subject
+   - Related procedures or policies
+
+## ANALYSIS GUIDELINES:
+
+**Compare entries for**:
+- Core meaning and intent
+- Problem being solved
+- Solution provided
+- Key information conveyed
+- User questions addressed
+- Process steps or procedures
+- Policies, rules, or requirements
+- Troubleshooting guidance
+
+**CRITICAL: DO NOT flag as duplicates if**:
+- Different "server" values (different sites/languages)
+- General vs. specific (e.g., "help" vs. "how to reset password")
+- Different problems entirely
+- Complementary but distinct topics
+- Unrelated procedures or policies
+
+## ENTRIES TO ANALYZE:
 
 ${itemsToAnalyze.map((item, i) => `
-Entry ${i}:
-ID: ${item.id}
-Title: ${item.title}
-Content: ${item.content}
+Entry ${i} (ID: ${item.id}):
+Server: ${item.server}
+Environment: ${item.environment}
+Title: "${item.title}"
+Content: "${item.content.substring(0, 1000)}${item.content.length > 1000 ? '...' : ''}"
 `).join('\n')}
 
-Return ONLY a JSON array of duplicate pairs. Each pair should include:
-- The indices of the two duplicate entries
-- A confidence score (0-1)
-- A brief reason
+## RESPONSE FORMAT (STRICT JSON ONLY):
 
-Format:
+Return ONLY a JSON array with this exact structure:
 [
   {
     "index1": 0,
     "index2": 3,
-    "confidence": 0.95,
-    "reason": "Both explain order tracking with nearly identical information"
+    "confidence": 0.92,
+    "reason": "Both entries explain the exact same password reset process with nearly identical steps and requirements"
+  },
+  {
+    "index1": 1,
+    "index2": 4,
+    "confidence": 0.78,
+    "reason": "Both cover account security but with different emphases - one focuses on passwords, the other on 2FA"
   }
 ]
 
-Only include pairs with confidence > 0.75. If no duplicates found, return empty array [].`;
+Rules:
+- Use entry indices, not IDs
+- Confidence between 0.65-1.0 only
+- Include pairs with confidence > 0.75 only
+- Reason must be specific and explain the similarity
+- Return empty array [] if no duplicates found
+- No markdown formatting, no explanations outside JSON
+
+**IMPORTANT**: Only flag duplicates if entries have the SAME server value. Different servers = different sites/languages = intentionally separate content.
+
+Analyze carefully and identify all meaningful duplicates within the same server/environment.`;
 
         const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
@@ -1518,13 +1602,22 @@ Only include pairs with confidence > 0.75. If no duplicates found, return empty 
 
         const response = completion.choices[0]?.message?.content || '[]';
         
-        // Parse the response
+        // Parse the response with improved error handling
         let duplicatePairs = [];
         try {
             const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
-            duplicatePairs = JSON.parse(cleaned);
+            // Remove any trailing commas or invalid JSON characters
+            const validJson = cleaned.replace(/,(\s*[}\]])/g, '$1');
+            duplicatePairs = JSON.parse(validJson);
+
+            // Validate that we got an array
+            if (!Array.isArray(duplicatePairs)) {
+                console.warn('Semantic duplicate response is not an array:', duplicatePairs);
+                duplicatePairs = [];
+            }
         } catch (e) {
-            console.warn('Failed to parse semantic duplicate response:', e);
+            console.warn('Failed to parse semantic duplicate response:', response, e);
+            duplicatePairs = [];
         }
 
         // Map back to original items
