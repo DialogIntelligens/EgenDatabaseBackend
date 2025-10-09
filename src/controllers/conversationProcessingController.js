@@ -20,7 +20,8 @@ export async function processMessageController(req, res, pool) {
       image_data,
       conversation_history = [],
       session_id,
-      configuration = {}
+      configuration = {},
+      split_test_id
     } = req.body;
 
     // Validate required fields (allow empty message_text if image_data is provided)
@@ -36,7 +37,8 @@ export async function processMessageController(req, res, pool) {
       chatbot_id,
       message_length: message_text?.length || 0,
       has_image: !!image_data,
-      session_id
+      session_id,
+      split_test_id
     });
 
     // Create conversation processing service
@@ -54,7 +56,8 @@ export async function processMessageController(req, res, pool) {
       image_data,
       conversation_history,
       session_id,
-      configuration: mergedConfiguration
+      configuration: mergedConfiguration,
+      split_test_id
     });
 
     // Return success response with streaming session info

@@ -36,7 +36,8 @@ export class ConversationProcessingService {
       image_data,
       conversation_history,
       session_id,
-      configuration
+      configuration,
+      split_test_id
     } = messageData;
 
     console.log('🔄 Backend: Starting conversation processing for:', {
@@ -44,7 +45,8 @@ export class ConversationProcessingService {
       chatbot_id,
       message_length: message_text?.length,
       has_image: !!image_data,
-      session_id
+      session_id,
+      split_test_id
     });
 
     try {
@@ -71,7 +73,7 @@ export class ConversationProcessingService {
 
       // Step 2: Create session for tracking
       perfTracker.startPhase('session_creation');
-      const session = await this.createSession(user_id, chatbot_id, session_id, message_text, image_data);
+      const session = await this.createSession(user_id, chatbot_id, session_id, message_text, image_data, split_test_id);
       perfTracker.endPhase('session_creation');
 
       // Step 2.5: Build complete conversation history from database
@@ -205,7 +207,7 @@ export class ConversationProcessingService {
   /**
    * Create or update conversation session
    */
-  async createSession(userId, chatbotId, sessionId = null, messageText = '', imageData = null) {
+  async createSession(userId, chatbotId, sessionId = null, messageText = '', imageData = null, splitTestId = null) {
     try {
       const sessionConfig = {
         user_message: messageText || '',
@@ -218,6 +220,11 @@ export class ConversationProcessingService {
         if (imageData.mime) sessionConfig.image_mime = imageData.mime;
         if (imageData.size) sessionConfig.image_size = imageData.size;
         if (typeof imageData.isFile === 'boolean') sessionConfig.image_is_file = imageData.isFile;
+      }
+
+      // Store split test ID in session config for later retrieval
+      if (splitTestId) {
+        sessionConfig.split_test_id = splitTestId;
       }
 
       const result = await this.pool.query(`

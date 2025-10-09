@@ -658,11 +658,24 @@ export class AiStreamingService {
 
           allMessages.push(aiMessage);
 
+          // Extract split_test_id from session configuration if available
+          let splitTestId = null;
+          if (sessionInfo.configuration) {
+            try {
+              const sessionConfig = typeof sessionInfo.configuration === 'string' 
+                ? JSON.parse(sessionInfo.configuration)
+                : sessionInfo.configuration;
+              splitTestId = sessionConfig.split_test_id || null;
+            } catch (e) {
+              console.warn('Error parsing session configuration:', e);
+            }
+          }
+
           const conversationData = {
             user_id: sessionInfo.user_id,
             chatbot_id: sessionInfo.chatbot_id,
             messages: allMessages,
-            split_test_id: configuration.currentSplitTestId || null
+            split_test_id: splitTestId
           };
           
           // Use analytics service to save with analysis
@@ -698,6 +711,7 @@ export class AiStreamingService {
           cs.user_id,
           cs.chatbot_id,
           cs.created_at,
+          cs.configuration,
           cs.configuration->>'user_message' as user_message,
           cs.configuration->>'image_data' as user_image_data,
           cs.configuration->>'image_name' as user_image_name,
