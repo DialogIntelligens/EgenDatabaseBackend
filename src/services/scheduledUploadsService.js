@@ -11,12 +11,13 @@ import {
  */
 export async function processScheduledUploads(pool) {
   try {
-    const now = new Date();
+    // Use ISO string for proper timezone handling
+    const now = new Date().toISOString();
     const scheduledUploads = await pool.query(
       `SELECT id, title, text, pinecone_index_name, namespace, user_id
        FROM pinecone_data
        WHERE scheduled_time IS NOT NULL
-       AND scheduled_time <= $1
+       AND scheduled_time <= $1::timestamptz
        AND is_scheduled = true
        AND pinecone_vector_id IS NULL`,
       [now]
