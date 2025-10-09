@@ -1,8 +1,7 @@
-import { 
+import {
   getConsolidatedStatisticsService,
   getTagStatisticsService,
-  analyzeConversationsService,
-  getGreetingRateService
+  analyzeConversationsService
 } from '../services/statisticsService.js';
 
 export async function getConsolidatedStatisticsController(req, res, pool) {
@@ -20,9 +19,5 @@ export async function analyzeConversationsController(req, res, pool) {
   return res.status(statusCode).json(payload);
 }
 
-export async function getGreetingRateController(req, res, pool) {
-  const { statusCode, payload } = await getGreetingRateService(req.query, pool);
-  return res.status(statusCode).json(payload);
-}
 
 
