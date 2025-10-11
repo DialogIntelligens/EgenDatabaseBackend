@@ -80,13 +80,9 @@ curl http://localhost:3000/api/freshdesk-queue/stats
 ### Main Endpoints
 
 #### `POST /api/create-freshdesk-ticket`
-Creates a ticket (now uses queue by default)
+Creates a ticket using async queue processing
 - **Response**: 202 Accepted with queue information
-- **Fallback**: Direct processing if queue fails
 
-#### `POST /api/create-freshdesk-ticket-direct`
-Direct ticket creation (for admin/testing)
-- **Response**: 201 Created with ticket ID
 
 ### Queue Management
 
@@ -191,18 +187,13 @@ WHERE status IN ('completed', 'failed')
 - ✅ Exponential backoff for resilience
 - ✅ Better error tracking and recovery
 
-## 🔄 Migration Path
+## 🚀 Deployment
 
-### Backwards Compatibility
-- Existing direct endpoint still works
-- Can opt-out with `?async=false` query parameter
-- Frontend handles both response formats
-
-### Gradual Rollout
+### Setup Steps
 1. Deploy backend changes
 2. Run database migration
 3. Monitor queue processing
-4. Frontend automatically uses new system
+4. System is ready to use
 
 ## 🎯 Success Metrics
 

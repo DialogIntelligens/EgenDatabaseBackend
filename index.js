@@ -56,6 +56,10 @@ const { Pool } = pg;
 const SECRET_KEY = process.env.SECRET_KEY || 'Megtigemaskiner00!';
 const PORT = process.env.PORT || 3000;
 
+// Environment-based configuration for background jobs
+const isProduction = process.env.NODE_ENV === 'production';
+const environment = isProduction ? 'production' : 'development';
+
 // PostgreSQL pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -85,19 +89,21 @@ cron.schedule('0 2 * * *', async () => {
   }
 });
 
-// Process Freshdesk ticket queue every minute
-cron.schedule('* * * * *', async () => {
-  try {
-    const queueService = createFreshdeskQueueService(pool);
-    const result = await queueService.processPendingTickets(10); // Process up to 10 tickets at once
-    
-    if (result.processed > 0) {
-      console.log(`Freshdesk queue processing: ${result.message}`);
+// Process Freshdesk ticket queue every minute (production only)
+if (isProduction) {
+  cron.schedule('* * * * *', async () => {
+    try {
+      const queueService = createFreshdeskQueueService(pool);
+      const result = await queueService.processPendingTickets(10); // Process up to 10 tickets at once
+
+      if (result.processed > 0) {
+        console.log(`Freshdesk queue processing (${environment}): ${result.message}`);
+      }
+    } catch (error) {
+      console.error(`Error processing Freshdesk queue (${environment}):`, error);
     }
-  } catch (error) {
-    console.error('Error processing Freshdesk queue:', error);
-  }
-});
+  });
+}
 
 // Process scheduled uploads every minute
 cron.schedule('* * * * *', async () => {
@@ -112,20 +118,22 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-// Cleanup old Freshdesk queue entries (daily at 3 AM)
-cron.schedule('0 3 * * *', async () => {
-  try {
-    console.log('Cleaning up old Freshdesk queue entries...');
-    const queueService = createFreshdeskQueueService(pool);
-    const cleanedCount = await queueService.cleanupOldTickets();
-    
-    if (cleanedCount > 0) {
-      console.log(`Cleaned up ${cleanedCount} old Freshdesk queue entries`);
+// Cleanup old Freshdesk queue entries (daily at 3 AM, production only)
+if (isProduction) {
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      console.log(`Cleaning up old Freshdesk queue entries (${environment})...`);
+      const queueService = createFreshdeskQueueService(pool);
+      const cleanedCount = await queueService.cleanupOldTickets();
+
+      if (cleanedCount > 0) {
+        console.log(`Cleaned up ${cleanedCount} old Freshdesk queue entries (${environment})`);
+      }
+    } catch (error) {
+      console.error(`Error cleaning up Freshdesk queue (${environment}):`, error);
     }
-  } catch (error) {
-    console.error('Error cleaning up Freshdesk queue:', error);
-  }
-});
+  });
+}
 
 // Cleanup old streaming sessions and events (every hour)
 cron.schedule('0 * * * *', async () => {
@@ -2270,7 +2278,9 @@ app.put('/admin/commerce-tools-credentials/:chatbot_id', authenticateToken, asyn
 
 // Start the server
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Server (${environment}) is running on port ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔧 Background jobs: ${isProduction ? 'ENABLED' : 'DISABLED'}`);
 });
 
 // Export pool for use in utility modules

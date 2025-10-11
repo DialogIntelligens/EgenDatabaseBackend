@@ -1,12 +1,9 @@
-import { createTicketController, createTicketDirectController } from '../controllers/freshdeskController.js';
+import { createTicketController } from '../controllers/freshdeskController.js';
 import { createFreshdeskQueueService } from '../services/freshdeskQueueService.js';
 
 export function registerFreshdeskRoutes(app, pool) {
-  // Main endpoint - now uses async queue by default
+  // Main endpoint - async queue processing
   app.post('/api/create-freshdesk-ticket', (req, res) => createTicketController(req, res, pool));
-  
-  // Direct processing endpoint (for admin/testing)
-  app.post('/api/create-freshdesk-ticket-direct', (req, res) => createTicketDirectController(req, res, pool));
   
   // Queue management endpoints
   app.get('/api/freshdesk-queue/stats', async (req, res) => {
