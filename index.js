@@ -15,6 +15,7 @@ import { processScheduledUploads } from './src/services/scheduledUploadsService.
 import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, deleteSpecificVectors } from './pineconeChecker.js';
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
+import { registerIntegrationRoutes } from './src/routes/integrationRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
@@ -1389,6 +1390,7 @@ console.log('📧 Notification monitoring system initialized');
 registerPromptTemplateV2Routes(app, pool, authenticateToken);
 registerPopupMessageRoutes(app, pool, authenticateToken);
 registerSplitTestRoutes(app, pool, authenticateToken);
+registerIntegrationRoutes(app, pool); // Public endpoint - no auth required
 registerReportRoutes(app, pool, authenticateToken);
 
 // Initialize GDPR table and routes
