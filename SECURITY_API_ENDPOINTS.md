@@ -1,11 +1,20 @@
 # 🔒 Security: API Endpoint Credential Protection
 
-## 🚨 Critical Security Fix Applied
+## 🚨 CRITICAL Security Fixes Applied
 
-### Issue: Credential Exposure in Public API
+### Issue 1: Credential Exposure in Integration API
 The `/api/integration-config/:chatbot_id` endpoint was using `SELECT *`, potentially exposing **sensitive backend credentials** to any frontend JavaScript code.
 
-### Risk Level: **HIGH** → **FIXED** ✅
+**Risk Level**: **HIGH** → **FIXED** ✅
+
+### Issue 2: PUBLIC Conversation Config Endpoint Exposing ALL Credentials  
+The `/api/conversation-config/:chatbotId` endpoint was **PUBLICLY ACCESSIBLE WITHOUT AUTHENTICATION** and returning **ALL database fields including**:
+- Pinecone API keys
+- Knowledge base endpoints
+- Flow API keys
+- ALL sensitive credentials
+
+**Risk Level**: **CRITICAL** → **FIXED** ✅ (Endpoint REMOVED)
 
 ---
 
@@ -45,12 +54,14 @@ fetch('https://backend.com/api/integration-config/dillingdk')
 
 ---
 
-### 2. Backend-Only API (INTERNAL USE)
-**Endpoint**: `/api/conversation-config/:chatbotId`
+### 2. Backend Configuration Service (INTERNAL USE ONLY - No HTTP Endpoint)
+**Method**: `ConfigurationService.getFrontendConfiguration(chatbotId)` 
 
 **Purpose**: Load FULL configuration for backend conversation processing
 
-**Security**: 🔒 Includes ALL fields including credentials
+**Security**: 🔒 No HTTP endpoint - backend services call directly
+
+**Access**: Internal backend code only - never exposed via HTTP
 
 **Fields Exposed**:
 - ✅ Everything from frontend API
@@ -61,10 +72,13 @@ fetch('https://backend.com/api/integration-config/dillingdk')
 
 **Usage**:
 ```javascript
-// Called by backend services only (never exposed to frontend)
-const config = await processingService.getConversationConfiguration(chatbotId);
-// Full access to credentials for backend processing
+// Called by backend services only (never exposed via HTTP)
+const configurationService = createConfigurationService(pool);
+const config = await configurationService.getFrontendConfiguration(chatbotId);
+// Full access to credentials for backend processing - NO HTTP ENDPOINT
 ```
+
+**⚠️ IMPORTANT**: The `/api/conversation-config/:chatbotId` endpoint has been **REMOVED** because it was exposing ALL credentials without authentication. Backend services must call the ConfigurationService directly.
 
 ---
 

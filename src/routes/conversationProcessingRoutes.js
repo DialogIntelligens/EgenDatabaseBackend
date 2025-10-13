@@ -2,7 +2,6 @@ import express from 'express';
 import {
   processMessageController,
   getStreamingEventsController,
-  getConversationConfigController,
   uploadImageController,
   conversationHealthController
 } from '../controllers/conversationProcessingController.js';
@@ -26,11 +25,10 @@ export function registerConversationProcessingRoutes(app, pool, authenticateToke
     await getStreamingEventsController(req, res, pool);
   });
 
-  // Get conversation configuration for a chatbot
-  // Provides all the configuration needed for conversation processing
-  router.get('/conversation-config/:chatbotId', async (req, res) => {
-    await getConversationConfigController(req, res, pool);
-  });
+  // 🔒 REMOVED: /conversation-config/:chatbotId endpoint
+  // This endpoint was exposing ALL credentials including API keys to unauthenticated users!
+  // Backend services should use ConfigurationService.getFrontendConfiguration() directly
+  // If you need this endpoint for testing, add authenticateToken middleware
 
   // Image upload and processing endpoint
   // Handles image uploads separately from main message processing

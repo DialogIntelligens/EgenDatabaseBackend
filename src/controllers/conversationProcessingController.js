@@ -137,36 +137,11 @@ export async function getStreamingEventsController(req, res, pool) {
 }
 
 /**
- * Get conversation configuration for a chatbot
- * GET /api/conversation-config/:chatbotId
+ * 🔒 REMOVED: getConversationConfigController
+ * This was exposing ALL credentials including API keys via unauthenticated endpoint!
+ * Backend services now call ConfigurationService.getFrontendConfiguration() directly
+ * Never create public endpoints that return full configuration with credentials
  */
-export async function getConversationConfigController(req, res, pool) {
-  try {
-    const { chatbotId } = req.params;
-
-    if (!chatbotId) {
-      return res.status(400).json({
-        error: 'Missing chatbot ID'
-      });
-    }
-
-    const configurationService = createConfigurationService(pool);
-    const configuration = await configurationService.getFrontendConfiguration(chatbotId);
-
-    res.json({
-      success: true,
-      configuration
-    });
-
-  } catch (error) {
-    console.error('🚨 Backend: Error in getConversationConfigController:', error);
-    
-    res.status(500).json({
-      error: 'Failed to get conversation configuration',
-      details: error.message
-    });
-  }
-}
 
 /**
  * Upload and process image
@@ -211,45 +186,6 @@ export async function uploadImageController(req, res, pool) {
     
     res.status(500).json({
       error: 'Image processing failed',
-      details: error.message
-    });
-  }
-}
-
-/**
- * Get conversation configuration for a chatbot (BACKEND ONLY)
- * GET /api/conversation-config/:chatbotId
- * 🔒 INCLUDES ALL FIELDS INCLUDING CREDENTIALS - Backend use only
- */
-export async function getConversationConfigController(req, res, pool) {
-  try {
-    const { chatbotId } = req.params;
-
-    // For backend use, we need ALL fields including credentials
-    const result = await pool.query(`
-      SELECT * FROM chatbot_settings WHERE chatbot_id = $1
-    `, [chatbotId]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        error: 'Chatbot configuration not found',
-        chatbot_id: chatbotId
-      });
-    }
-
-    const settings = result.rows[0];
-
-    // Return full configuration for backend processing
-    res.json({
-      success: true,
-      configuration: settings
-    });
-
-  } catch (error) {
-    console.error('🚨 Backend: Error fetching conversation config:', error);
-    
-    res.status(500).json({
-      error: 'Failed to fetch conversation configuration',
       details: error.message
     });
   }
