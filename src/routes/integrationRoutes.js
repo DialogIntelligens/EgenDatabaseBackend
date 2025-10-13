@@ -116,6 +116,14 @@ export function registerIntegrationRoutes(app, pool) {
         freshdeskProductId: settings.freshdesk_product_id || null,
         toHumanMail: settings.to_human_mail || false,
 
+        // CSS Positioning
+        popupBottomDefault: settings.popup_bottom_default || '17px',
+        popupRightDefault: settings.popup_right_default || '55px',
+        popupBottomLongMessage: settings.popup_bottom_long_message || '10.5px',
+        popupRightLongMessage: settings.popup_right_long_message || '36px',
+        buttonBottom: settings.button_bottom || '20px',
+        buttonRight: settings.button_right || '10px',
+
         // Device detection (set by integration script)
         isTabletView: false,
         isPhoneView: false

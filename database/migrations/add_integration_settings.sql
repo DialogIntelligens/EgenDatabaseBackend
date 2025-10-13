@@ -78,6 +78,14 @@ ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS to_human_mail BOOLEAN DEFA
 ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS default_header_title TEXT;
 ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS default_header_subtitle TEXT;
 
+-- CSS Positioning Settings
+ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS popup_bottom_default TEXT DEFAULT '17px';
+ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS popup_right_default TEXT DEFAULT '55px';
+ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS popup_bottom_long_message TEXT DEFAULT '10.5px';
+ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS popup_right_long_message TEXT DEFAULT '36px';
+ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS button_bottom TEXT DEFAULT '20px';
+ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS button_right TEXT DEFAULT '10px';
+
 -- Timestamps
 ALTER TABLE chatbot_settings ADD COLUMN IF NOT EXISTS settings_updated_at TIMESTAMP DEFAULT NOW();
 
