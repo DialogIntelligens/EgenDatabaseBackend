@@ -217,6 +217,45 @@ export async function uploadImageController(req, res, pool) {
 }
 
 /**
+ * Get conversation configuration for a chatbot (BACKEND ONLY)
+ * GET /api/conversation-config/:chatbotId
+ * 🔒 INCLUDES ALL FIELDS INCLUDING CREDENTIALS - Backend use only
+ */
+export async function getConversationConfigController(req, res, pool) {
+  try {
+    const { chatbotId } = req.params;
+
+    // For backend use, we need ALL fields including credentials
+    const result = await pool.query(`
+      SELECT * FROM chatbot_settings WHERE chatbot_id = $1
+    `, [chatbotId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'Chatbot configuration not found',
+        chatbot_id: chatbotId
+      });
+    }
+
+    const settings = result.rows[0];
+
+    // Return full configuration for backend processing
+    res.json({
+      success: true,
+      configuration: settings
+    });
+
+  } catch (error) {
+    console.error('🚨 Backend: Error fetching conversation config:', error);
+    
+    res.status(500).json({
+      error: 'Failed to fetch conversation configuration',
+      details: error.message
+    });
+  }
+}
+
+/**
  * Health check endpoint for conversation processing
  * GET /api/conversation-health
  */

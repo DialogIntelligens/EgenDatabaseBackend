@@ -10,16 +10,80 @@ export function registerIntegrationRoutes(app, pool) {
 
   /**
    * GET /api/integration-config/:chatbot_id
-   * Returns complete integration configuration for a chatbot
+   * Returns FRONTEND-SAFE configuration for a chatbot
+   * ⚠️ PUBLIC ENDPOINT - NO AUTH REQUIRED
+   * 🔒 SECURITY: Only select UI fields - NEVER expose API keys or credentials
    * No authentication required - public endpoint for integration scripts
    */
   router.get('/integration-config/:chatbot_id', async (req, res) => {
     try {
       const { chatbot_id } = req.params;
 
-      // Fetch all settings from database
+      // 🔒 SECURITY FIX: Explicit field selection instead of SELECT *
+      // Only fetch frontend-safe fields - NO credentials or API keys
       const result = await pool.query(`
-        SELECT * FROM chatbot_settings WHERE chatbot_id = $1
+        SELECT 
+          chatbot_id,
+          iframe_url,
+          header_logo_url,
+          message_icon_url,
+          theme_color,
+          ai_message_color,
+          ai_message_text_color,
+          font_family,
+          header_title,
+          header_subtitle,
+          chat_window_title,
+          privacy_link,
+          subtitle_link_text,
+          subtitle_link_url,
+          default_header_title,
+          default_header_subtitle,
+          lead_email,
+          lead_field1_label,
+          lead_field2_label,
+          use_thumbs_rating,
+          rating_timer_duration,
+          replace_exclamation_with_period,
+          enable_livechat,
+          enable_minimize_button,
+          enable_popup_message,
+          purchase_tracking_enabled,
+          show_powered_by,
+          input_placeholder,
+          rating_message,
+          product_button_text,
+          product_button_color,
+          product_button_padding,
+          product_image_height_multiplier,
+          product_box_height_multiplier,
+          freshdesk_email_label,
+          freshdesk_message_label,
+          freshdesk_image_label,
+          freshdesk_choose_file_text,
+          freshdesk_no_file_text,
+          freshdesk_sending_text,
+          freshdesk_submit_text,
+          freshdesk_subject_text,
+          freshdesk_name_label,
+          freshdesk_email_required_error,
+          freshdesk_email_invalid_error,
+          freshdesk_form_error_text,
+          freshdesk_message_required_error,
+          freshdesk_name_required_error,
+          freshdesk_submit_error_text,
+          contact_confirmation_text,
+          freshdesk_confirmation_text,
+          human_agent_question_text,
+          human_agent_yes_button_text,
+          human_agent_no_button_text,
+          freshdesk_group_id,
+          freshdesk_product_id,
+          to_human_mail,
+          button_bottom,
+          button_right
+        FROM chatbot_settings 
+        WHERE chatbot_id = $1
       `, [chatbot_id]);
 
       if (result.rows.length === 0) {
