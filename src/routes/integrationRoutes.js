@@ -40,8 +40,6 @@ export function registerIntegrationRoutes(app, pool) {
           privacy_link,
           subtitle_link_text,
           subtitle_link_url,
-          default_header_title,
-          default_header_subtitle,
           lead_email,
           lead_field1_label,
           lead_field2_label,
@@ -125,8 +123,6 @@ export function registerIntegrationRoutes(app, pool) {
         privacyLink: settings.privacy_link || '',
         subtitleLinkText: settings.subtitle_link_text || '',
         subtitleLinkUrl: settings.subtitle_link_url || '',
-        defaultHeaderTitle: settings.default_header_title || '',
-        defaultHeaderSubtitle: settings.default_header_subtitle || 'Vores virtuelle assistent er her for at hjælpe dig.',
 
         // Lead generation
         leadGen: '%%', // Hardcoded as per current scripts
