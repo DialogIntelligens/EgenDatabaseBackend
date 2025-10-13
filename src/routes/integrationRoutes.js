@@ -25,6 +25,9 @@ export function registerIntegrationRoutes(app, pool) {
         SELECT 
           chatbot_id,
           iframe_url,
+          first_message,
+          image_enabled,
+          camera_button_enabled,
           header_logo_url,
           message_icon_url,
           theme_color,
@@ -101,6 +104,11 @@ export function registerIntegrationRoutes(app, pool) {
         chatbotID: settings.chatbot_id,
         iframeUrl: settings.iframe_url || 'https://skalerbartprodukt.onrender.com',
         pagePath: '', // Will be set by integration script
+
+        // First message and image settings
+        firstMessage: settings.first_message || '',
+        image_enabled: settings.image_enabled || false,
+        camera_button_enabled: settings.camera_button_enabled || false,
 
         // Visual settings
         headerLogoG: settings.header_logo_url || '',
