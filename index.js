@@ -1336,9 +1336,16 @@ async function checkSingleNotificationSetting(setting) {
           console.log(`⏰ Threshold exceeded for ${emne}, but cooldown period not yet passed. Skipping email.`);
         }
       }
+    } else if (currentCount > 0) {
+      // Send notification if there's current activity but no historical data
+      if (cooldownPassed) {
+        console.log(`🧪 Current activity (${currentCount}) detected with no historical baseline - sending notification`);
+        await sendNotificationEmailWithCooldown(setting, currentCount, 0, 100);
+      } else {
+        console.log(`⏰ Current activity detected for ${emne}, but cooldown period not yet passed. Skipping email.`);
+      }
     } else {
-      // No historical baseline available - skip notification
-      console.log(`📊 No historical baseline for ${emne} (avgCount: ${avgCount}). Skipping notification check until baseline is established.`);
+      console.log(`📊 No current activity found for ${emne} with chatbot_id: ${chatbot_id}, skipping notification check`);
     }
   } catch (error) {
     console.error('Error checking single notification setting:', error);
