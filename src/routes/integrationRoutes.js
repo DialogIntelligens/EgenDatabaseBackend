@@ -82,7 +82,9 @@ export function registerIntegrationRoutes(app, pool) {
           freshdesk_product_id,
           to_human_mail,
           button_bottom,
-          button_right
+          button_right,
+          checkout_page_patterns,
+          price_extraction_locale
         FROM chatbot_settings 
         WHERE chatbot_id = $1
       `, [chatbot_id]);
@@ -187,6 +189,10 @@ export function registerIntegrationRoutes(app, pool) {
         // CSS Positioning (popup uses button positioning)
         buttonBottom: settings.button_bottom || '20px',
         buttonRight: settings.button_right || '10px',
+
+        // Purchase tracking configuration
+        checkoutPagePatterns: settings.checkout_page_patterns || null,
+        priceExtractionLocale: settings.price_extraction_locale || 'en',
 
         // Device detection (set by integration script)
         isTabletView: false,
