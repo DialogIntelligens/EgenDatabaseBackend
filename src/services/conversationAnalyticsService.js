@@ -137,7 +137,6 @@ export class ConversationAnalyticsService {
       // This ensures we always use the database value, regardless of frontend timing issues
       let purchaseTrackingEnabled = configuration.purchaseTrackingEnabled || false;
       try {
-        console.log('🔍 [Analytics] Fetching purchase_tracking_enabled from database for chatbot:', conversationData.chatbot_id);
         const settingsResult = await this.pool.query(
           'SELECT purchase_tracking_enabled FROM chatbot_settings WHERE chatbot_id = $1',
           [conversationData.chatbot_id]
@@ -145,21 +144,13 @@ export class ConversationAnalyticsService {
         
         if (settingsResult.rows.length > 0) {
           const dbValue = settingsResult.rows[0].purchase_tracking_enabled;
-          console.log('🔍 [Analytics] Database value:', dbValue, '| Frontend value:', purchaseTrackingEnabled);
           if (dbValue !== purchaseTrackingEnabled) {
-            console.log(`📊 [Analytics] Overriding purchase_tracking_enabled: frontend=${purchaseTrackingEnabled}, database=${dbValue}`);
             purchaseTrackingEnabled = dbValue;
-          } else {
-            console.log(`✅ [Analytics] purchase_tracking_enabled matches database: ${purchaseTrackingEnabled}`);
           }
-        } else {
-          console.warn(`⚠️ [Analytics] No chatbot_settings found for: ${conversationData.chatbot_id}`);
         }
       } catch (settingsError) {
-        console.error('❌ [Analytics] Failed to fetch chatbot settings:', settingsError.message);
+        console.error('Failed to fetch chatbot settings for purchase tracking:', settingsError.message);
       }
-      
-      console.log('💾 [Analytics] Final purchase_tracking_enabled value to be saved:', purchaseTrackingEnabled);
       
       // First try to update existing conversation (like the old system)
       const updateResult = await this.pool.query(`

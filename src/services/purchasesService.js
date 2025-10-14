@@ -6,12 +6,12 @@ export async function createPurchaseService(body, pool) {
     return { statusCode: 400, payload: { error: validationError } };
   }
 
-  const { user_id, chatbot_id, amount } = body;
+  const { user_id, chatbot_id, amount, currency = 'DKK' } = body;
   const result = await pool.query(
-    `INSERT INTO purchases (user_id, chatbot_id, amount)
-     VALUES ($1, $2, $3)
+    `INSERT INTO purchases (user_id, chatbot_id, amount, currency)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [user_id, chatbot_id, parseFloat(amount)]
+    [user_id, chatbot_id, parseFloat(amount), currency]
   );
   return { statusCode: 201, payload: { message: 'Purchase recorded', purchase: result.rows[0] } };
 }

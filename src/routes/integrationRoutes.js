@@ -84,7 +84,8 @@ export function registerIntegrationRoutes(app, pool) {
           button_bottom,
           button_right,
           checkout_page_patterns,
-          price_extraction_locale
+          price_extraction_locale,
+          currency
         FROM chatbot_settings 
         WHERE chatbot_id = $1
       `, [chatbot_id]);
@@ -193,6 +194,7 @@ export function registerIntegrationRoutes(app, pool) {
         // Purchase tracking configuration
         checkoutPagePatterns: settings.checkout_page_patterns || null,
         priceExtractionLocale: settings.price_extraction_locale || 'en',
+        currency: settings.currency || 'DKK',
 
         // Device detection (set by integration script)
         isTabletView: false,

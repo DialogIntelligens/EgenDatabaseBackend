@@ -1,0 +1,2 @@
+ALTER TABLE chatbot_settings
+ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'DKK';

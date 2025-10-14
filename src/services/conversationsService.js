@@ -26,12 +26,6 @@ export async function createConversationService(body, headers, pool, SECRET_KEY)
     split_test_id
   } = body;
 
-  console.log('📥 Backend received conversation save request:', {
-    chatbot_id,
-    user_id,
-    purchase_tracking_enabled_from_frontend: purchase_tracking_enabled
-  });
-
   const authHeader = headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -56,35 +50,20 @@ export async function createConversationService(body, headers, pool, SECRET_KEY)
   // Fetch the correct purchase_tracking_enabled value from chatbot_settings
   // This ensures we always use the database value, regardless of frontend timing issues
   try {
-    console.log('🔍 Fetching purchase_tracking_enabled from database for chatbot:', chatbot_id);
     const settingsResult = await pool.query(
       'SELECT purchase_tracking_enabled FROM chatbot_settings WHERE chatbot_id = $1',
       [chatbot_id]
     );
     
-    console.log('🔍 Database query result:', {
-      found: settingsResult.rows.length > 0,
-      value: settingsResult.rows[0]?.purchase_tracking_enabled
-    });
-    
     if (settingsResult.rows.length > 0) {
       const dbPurchaseTrackingEnabled = settingsResult.rows[0].purchase_tracking_enabled;
       if (dbPurchaseTrackingEnabled !== purchase_tracking_enabled) {
-        console.log(`📊 Overriding purchase_tracking_enabled: frontend=${purchase_tracking_enabled}, database=${dbPurchaseTrackingEnabled}`);
         purchase_tracking_enabled = dbPurchaseTrackingEnabled;
-      } else {
-        console.log(`✅ purchase_tracking_enabled matches: frontend and database both = ${purchase_tracking_enabled}`);
       }
-    } else {
-      console.warn(`⚠️ No chatbot_settings found for chatbot_id: ${chatbot_id}`);
     }
   } catch (settingsError) {
-    console.error('❌ Failed to fetch chatbot settings for purchase tracking:', settingsError.message);
-    console.error('Stack trace:', settingsError.stack);
-    console.log('Using frontend value as fallback:', purchase_tracking_enabled);
+    console.error('Failed to fetch chatbot settings for purchase tracking:', settingsError.message);
   }
-  
-  console.log('💾 Final purchase_tracking_enabled value to be saved:', purchase_tracking_enabled);
 
   // Stringify the conversation data (which now includes embedded source chunks)
   conversation_data = JSON.stringify(conversation_data);
