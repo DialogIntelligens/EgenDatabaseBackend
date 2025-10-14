@@ -47,6 +47,25 @@ export async function createConversationService(body, headers, pool, SECRET_KEY)
     throw new Error('Missing chatbot_id');
   }
 
+  // Fetch the correct purchase_tracking_enabled value from chatbot_settings
+  // This ensures we always use the database value, regardless of frontend timing issues
+  try {
+    const settingsResult = await pool.query(
+      'SELECT purchase_tracking_enabled FROM chatbot_settings WHERE chatbot_id = $1',
+      [chatbot_id]
+    );
+    
+    if (settingsResult.rows.length > 0) {
+      const dbPurchaseTrackingEnabled = settingsResult.rows[0].purchase_tracking_enabled;
+      if (dbPurchaseTrackingEnabled !== purchase_tracking_enabled) {
+        console.log(`📊 Overriding purchase_tracking_enabled: frontend=${purchase_tracking_enabled}, database=${dbPurchaseTrackingEnabled}`);
+        purchase_tracking_enabled = dbPurchaseTrackingEnabled;
+      }
+    }
+  } catch (settingsError) {
+    console.warn('Failed to fetch chatbot settings for purchase tracking, using frontend value:', settingsError.message);
+  }
+
   // Stringify the conversation data (which now includes embedded source chunks)
   conversation_data = JSON.stringify(conversation_data);
 
