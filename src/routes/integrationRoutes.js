@@ -85,7 +85,8 @@ export function registerIntegrationRoutes(app, pool) {
           button_right,
           checkout_page_patterns,
           price_extraction_locale,
-          currency
+          currency,
+          border_radius_multiplier
         FROM chatbot_settings 
         WHERE chatbot_id = $1
       `, [chatbot_id]);
@@ -118,6 +119,7 @@ export function registerIntegrationRoutes(app, pool) {
         aiMessageColor: settings.ai_message_color || '#e5eaf5',
         aiMessageTextColor: settings.ai_message_text_color || '#262641',
         fontFamily: settings.font_family || '',
+        borderRadiusMultiplier: settings.border_radius_multiplier || 1.0,
 
         // Text content
         headerTitleG: settings.header_title || '',

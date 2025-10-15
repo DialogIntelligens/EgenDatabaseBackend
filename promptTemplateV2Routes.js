@@ -245,7 +245,9 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
       // Pinecone API key
       pinecone_api_key,
       // First message
-      first_message
+      first_message,
+      // Border radius multiplier
+      border_radius_multiplier
     } = req.body;
     
     if (!chatbot_id) return res.status(400).json({ error: 'chatbot_id required' });
@@ -277,9 +279,10 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
           apiflow_knowledgebase_index,
           pinecone_api_key,
           first_message,
+          border_radius_multiplier,
           updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
          ON CONFLICT (chatbot_id)
          DO UPDATE SET
            image_enabled = COALESCE($2, chatbot_settings.image_enabled),
@@ -297,6 +300,7 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
            apiflow_knowledgebase_index = COALESCE($14, chatbot_settings.apiflow_knowledgebase_index),
            pinecone_api_key = COALESCE($15, chatbot_settings.pinecone_api_key),
            first_message = COALESCE($16, chatbot_settings.first_message),
+           border_radius_multiplier = COALESCE($17, chatbot_settings.border_radius_multiplier),
            updated_at = CURRENT_TIMESTAMP`,
         [
           chatbot_id, 
@@ -314,7 +318,8 @@ export function registerPromptTemplateV2Routes(app, pool, authenticateToken) {
           flow4_knowledgebase_index,
           apiflow_knowledgebase_index,
           pinecone_api_key,
-          first_message
+          first_message,
+          border_radius_multiplier
         ]
       );
       
