@@ -38,10 +38,6 @@ export function transformStatisticsForPDF(rawData) {
     averagePurchaseValue: Number(rawData.averagePurchaseValue) || 0,
     conversionRate: Number(rawData.conversionRate) || 0,
 
-    // Greeting rate statistics
-    hasGreetingRateData: Boolean(rawData.hasGreetingRateData),
-    greetingRate: Number(rawData.greetingRate) || 0,
-
     // Fallback rate statistics
     hasFallbackData: Boolean(rawData.hasFallbackData),
     fallbackRate: Number(rawData.fallbackRate) || 0,
@@ -76,7 +72,7 @@ export function transformStatisticsForPDF(rawData) {
       if (!['totalMessages', 'totalConversations', 'averageMessagesPerDay', 'timePeriodDays',
             'dailyData', 'hourlyData', 'topTopics', 'sentimentAnalysis', 'hasPurchaseTracking',
             'totalPurchases', 'totalRevenue', 'averagePurchaseValue', 'conversionRate',
-            'hasGreetingRateData', 'greetingRate', 'hasFallbackData', 'fallbackRate',
+            'hasFallbackData', 'fallbackRate',
             'hasLigegyldigData', 'ligegyldigRate', 'hasResponseTimeData', 'avgResponseTime',
             'totalLivechatConversations', 'avgLivechatPerDay', 'chartImages', 'companyInfo', 'gptAnalysis'].includes(key)) {
         acc[key] = rawData[key];

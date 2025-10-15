@@ -9,7 +9,6 @@ export const defaultStatisticsVisibility = {
   totalRevenue: true,
   averagePurchaseValue: true,
   conversionRate: true,
-  greetingRate: true,
   fallbackRate: true,
   totalLeads: true,
   outsideBusinessHours: true,

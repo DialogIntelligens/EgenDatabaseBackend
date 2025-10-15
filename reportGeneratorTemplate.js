@@ -63,8 +63,6 @@ export async function generateStatisticsReportTemplate(data, timePeriod, languag
       totalRevenue: data.totalRevenue || data.purchaseStats?.totalRevenue || 0,
       averagePurchaseValue: data.averagePurchaseValue || data.purchaseStats?.averagePurchaseValue || 'N/A',
       conversionRate: data.conversionRate || data.purchaseStats?.conversionRate || 'N/A',
-      hasGreetingRateData: data.hasGreetingRateData || data.greetingRateStats?.hasGreetingRateData || false,
-      greetingRate: data.greetingRate || data.greetingRateStats?.greetingRate || 'N/A',
       hasFallbackData: data.hasFallbackData || data.fallbackRateStats?.hasFallbackData || false,
       fallbackRate: data.fallbackRate || data.fallbackRateStats?.fallbackRate || 'N/A',
       translations,

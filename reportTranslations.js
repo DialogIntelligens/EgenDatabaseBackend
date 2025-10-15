@@ -73,8 +73,6 @@ export const reportTranslations = {
     conversionRateDesc: 'Besked-til-køb konvertering',
 
     // Other Metrics
-    greetingSuccessRate: 'Hilsen Succesrate',
-    greetingSuccessRateDesc: 'Succesfulde samtale initieringer',
     fallbackRate: 'Fallback Rate',
     fallbackRateDesc: 'Uhåndterede kunde forespørgsler',
     totalLeads: 'Samlede Leads',
@@ -158,8 +156,6 @@ export const reportTranslations = {
     conversionRateDesc: 'Message-to-purchase conversion',
 
     // Other Metrics
-    greetingSuccessRate: 'Greeting Success Rate',
-    greetingSuccessRateDesc: 'Successful conversation initiations',
     fallbackRate: 'Fallback Rate',
     fallbackRateDesc: 'Unhandled customer inquiries',
     totalLeads: 'Total Leads',
@@ -239,8 +235,6 @@ export const reportTranslations = {
     conversionRateDesc: 'Meddelande-till-köp konvertering',
 
     // Other Metrics
-    greetingSuccessRate: 'Hälsnings Framgångsgrad',
-    greetingSuccessRateDesc: 'Framgångsrika konversations initieringar',
     fallbackRate: 'Fallback Grad',
     fallbackRateDesc: 'Ohanterade kund förfrågningar',
     totalLeads: 'Totala Leads',
