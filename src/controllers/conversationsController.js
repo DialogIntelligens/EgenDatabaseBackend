@@ -2,7 +2,6 @@ import {
   createConversationService,
   updateConversationResolutionService,
   deleteConversationsService,
-  trackChatbotOpenService,
   getConversationsService,
   getConversationCountService,
   getConversationsMetadataService,
@@ -71,22 +70,6 @@ export async function deleteConversationsController(req, res, pool) {
       return res.status(400).json({ error: error.message });
     }
     res.status(500).json({ error: 'Something went wrong' });
-  }
-}
-
-/**
- * Track chatbot open for greeting rate statistics
- */
-export async function trackChatbotOpenController(req, res, pool) {
-  try {
-    const result = await trackChatbotOpenService(req.body, pool);
-    res.json(result);
-  } catch (error) {
-    console.error('Error tracking chatbot open:', error);
-    if (error.message === 'chatbot_id and user_id are required') {
-      return res.status(400).json({ error: error.message });
-    }
-    res.status(500).json({ error: 'Failed to track chatbot open' });
   }
 }
 

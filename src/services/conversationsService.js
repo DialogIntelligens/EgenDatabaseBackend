@@ -132,33 +132,6 @@ export async function deleteConversationsService(body, pool) {
   return { message: 'Conversations deleted successfully', result };
 }
 
-/**
- * Track chatbot open for greeting rate statistics
- */
-export async function trackChatbotOpenService(body, pool) {
-  const { chatbot_id, user_id } = body;
-  
-  if (!chatbot_id || !user_id) {
-    throw new Error('chatbot_id and user_id are required');
-  }
-
-  // Check if this user+chatbot combination already exists (to avoid duplicates)
-  const existingOpen = await pool.query(
-    'SELECT id FROM chatbot_opens WHERE chatbot_id = $1 AND user_id = $2',
-    [chatbot_id, user_id]
-  );
-
-  if (existingOpen.rows.length === 0) {
-    // Insert new chatbot open record
-    await pool.query(
-      'INSERT INTO chatbot_opens (chatbot_id, user_id) VALUES ($1, $2)',
-      [chatbot_id, user_id]
-    );
-    console.log(`Chatbot open tracked: ${chatbot_id} - ${user_id}`);
-  }
-
-  return { success: true };
-}
 
 /**
  * Get conversations with filters

@@ -2,7 +2,6 @@ import {
   createConversationController,
   updateConversationResolutionController,
   deleteConversationsController,
-  trackChatbotOpenController,
   getConversationsController,
   getConversationCountController,
   getConversationsMetadataController,
@@ -34,9 +33,6 @@ export function registerConversationsRoutes(app, pool, authenticateToken, SECRET
 
   // POST delete conversations by user IDs
   app.post('/delete', (req, res) => deleteConversationsController(req, res, pool));
-
-  // POST track chatbot open for greeting rate statistics
-  app.post('/track-chatbot-open', (req, res) => trackChatbotOpenController(req, res, pool));
 
   // GET conversations with filters
   app.get('/conversations', authenticateToken, (req, res) => getConversationsController(req, res, pool));

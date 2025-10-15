@@ -93,39 +93,6 @@ export async function getConsolidatedStatisticsService(query, pool) {
       }
     });
 
-    const greetingRatePromise = (async () => {
-      try {
-        let greetingDateFilter = '';
-        let conversationDateFilter = '';
-        let greetingParams = [chatbotIds];
-        let greetingParamIndex = 2;
-
-        if (start_date && end_date) {
-          greetingDateFilter = ` AND opened_at BETWEEN $${greetingParamIndex++} AND $${greetingParamIndex++}`;
-          conversationDateFilter = ` AND created_at BETWEEN $${greetingParamIndex++} AND $${greetingParamIndex++}`;
-          greetingParams.push(start_date, end_date, start_date, end_date);
-        }
-
-        const greetingQuery = `
-          SELECT
-            (SELECT COUNT(DISTINCT user_id) FROM chatbot_opens WHERE chatbot_id = ANY($1) ${greetingDateFilter}) as total_opens,
-            (SELECT COUNT(DISTINCT user_id) FROM conversations WHERE chatbot_id = ANY($1) ${conversationDateFilter}) as total_conversations
-        `;
-
-        const result = await pool.query(greetingQuery, greetingParams);
-        const totalOpens = parseInt(result.rows[0].total_opens) || 0;
-        const totalConversations = parseInt(result.rows[0].total_conversations) || 0;
-
-        return {
-          totalOpens,
-          greetingRate: totalOpens > 0 ? Math.round((totalConversations / totalOpens) * 100) : 0,
-          hasData: totalOpens > 0
-        };
-      } catch (error) {
-        console.error('Error fetching greeting rate:', error);
-        return { totalOpens: 0, greetingRate: 0, hasData: false };
-      }
-    })();
 
     const leadsPromise = (async () => {
       try {
@@ -152,9 +119,8 @@ export async function getConsolidatedStatisticsService(query, pool) {
       }
     })();
 
-    const [purchaseResults, greetingRateData, leadsCount] = await Promise.all([
+    const [purchaseResults, leadsCount] = await Promise.all([
       Promise.all(purchasePromises),
-      greetingRatePromise,
       leadsPromise
     ]);
 
@@ -187,9 +153,6 @@ export async function getConsolidatedStatisticsService(query, pool) {
       averagePurchaseValue: totalPurchases > 0 ? (totalRevenue / totalPurchases).toFixed(2) : 'N/A',
       conversionRate: stats.purchase_tracking_conversations > 0 ? `${((totalPurchases / stats.purchase_tracking_conversations) * 100).toFixed(1)}%` : 'N/A',
       hasPurchaseTracking: totalPurchases > 0,
-      totalChatbotOpens: greetingRateData.totalOpens,
-      greetingRate: greetingRateData.hasData ? `${greetingRateData.greetingRate}%` : 'N/A',
-      hasGreetingRateData: greetingRateData.hasData,
       totalContactFormulas: leadsCount,
       hasContactFormulaData: leadsCount > 0,
       contactFormulaConversionRate: stats.total_conversations > 0 ? `${((leadsCount / stats.total_conversations) * 100).toFixed(1)}%` : 'N/A'
