@@ -297,6 +297,7 @@ export async function getConversationsMetadataService(query, userId, pool) {
   let queryText = `
     SELECT c.id, c.created_at, c.emne, c.customer_rating, c.bug_status, c.conversation_data, c.viewed, c.tags, c.is_flagged, c.form_data, c.user_id, c.livechat_email,
            COALESCE(SUM(p.amount), 0) as purchase_amount,
+           COALESCE(MAX(p.currency), 'DKK') as purchase_currency,
            CASE 
              WHEN EXISTS (
                SELECT 1 FROM conversation_comments cc
@@ -412,12 +413,13 @@ export async function getConversationsMetadataService(query, userId, pool) {
 export async function getConversationByIdService(id, isAdmin, pool) {
   // Get the conversation with purchase data
   const result = await pool.query(
-    `SELECT c.*, 
-            COALESCE(SUM(p.amount), 0) as purchase_amount
+    `SELECT c.*,
+            COALESCE(SUM(p.amount), 0) as purchase_amount,
+            COALESCE(MAX(p.currency), 'DKK') as purchase_currency
      FROM conversations c
      LEFT JOIN purchases p ON c.user_id = p.user_id AND c.chatbot_id = p.chatbot_id
      WHERE c.id = $1
-     GROUP BY c.id`, 
+     GROUP BY c.id`,
     [id]
   );
   

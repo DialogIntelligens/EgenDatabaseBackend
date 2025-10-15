@@ -68,20 +68,28 @@ export async function getConsolidatedStatisticsService(query, pool) {
 
     const purchasePromises = chatbotIds.map(async (id) => {
       try {
+        // Get purchase data
         const purchaseQuery = `
           SELECT COUNT(*) as purchase_count, SUM(amount) as total_revenue
-          FROM purchases 
+          FROM purchases
           WHERE chatbot_id = $1 ${start_date && end_date ? 'AND created_at BETWEEN $2 AND $3' : ''}
         `;
         const purchaseParams = start_date && end_date ? [id, start_date, end_date] : [id];
-        const result = await pool.query(purchaseQuery, purchaseParams);
+        const purchaseResult = await pool.query(purchaseQuery, purchaseParams);
+
+        // Get currency from chatbot_settings
+        const currencyQuery = `SELECT currency FROM chatbot_settings WHERE chatbot_id = $1`;
+        const currencyResult = await pool.query(currencyQuery, [id]);
+        const currency = currencyResult.rows[0]?.currency || 'DKK';
+
         return {
-          purchases: parseInt(result.rows[0].purchase_count) || 0,
-          revenue: parseFloat(result.rows[0].total_revenue) || 0
+          purchases: parseInt(purchaseResult.rows[0].purchase_count) || 0,
+          revenue: parseFloat(purchaseResult.rows[0].total_revenue) || 0,
+          currency: currency
         };
       } catch (error) {
         console.error(`Error fetching purchases for chatbot ${id}:`, error);
-        return { purchases: 0, revenue: 0 };
+        return { purchases: 0, revenue: 0, currency: 'DKK' };
       }
     });
 
@@ -153,6 +161,9 @@ export async function getConsolidatedStatisticsService(query, pool) {
     const totalPurchases = purchaseResults.reduce((sum, r) => sum + r.purchases, 0);
     const totalRevenue = purchaseResults.reduce((sum, r) => sum + r.revenue, 0);
 
+    // Get currency from the first chatbot (assuming all chatbots use the same currency for statistics)
+    const currency = purchaseResults.length > 0 ? purchaseResults[0].currency : 'DKK';
+
     const response = {
       totalMessages: parseInt(stats.total_messages) || 0,
       totalConversations: parseInt(stats.total_conversations) || 0,
@@ -172,6 +183,7 @@ export async function getConsolidatedStatisticsService(query, pool) {
       topicData: stats.topic_data || {},
       totalPurchases,
       totalRevenue,
+      currency, // Add currency to response
       averagePurchaseValue: totalPurchases > 0 ? (totalRevenue / totalPurchases).toFixed(2) : 'N/A',
       conversionRate: stats.purchase_tracking_conversations > 0 ? `${((totalPurchases / stats.purchase_tracking_conversations) * 100).toFixed(1)}%` : 'N/A',
       hasPurchaseTracking: totalPurchases > 0,
