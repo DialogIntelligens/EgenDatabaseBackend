@@ -16,6 +16,7 @@ import { checkMissingChunks, checkAllIndexesMissingChunks, getUserIndexes, delet
 import { registerPopupMessageRoutes } from './popupMessageRoutes.js';
 import { registerSplitTestRoutes } from './splitTestRoutes.js';
 import { registerIntegrationRoutes } from './src/routes/integrationRoutes.js';
+import { registerDashboardChatbotRoutes } from './src/routes/dashboardChatbotRoutes.js';
 import { registerMagentoCredentialsRoutes, setMagentoCredentialsPool } from './magentoCredentialsRoutes.js';
 import { registerReportRoutes } from './src/routes/reportRoutes.js';
 import { registerCommentsRoutes } from './src/routes/commentsRoutes.js';
@@ -1391,6 +1392,7 @@ registerPromptTemplateV2Routes(app, pool, authenticateToken);
 registerPopupMessageRoutes(app, pool, authenticateToken);
 registerSplitTestRoutes(app, pool, authenticateToken);
 registerIntegrationRoutes(app, pool); // Public endpoint - no auth required
+registerDashboardChatbotRoutes(app, pool, authenticateToken); // Dashboard chatbot settings management
 registerReportRoutes(app, pool, authenticateToken);
 
 // Initialize GDPR table and routes
