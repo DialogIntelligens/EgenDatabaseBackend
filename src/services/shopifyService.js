@@ -133,6 +133,11 @@ export async function getShopifyOrdersService(body, pool) {
       })),
       shipping_address: order.shipping_address,
       billing_address: order.billing_address,
+      shipping_lines: (order.shipping_lines || []).map(line => ({
+        title: line.title,
+        price: line.price,
+        code: line.code
+      })),
       fulfillments: tracking.fulfillments,
       primary_tracking: tracking.primary
     };
