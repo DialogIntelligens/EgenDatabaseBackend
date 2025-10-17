@@ -42,6 +42,7 @@ import { registerConversationsRoutes } from './src/routes/conversationsRoutes.js
 import { registerConversationProcessingRoutes } from './src/routes/conversationProcessingRoutes.js';
 import { registerMonitoringRoutes } from './src/routes/monitoringRoutes.js';
 import { registerConversationMissingInfoRoutes } from './src/routes/conversationMissingInfoRoutes.js';
+import { registerChatbotSettingsRoutes } from './src/routes/chatbotSettingsRoutes.js';
 import { ensureConversationUpdateJobsTable } from './src/utils/conversationsUtils.js';
 import axios from 'axios';
 
@@ -1419,6 +1420,7 @@ registerConversationProcessingRoutes(app, pool, authenticateToken);
 registerMonitoringRoutes(app, pool, authenticateToken);
 registerConversationMissingInfoRoutes(app, pool, authenticateToken);
 registerPineconeRoutes(app, pool, authenticateToken);
+registerChatbotSettingsRoutes(app, pool, authenticateToken);
 
 /* ================================
    OpenAI Merge Suggestion Endpoint

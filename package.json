@@ -34,6 +34,7 @@
     "handlebars": "^4.7.8",
     "jsonwebtoken": "^9.0.2",
     "markdown-it": "^14.1.0",
+    "multer": "^2.0.2",
     "natural": "^8.0.1",
     "node-cron": "^3.0.3",
     "node-fetch": "^3.3.2",
